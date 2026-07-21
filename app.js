@@ -96,6 +96,21 @@
         .then(function (r) { state.auth.account = r.account; return r.account; });
     },
 
+    /* Notausstieg. Ein blockiertes oder abgebrochenes Popup hinterlaesst MSAL in einem
+       haengenden Zustand — danach scheitert jeder weitere Versuch mit demselben Fehler.
+       Beobachtet am 2026-07-21; ohne diesen Knopf half nur das Loeschen des Browserspeichers. */
+    zuruecksetzen: function () {
+      try {
+        Object.keys(localStorage)
+          .filter(function (k) { return k.indexOf('msal') === 0; })
+          .forEach(function (k) { localStorage.removeItem(k); });
+        sessionStorage.clear();
+      } catch (e) { /* Speicher gesperrt — dann bleibt nur das Neuladen */ }
+      auth._msal = null;
+      state.auth.account = null;
+      location.reload();
+    },
+
     token: function () {
       var c = auth._client();
       return c.acquireTokenSilent({
@@ -258,8 +273,13 @@
       if (state.fehler) {
         controller.setz('<div class="card meldung"><span class="eyebrow">Fehler</span>' +
           '<h2>Das hat nicht geklappt</h2><p class="lead">' + esc(state.fehler) + '</p>' +
-          '<div style="margin-top:14px"><button class="knopf" data-action="anmelden">' +
-          'Nochmals versuchen</button></div></div>');
+          '<div class="knopfreihe">' +
+            '<button class="knopf" data-action="anmelden">Nochmals versuchen</button>' +
+            '<button class="knopf still" data-action="zuruecksetzen">Anmeldung zur&uuml;cksetzen</button>' +
+          '</div>' +
+          '<p class="lead" style="margin-top:10px;font-size:13px">Hilft „nochmals versuchen" nicht, ' +
+          'setzt der zweite Knopf die Anmeldung zur&uuml;ck. Das ist n&ouml;tig, wenn ein ' +
+          'Anmeldefenster blockiert oder abgebrochen wurde.</p></div>');
         return;
       }
       if (state.laden) {
@@ -321,6 +341,7 @@
       var t = e.target.closest('[data-action]');
       if (!t) return;
       if (t.dataset.action === 'anmelden') { controller.anmelden(); return; }
+      if (t.dataset.action === 'zuruecksetzen') { auth.zuruecksetzen(); return; }
       if (t.dataset.action === 'theme') {
         var cur = document.documentElement.getAttribute('data-theme');
         if (!cur) cur = window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
