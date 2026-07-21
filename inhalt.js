@@ -52,13 +52,33 @@
       else ['didaktik', 'promptcraft', 'governance'].forEach(function (k) {
         if (!r[k] || !Array.isArray(r[k].abschnitte) || !r[k].abschnitte.length) {
           p.push('referenz.json: ' + k + ' fehlt oder ist leer');
+          return;
         }
+        r[k].abschnitte.forEach(function (a, n) {
+          var v = inhalt.verschachtelung(a.html);
+          if (v.ende !== 0 || v.tiefste < 0) {
+            p.push('referenz.json: ' + k + ' Abschnitt ' + (n + 1) + ' hat unsaubere div-Verschachtelung');
+          }
+        });
       });
 
       var k = i['ablage-kontrakt'];
       if (!k || !k.schritte) p.push('ablage-kontrakt.json: keine Schritt-Zuordnung');
 
       return p;
+    },
+
+    /* Ein Referenzabschnitt wird als Bruchstueck in eine Spalte gehaengt. Faellt die
+       Tiefe dabei unter null, schliesst er einen fremden Behaelter und reisst das
+       Layout auf — genau so ist beim Uebernehmen aus v0.2 die Seitenspalte
+       herausgefallen. Ende !== 0 heisst: er laesst etwas offen. */
+    verschachtelung: function (html) {
+      var re = /<(\/?)div\b[^>]*>/gi, m, d = 0, min = 0;
+      while ((m = re.exec(String(html || '')))) {
+        d += m[1] ? -1 : 1;
+        if (d < min) min = d;
+      }
+      return { ende: d, tiefste: min };
     },
 
     /* --- Zugriffshelfer --- */

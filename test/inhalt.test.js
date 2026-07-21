@@ -135,3 +135,29 @@ test('laden bricht bei inhaltlich kaputten Dateien ab', async () => {
   const graphMock = { zentralLaden: () => Promise.resolve(kaputt) };
   await assert.rejects(() => inhalt.laden(graphMock), /unvollstaendig/);
 });
+
+/* ---------- Verschachtelung der Referenztexte ---------- */
+
+test('verschachtelung erkennt einen sauberen Abschnitt', () => {
+  const v = inhalt.verschachtelung('<div class="a"><div>x</div></div><p>y</p>');
+  assert.deepStrictEqual(v, { ende: 0, tiefste: 0 });
+});
+
+test('verschachtelung erkennt einen offen gelassenen Behaelter', () => {
+  assert.strictEqual(inhalt.verschachtelung('<div class="grid"><div class="card">x').ende, 2);
+});
+
+test('verschachtelung erkennt einen fremden Schliesser', () => {
+  /* Genau der Fall aus v0.2: der Abschnitt schliesst einen Behaelter,
+     den er nie geoeffnet hat, und reisst damit das Layout auf. */
+  const v = inhalt.verschachtelung('<div class="bloomcal">x</div></div><div class="card">');
+  assert.strictEqual(v.tiefste, -1);
+});
+
+test('pruefe meldet unsaubere Referenz-Verschachtelung', () => {
+  const k = JSON.parse(JSON.stringify(INHALT));
+  k.referenz.didaktik.abschnitte[1].html = '<div class="bloomcal">x</div></div>';
+  const p = inhalt.pruefe(k);
+  assert.ok(p.some(x => /didaktik Abschnitt 2/.test(x) && /Verschachtelung/.test(x)),
+            'Fehler nicht gemeldet: ' + p.join(' | '));
+});

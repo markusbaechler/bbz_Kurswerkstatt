@@ -412,7 +412,10 @@
 
   .werkbank.werk{grid-template-columns:minmax(0,1fr) 240px}
   @media(max-width:1000px){.werkbank.werk{grid-template-columns:1fr}}
-  .werktext{max-width:70ch}
+  /* Nicht auf 70ch geklemmt: die Kapitel sind ueberwiegend Schaubilder
+     (W-U-G, Bloom-Leiter, Do/Dont). Die Lesebreite steuern die Absaetze selbst. */
+  .werktext{min-width:0}
+  .kapitel .inhalt > p{max-width:70ch}
   .kapitel{padding-bottom:38px;margin-bottom:38px;border-bottom:1px solid var(--line)}
   .kapitel:last-child{border-bottom:0;margin-bottom:0}
   .kapitel h2{font-size:25px;letter-spacing:-.02em;margin-bottom:20px;
