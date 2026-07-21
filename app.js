@@ -76,19 +76,24 @@
       return auth._msal;
     },
 
-    anmelden: function () {
+    /* Ohne Popup: liefert das bereits angemeldete Konto oder null.
+       Muss beim Start laufen — ein Popup waere hier vom Browser blockiert,
+       weil keine Nutzergeste dahintersteht. */
+    stilleAnmeldung: function () {
       var c = auth._client();
       return c.initialize().then(function () {
         var konten = c.getAllAccounts();
-        if (konten.length > 0) {
-          state.auth.account = konten[0];
-          return konten[0];
-        }
-        return c.loginPopup({ scopes: CONFIG.graph.scopes }).then(function (r) {
-          state.auth.account = r.account;
-          return r.account;
-        });
+        state.auth.account = konten.length ? konten[0] : null;
+        return state.auth.account;
       });
+    },
+
+    /* Mit Popup. DARF NUR aus einem Klick heraus aufgerufen werden. */
+    anmelden: function () {
+      var c = auth._client();
+      return c.initialize()
+        .then(function () { return c.loginPopup({ scopes: CONFIG.graph.scopes }); })
+        .then(function (r) { state.auth.account = r.account; return r.account; });
     },
 
     token: function () {
@@ -252,29 +257,77 @@
     render: function () {
       if (state.fehler) {
         controller.setz('<div class="card meldung"><span class="eyebrow">Fehler</span>' +
-          '<h2>Das hat nicht geklappt</h2><p class="lead">' + esc(state.fehler) + '</p></div>');
+          '<h2>Das hat nicht geklappt</h2><p class="lead">' + esc(state.fehler) + '</p>' +
+          '<div style="margin-top:14px"><button class="knopf" data-action="anmelden">' +
+          'Nochmals versuchen</button></div></div>');
         return;
       }
       if (state.laden) {
         controller.setz('<p class="lead">Wird geladen &hellip;</p>');
         return;
       }
+      if (!state.auth.account) {
+        controller.setz('<div class="card"><span class="eyebrow">Anmeldung</span>' +
+          '<h2>Kurswerkstatt</h2>' +
+          '<p class="lead">Die Kursdaten liegen in SharePoint. Melde dich mit deinem ' +
+          'bbz-Konto an, um sie zu sehen.</p>' +
+          '<div style="margin-top:16px"><button class="knopf" data-action="anmelden">' +
+          'Mit bbz-Konto anmelden</button></div></div>');
+        return;
+      }
       controller.setz(ansichtKurse.render(state.data.kurse));
+    },
+
+    laden: function () {
+      state.laden = true;
+      state.fehler = null;
+      controller.render();
+      return graph.kurseLaden()
+        .then(function () { state.laden = false; controller.render(); })
+        .catch(controller.scheitern);
+    },
+
+    scheitern: function (e) {
+      state.laden = false;
+      state.fehler = (e && e.message) ? e.message : String(e);
+      controller.render();
+    },
+
+    /* Aus einem Klick heraus — nur so laesst der Browser das Popup zu. */
+    anmelden: function () {
+      state.laden = true;
+      state.fehler = null;
+      controller.render();
+      return auth.anmelden()
+        .then(controller.laden)
+        .catch(controller.scheitern);
     },
 
     start: function () {
       state.laden = true;
       controller.render();
-      return auth.anmelden()
-        .then(function () { return graph.kurseLaden(); })
-        .then(function () { state.laden = false; controller.render(); })
-        .catch(function (e) {
+      return auth.stilleAnmeldung()
+        .then(function (konto) {
           state.laden = false;
-          state.fehler = e && e.message ? e.message : String(e);
-          controller.render();
-        });
+          if (!konto) { controller.render(); return; }   /* Anmelde-Knopf zeigen */
+          return controller.laden();
+        })
+        .catch(controller.scheitern);
     }
   };
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('click', function (e) {
+      var t = e.target.closest('[data-action]');
+      if (!t) return;
+      if (t.dataset.action === 'anmelden') { controller.anmelden(); return; }
+      if (t.dataset.action === 'theme') {
+        var cur = document.documentElement.getAttribute('data-theme');
+        if (!cur) cur = window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+      }
+    });
+  }
 
   if (typeof window !== 'undefined') {
     window.addEventListener('DOMContentLoaded', controller.start);
