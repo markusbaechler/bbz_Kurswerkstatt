@@ -195,3 +195,60 @@ test('Nachschlagen wechselt das Werk', () => {
 test('ein unbekanntes Werk faellt auf das erste zurueck', () => {
   assert.ok(/Didaktisches Modell/.test(ansichten.nachschlagen(INHALT, 'gibtsnicht')));
 });
+
+/* ---------- Standort und Ordner-Verknuepfung ---------- */
+
+test('die Kette sagt im Klartext, wo man ist', () => {
+  const h = ansichten.kette(INHALT, DBS, 4);
+  assert.ok(/Du bist hier/.test(h));
+  assert.ok(/Schritt 4 von 9/.test(h));
+  assert.ok(/Inhalt entwerfen/.test(h), 'Phase fehlt');
+});
+
+test('ohne aktiven Schritt gibt es keine Standort-Marke', () => {
+  assert.ok(!/Du bist hier/.test(ansichten.kette(INHALT, DBS, null)));
+});
+
+test('die Phase des aktiven Schritts wird hervorgehoben', () => {
+  const h = ansichten.kette(INHALT, DBS, 4);
+  assert.ok(/class="kette fokus"/.test(h));
+  assert.ok(/class="phase an"/.test(h));
+  assert.strictEqual((h.match(/class="phase an"/g) || []).length, 1, 'genau eine Phase aktiv');
+});
+
+test('die Dateiliste zeigt Ladezustand, Leere und Inhalt unterschiedlich', () => {
+  assert.ok(/wird geladen/.test(ansichten.dateiliste(undefined, null, '04_greenfield')));
+  assert.ok(/nicht gefunden/.test(ansichten.dateiliste(null, null, '04_greenfield')));
+  assert.ok(/Noch leer/.test(ansichten.dateiliste([], null, '04_greenfield')));
+});
+
+test('die Dateiliste verlinkt jede Datei nach SharePoint', () => {
+  const h = ansichten.dateiliste(
+    [{ name: 'DBS-001_greenfield_v1.md', webUrl: 'https://x/y.md', size: 2048,
+       lastModifiedDateTime: '2026-07-21T10:00:00Z' }],
+    'https://x/04_greenfield', '04_greenfield');
+  assert.ok(/href="https:\/\/x\/y\.md"/.test(h));
+  assert.ok(/DBS-001_greenfield_v1\.md/.test(h));
+  assert.ok(/2 KB/.test(h));
+  assert.ok(/21\.07\.2026/.test(h));
+  assert.ok(/href="https:\/\/x\/04_greenfield"/.test(h), 'Ordner-Link fehlt');
+});
+
+test('der Zielordner ist aus der Schrittansicht heraus zu oeffnen', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null,
+    { basisUrl: 'https://sp/Kursproduktion/DBS-001_x', dateien: [] });
+  assert.ok(/href="https:\/\/sp\/Kursproduktion\/DBS-001_x\/04_greenfield"/.test(h));
+});
+
+test('der Vorgaenger-Ordner ist aus Kommt-herein heraus zu oeffnen', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null,
+    { basisUrl: 'https://sp/Kursproduktion/DBS-001_x', dateien: [] });
+  assert.ok(/href="https:\/\/sp\/Kursproduktion\/DBS-001_x\/03_contract"/.test(h),
+    'Link auf den Contract-Ordner aus Schritt 3 fehlt');
+});
+
+test('ohne Basis-URL bleiben die Pfade lesbar, aber ohne Link', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  assert.ok(/04_greenfield\/DBS-001_greenfield_v\{N\}\.md/.test(h));
+  assert.ok(!/href="undefined/.test(h));
+});

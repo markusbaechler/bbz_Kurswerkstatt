@@ -10,9 +10,23 @@
   /* ---------- Die Kette: 9 Schritte in 5 Phasen ---------- */
   function kette(inh, kurs, aktiv) {
     var phasen = (inh.schritte && inh.schritte.phasen) || [];
-    var h = '<div class="kette">';
+    var aktivePhase = aktiv ? I().phaseVon(inh, aktiv) : null;
+    var h = '';
+
+    if (aktiv) {
+      var sA = I().schritt(inh, aktiv);
+      h += '<div class="standort">' +
+             '<span class="marke">Du bist hier</span>' +
+             '<span class="wo"><b>Schritt ' + esc(aktiv) + ' von 9</b>' +
+             (aktivePhase ? ' &middot; ' + esc(aktivePhase.nm) : '') +
+             (sA ? ' &middot; ' + esc(sA.nm) : '') + '</span></div>';
+    }
+
+    h += '<div class="kette' + (aktiv ? ' fokus' : '') + '">';
     phasen.forEach(function (p) {
-      h += '<div class="phase"><span class="phl">' + esc(p.nm) + '</span><div class="pnodes">';
+      var phAktiv = aktivePhase && aktivePhase.nm === p.nm;
+      h += '<div class="phase' + (phAktiv ? ' an' : '') + '">' +
+           '<span class="phl">' + esc(p.nm) + '</span><div class="pnodes">';
       p.ids.forEach(function (id) {
         var s = I().schritt(inh, id);
         if (!s) return;
@@ -27,6 +41,27 @@
       h += '</div></div>';
     });
     return h + '</div>';
+  }
+
+  /* ---------- Dateien eines Schritt-Ordners ---------- */
+  function dateiliste(dateien, ordnerUrl, ordner) {
+    var kopf = '<div class="dateien">' +
+      '<div class="dkopf"><span class="h">Was im Ordner liegt</span>' +
+      (ordnerUrl ? '<a class="oeffnen" href="' + esc(ordnerUrl) + '" target="_blank" ' +
+                   'rel="noopener">' + esc(ordner) + ' in SharePoint &#8599;</a>' : '') +
+      '</div>';
+
+    if (dateien === undefined) return kopf + '<p class="dim">wird geladen &hellip;</p></div>';
+    if (dateien === null)      return kopf + '<p class="dim">Ordner nicht gefunden.</p></div>';
+    if (!dateien.length)       return kopf + '<p class="dim">Noch leer &mdash; hier landet das Ergebnis dieses Schritts.</p></div>';
+
+    return kopf + '<ul class="dliste">' + dateien.map(function (d) {
+      return '<li><a href="' + esc(d.webUrl) + '" target="_blank" rel="noopener">' +
+             esc(d.name) + '</a>' +
+             '<span class="dmeta">' + Math.max(1, Math.round((d.size || 0) / 1024)) + ' KB' +
+             (d.lastModifiedDateTime ? ' &middot; ' + root.helpers.datum(d.lastModifiedDateTime) : '') +
+             '</span></li>';
+    }).join('') + '</ul></div>';
   }
 
   function kurz(nm) {
@@ -147,7 +182,8 @@
   }
 
   /* ---------- Ansicht: ein Schritt ---------- */
-  function einSchritt(inh, kurs, schrittId, offenesWerkzeug) {
+  function einSchritt(inh, kurs, schrittId, offenesWerkzeug, ablageDaten) {
+    ablageDaten = ablageDaten || {};
     var s = I().schritt(inh, schrittId);
     if (!s) return karte('Schritt', 'Unbekannt', 'Diesen Schritt gibt es nicht.');
 
@@ -173,12 +209,18 @@
 
     h += '<p class="lead">' + s.zweck + '</p>';
 
-    /* Woher — Wohin */
+    /* Woher — Wohin. Der Vorgaenger-Ordner ist direkt in SharePoint zu oeffnen. */
     h += '<div class="chain">' +
       '<div class="ch her"><div class="chl">&#9666; Kommt herein</div><p>' +
         (s.her || []).map(function (x) {
-          return esc(x.was) + (x.von ? ' <a data-action="schritt" data-schritt="' + x.von +
-                 '">aus Schritt ' + x.von + ' &rsaquo;</a>' : ' <span class="dim">(von aussen)</span>');
+          if (!x.von) return esc(x.was) + ' <span class="dim">(von aussen)</span>';
+          var vorAb = I().ablageVon(inh, x.von, kurs ? kurs.kursId : '<Kurs>');
+          var url = ablageDaten.basisUrl && vorAb
+            ? ablageDaten.basisUrl + '/' + encodeURIComponent(vorAb.ordner) : null;
+          return esc(x.was) +
+            ' <a data-action="schritt" data-schritt="' + x.von + '">aus Schritt ' + x.von + ' &rsaquo;</a>' +
+            (url ? ' <a class="oeffnen" href="' + esc(url) + '" target="_blank" rel="noopener">' +
+                   esc(vorAb.ordner) + ' &#8599;</a>' : '');
         }).join('<br>') + '</p></div>' +
       '<div class="ch hin"><div class="chl">Geht weiter &#9656;</div><p>' +
         (s.hin || []).map(function (x) {
@@ -229,10 +271,16 @@
     h += abschnitt('Das Ergebnis');
     h += '<div class="liefer"><span class="h">Lieferobjekt</span>' + s.lief + '</div>';
     if (ablage) {
+      var zielUrl = ablageDaten.basisUrl
+        ? ablageDaten.basisUrl + '/' + encodeURIComponent(ablage.ordner) : null;
       h += '<div class="ablage"><span class="h">Wohin es kommt</span>' +
-           '<code>' + esc(ablage.ordner) + '/' + esc(ablage.datei) + '</code>' +
+           (zielUrl
+             ? '<a href="' + esc(zielUrl) + '" target="_blank" rel="noopener"><code>' +
+               esc(ablage.ordner) + '/' + esc(ablage.datei) + '</code> &#8599;</a>'
+             : '<code>' + esc(ablage.ordner) + '/' + esc(ablage.datei) + '</code>') +
            '<p class="dim">Legt die Kurswerkstatt beim Ablegen selbst an &mdash; ' +
            'du tippst keinen Pfad und keinen Dateinamen.</p></div>';
+      h += dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
     }
     if (anleitung && anleitung.dod) {
       h += '<div class="liefer dod"><span class="h">Fertig, wenn</span>' + esc(anleitung.dod) + '</div>';
@@ -283,7 +331,7 @@
   }
 
   root.ansichten = {
-    kette: kette, werkzeug: werkzeug,
+    kette: kette, werkzeug: werkzeug, dateiliste: dateiliste,
     alleKurse: alleKurse, einKurs: einKurs, einSchritt: einSchritt, nachschlagen: nachschlagen
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = { ansichten: root.ansichten };

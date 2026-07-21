@@ -30,7 +30,7 @@
   /* ---------- state ---------- */
   var state = {
     auth:      { account: null },
-    data:      { kurse: [], inhalt: null },
+    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {} },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null },
     laden:     false,
     fehler:    null
@@ -231,6 +231,44 @@
       });
     },
 
+    /* Den Kursordner in der Bibliothek finden — er heisst <KURS-ID>_<kurzname>. */
+    kursOrdner: function (kursId) {
+      if (state.data.ordner[kursId] !== undefined) {
+        return Promise.resolve(state.data.ordner[kursId]);
+      }
+      return graph.driveId().then(function (did) {
+        return graph._hole('https://graph.microsoft.com/v1.0/drives/' + did +
+                           '/root/children?$select=id,name,webUrl,folder&$top=200');
+      }).then(function (j) {
+        var o = (j.value || []).filter(function (x) {
+          return x.folder && x.name.indexOf(kursId + '_') === 0;
+        })[0] || null;
+        state.data.ordner[kursId] = o;
+        return o;
+      });
+    },
+
+    /* Was liegt tatsaechlich im Ordner dieses Schritts? */
+    ordnerInhalt: function (kursId, unterordner) {
+      var schluessel = kursId + '/' + unterordner;
+      if (state.data.dateien[schluessel] !== undefined) {
+        return Promise.resolve(state.data.dateien[schluessel]);
+      }
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
+        var did = r[0], ord = r[1];
+        if (!ord) { state.data.dateien[schluessel] = null; return null; }
+        return graph._hole('https://graph.microsoft.com/v1.0/drives/' + did +
+              '/items/' + ord.id + ':/' + encodeURI(unterordner) +
+              ':/children?$select=name,webUrl,size,lastModifiedDateTime,folder')
+          .then(function (j) {
+            var l = (j.value || []).filter(function (x) { return !x.folder; });
+            state.data.dateien[schluessel] = l;
+            return l;
+          })
+          .catch(function () { state.data.dateien[schluessel] = null; return null; });
+      });
+    },
+
     kurseLaden: function () {
       return graph.siteId().then(function (sid) {
         return graph._hole('https://graph.microsoft.com/v1.0/sites/' + sid +
@@ -356,12 +394,30 @@
       if (p.bereich === 'nachschlagen') {
         controller.setz(root.ansichten.nachschlagen(inh, p.werk));
       } else if (p.schrittId) {
-        controller.setz(root.ansichten.einSchritt(inh, nav.kurs(), p.schrittId, p.werkzeugId));
+        var k = nav.kurs();
+        var ab = root.inhalt.ablageVon(inh, p.schrittId, k ? k.kursId : '');
+        var ordn = k ? state.data.ordner[k.kursId] : null;
+        var schl = k && ab ? k.kursId + '/' + ab.ordner : null;
+        controller.setz(root.ansichten.einSchritt(inh, k, p.schrittId, p.werkzeugId, {
+          basisUrl: ordn ? ordn.webUrl : null,
+          dateien: schl ? state.data.dateien[schl] : null
+        }));
+        if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
       } else if (p.kursId) {
         controller.setz(root.ansichten.einKurs(inh, nav.kurs()));
       } else {
         controller.setz(root.ansichten.alleKurse(state.data.kurse));
       }
+    },
+
+    /* Ordnerinhalt nachladen und danach neu zeichnen — der erste Aufbau wartet nicht darauf. */
+    ordnerNachladen: function (kursId, ordner) {
+      var schl = kursId + '/' + ordner;
+      if (state.data.dateien[schl] !== undefined && state.data.ordner[kursId] !== undefined) return;
+      graph.kursOrdner(kursId)
+        .then(function () { return graph.ordnerInhalt(kursId, ordner); })
+        .then(function () { if (state.position.schrittId) controller.render(); })
+        .catch(function () {});
     },
 
     zu: function (aenderung) {
