@@ -233,9 +233,8 @@
       var r = (inh && inh.referenz) || {};
       var id = r[pos.werk] ? pos.werk : ['didaktik', 'promptcraft', 'governance']
         .filter(function (k) { return r[k]; })[0];
-      var w = [{ t: 'Nachschlagen', a: null }];
-      if (id && r[id]) w.push({ t: esc(r[id].titel), a: null });
-      return w;
+      /* Kein 'Nachschlagen ›' davor — das steht schon im Raumumschalter daneben. */
+      return id && r[id] ? [{ t: esc(r[id].titel), a: null }] : [{ t: 'Nachschlagen', a: null }];
     }
     var st = [{ t: 'Alle Kurse', a: kurs ? 'kurse' : null }];
     if (!kurs) return st;

@@ -421,6 +421,7 @@ test('ohne Schritt gibt es keine Stationswahl', () => {
 test('im Nachschlagen nennt die Spur das Werk statt eines Kurses', () => {
   const h = ansichten.standort(INHALT, DBS, { bereich: 'nachschlagen', werk: 'promptcraft' });
   assert.ok(/Prompt-Handwerk/.test(h), 'Werk nicht benannt');
+  assert.ok(!/class="hier">Nachschlagen</.test(h), 'Raumname doppelt: Umschalter und Spur');
   assert.ok(!/DBS-001/.test(h), 'Kurs gehoert nicht in diesen Raum');
   assert.ok(!/class="stationswahl"/.test(h), 'Stationswahl gehoert nicht in diesen Raum');
 });

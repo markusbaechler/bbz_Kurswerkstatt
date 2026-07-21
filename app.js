@@ -442,7 +442,9 @@
     zu: function (aenderung) {
       Object.keys(aenderung).forEach(function (k) { state.position[k] = aenderung[k]; });
       controller.render();
-      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+      /* Hart nach oben, nicht sanft: das Dokument ist eine Zeile vorher komplett
+         ausgetauscht worden, und eine laufende Animation landet dann irgendwo. */
+      if (typeof window !== 'undefined') window.scrollTo(0, 0);
     },
 
     laden: function () {
