@@ -19,7 +19,9 @@
 
     sharePoint: {
       siteHostname: 'bbzsg.sharepoint.com',
-      sitePath: '/sites/ffentlicheAngebote'
+      sitePath: '/sites/ffentlicheAngebote',
+      bibliothek: 'Kursproduktion',
+      zentral: '_zentral'
     },
 
     lists: { kurse: 'KWKurse' }
@@ -28,8 +30,8 @@
   /* ---------- state ---------- */
   var state = {
     auth:      { account: null },
-    data:      { kurse: [] },
-    position:  { bereich: 'kurse', kursId: null, schrittId: null, werkzeugId: null },
+    data:      { kurse: [], inhalt: null },
+    position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null },
     laden:     false,
     fehler:    null
   };
@@ -127,6 +129,7 @@
 
   var graph = {
     _siteId: null,
+    _driveId: null,
 
     siteUrl: function () {
       return 'https://graph.microsoft.com/v1.0/sites/' +
@@ -187,6 +190,47 @@
 
     /* --- Netz --- */
 
+    /* Laufwerk der Bibliothek Kursproduktion aufloesen. */
+    driveId: function () {
+      if (graph._driveId) return Promise.resolve(graph._driveId);
+      return graph.siteId().then(function (sid) {
+        return graph._hole('https://graph.microsoft.com/v1.0/sites/' + sid + '/drives?$select=id,name');
+      }).then(function (j) {
+        var d = (j.value || []).filter(function (x) {
+          return x.name === CONFIG.sharePoint.bibliothek;
+        })[0];
+        if (!d) {
+          throw new Error('Bibliothek "' + CONFIG.sharePoint.bibliothek +
+                          '" nicht gefunden auf ' + CONFIG.sharePoint.sitePath);
+        }
+        graph._driveId = d.id;
+        return d.id;
+      });
+    },
+
+    /* Laedt die genannten JSON-Dateien aus Kursproduktion/_zentral.
+       Eine fehlende Datei ist kein Abbruch — inhalt.laden entscheidet, was Pflicht ist. */
+    zentralLaden: function (namen) {
+      return graph.driveId().then(function (did) {
+        return auth.token().then(function (t) {
+          return Promise.all(namen.map(function (n) {
+            var p = CONFIG.sharePoint.zentral + '/' + n + '.json';
+            return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                         '/root:/' + encodeURI(p) + ':/content',
+                         { headers: { Authorization: 'Bearer ' + t } })
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .then(function (j) { return { name: n, daten: j }; })
+              .catch(function () { return { name: n, daten: null }; });
+          }));
+        });
+      }).then(function (teile) {
+        var o = {};
+        teile.forEach(function (x) { if (x.daten) o[x.name] = x.daten; });
+        state.data.inhalt = o;
+        return o;
+      });
+    },
+
     kurseLaden: function () {
       return graph.siteId().then(function (sid) {
         return graph._hole('https://graph.microsoft.com/v1.0/sites/' + sid +
@@ -219,46 +263,56 @@
     }
   };
 
-  /* ---------- Ansicht: alle Kurse ---------- */
+  /* ---------- Navigation ----------
+     Zwei Bereiche: Arbeiten (Kurse -> ein Kurs -> ein Schritt) und Nachschlagen.
+     Werkzeuge klappen IM Schritt auf — kein Seitenwechsel, um einen Prompt zu kopieren. */
   var esc = function (s) { return helpers.escapeHtml(s); };
 
-  var ansichtKurse = {
-    render: function (kurse) {
-      if (!kurse.length) {
-        return '<div class="card"><span class="eyebrow">Alle Kurse</span>' +
-               '<h2>Noch keine Kurse</h2>' +
-               '<p class="lead">In der Liste KWKurse steht noch kein Eintrag.</p></div>';
+  var nav = {
+    kurs: function () {
+      if (!state.position.kursId) return null;
+      return state.data.kurse.filter(function (k) {
+        return k.kursId === state.position.kursId;
+      })[0] || null;
+    },
+
+    /* Pfad im Bereich Arbeiten. */
+    pfad: function () {
+      var p = state.position, k = nav.kurs();
+      var st = [{ t: 'Alle Kurse', a: 'kurse' }];
+      if (!k) return st;
+      st.push({ t: k.kursId, a: 'kurs', v: k.kursId });
+      if (p.schrittId) {
+        var s = root.inhalt.schritt(state.data.inhalt, p.schrittId);
+        st.push({ t: 'Schritt ' + p.schrittId + (s ? ' · ' + s.nm : ''), a: null });
       }
+      return st;
+    },
 
-      var fertig = kurse.filter(function (k) { return graph.fortschritt(k) === 9; }).length;
+    kopf: function () {
+      var p = state.position;
+      var reiter = [
+        { k: 'arbeiten', t: 'Arbeiten' },
+        { k: 'nachschlagen', t: 'Nachschlagen' }
+      ];
+      var h = '<div class="bereiche">' + reiter.map(function (r) {
+        var an = (r.k === 'nachschlagen') === (p.bereich === 'nachschlagen');
+        return '<button class="' + (an ? 'on' : '') + '" data-action="bereich" ' +
+               'data-bereich="' + r.k + '">' + r.t + '</button>';
+      }).join('') + '</div>';
 
-      var zeilen = kurse.map(function (k) {
-        var punkte = '';
-        for (var n = 1; n <= 9; n++) {
-          var st = graph.standVon(k, n);
-          punkte += '<span class="pkt ' + st + '" title="Schritt ' + n + ': ' + st + '">' +
-                    (st === 'fertig' ? '&#10003;' : n) + '</span>';
+      if (p.bereich !== 'nachschlagen') {
+        var st = nav.pfad();
+        if (st.length > 1) {
+          h += '<div class="pfad">' + st.map(function (x, i) {
+            var letzt = i === st.length - 1;
+            if (letzt || !x.a) return '<span class="hier">' + esc(x.t) + '</span>';
+            return '<a data-action="' + x.a + '"' + (x.v ? ' data-kurs="' + esc(x.v) + '"' : '') +
+                   '>' + esc(x.t) + '</a>';
+          }).join('<span class="sep">&rsaquo;</span>') + '</div>';
         }
-        return '<tr>' +
-          '<td><span class="kid">' + esc(k.kursId) + '</span></td>' +
-          '<td>' + esc(k.kurstitel) + '</td>' +
-          '<td class="dim">' + esc(k.kompetenzfeld) + '</td>' +
-          '<td><div class="pkte">' + punkte + '</div></td>' +
-          '<td class="mono fort">' + graph.fortschritt(k) + '&#8202;/&#8202;9</td>' +
-        '</tr>';
-      }).join('');
-
-      return '<div class="kopf">' +
-          '<span class="eyebrow">Alle Kurse</span>' +
-          '<h2>' + kurse.length + ' Kurse &middot; ' + fertig + ' fertig</h2>' +
-          '<p class="lead">Der Stand je Schritt wird aus Schritt und Status berechnet, ' +
-          'nicht gespeichert.</p>' +
-        '</div>' +
-        '<div class="card" style="padding:14px 16px"><div class="tblwrap"><table class="tbl">' +
-          '<thead><tr><th>Kurs</th><th>Titel</th><th>Kompetenzfeld</th>' +
-          '<th>Schritt 1&thinsp;&ndash;&thinsp;9</th><th>Stand</th></tr></thead>' +
-          '<tbody>' + zeilen + '</tbody>' +
-        '</table></div></div>';
+      }
+      return h;
     }
   };
 
@@ -267,6 +321,8 @@
     setz: function (html) {
       var el = (typeof document !== 'undefined') && document.getElementById('app');
       if (el) el.innerHTML = html;
+      var kopf = (typeof document !== 'undefined') && document.getElementById('nav');
+      if (kopf) kopf.innerHTML = (state.auth.account && state.data.inhalt) ? nav.kopf() : '';
     },
 
     render: function () {
@@ -277,32 +333,46 @@
             '<button class="knopf" data-action="anmelden">Nochmals versuchen</button>' +
             '<button class="knopf still" data-action="zuruecksetzen">Anmeldung zur&uuml;cksetzen</button>' +
           '</div>' +
-          '<p class="lead" style="margin-top:10px;font-size:13px">Hilft „nochmals versuchen" nicht, ' +
-          'setzt der zweite Knopf die Anmeldung zur&uuml;ck. Das ist n&ouml;tig, wenn ein ' +
+          '<p class="lead" style="margin-top:10px;font-size:13px">Hilft &bdquo;nochmals versuchen&ldquo; ' +
+          'nicht, setzt der zweite Knopf die Anmeldung zur&uuml;ck. N&ouml;tig, wenn ein ' +
           'Anmeldefenster blockiert oder abgebrochen wurde.</p></div>');
         return;
       }
-      if (state.laden) {
-        controller.setz('<p class="lead">Wird geladen &hellip;</p>');
-        return;
-      }
+      if (state.laden) { controller.setz('<p class="lead">Wird geladen &hellip;</p>'); return; }
+
       if (!state.auth.account) {
         controller.setz('<div class="card"><span class="eyebrow">Anmeldung</span>' +
           '<h2>Kurswerkstatt</h2>' +
-          '<p class="lead">Die Kursdaten liegen in SharePoint. Melde dich mit deinem ' +
-          'bbz-Konto an, um sie zu sehen.</p>' +
-          '<div style="margin-top:16px"><button class="knopf" data-action="anmelden">' +
+          '<p class="lead">Prozess, Werkzeuge und Kursdaten liegen in SharePoint. ' +
+          'Melde dich mit deinem bbz-Konto an.</p>' +
+          '<div class="knopfreihe"><button class="knopf" data-action="anmelden">' +
           'Mit bbz-Konto anmelden</button></div></div>');
         return;
       }
-      controller.setz(ansichtKurse.render(state.data.kurse));
+
+      var inh = state.data.inhalt, p = state.position;
+      if (!inh) { controller.setz('<p class="lead">Inhalte werden geladen &hellip;</p>'); return; }
+
+      if (p.bereich === 'nachschlagen') {
+        controller.setz(root.ansichten.nachschlagen(inh, p.werk));
+      } else if (p.schrittId) {
+        controller.setz(root.ansichten.einSchritt(inh, nav.kurs(), p.schrittId, p.werkzeugId));
+      } else if (p.kursId) {
+        controller.setz(root.ansichten.einKurs(inh, nav.kurs()));
+      } else {
+        controller.setz(root.ansichten.alleKurse(state.data.kurse));
+      }
+    },
+
+    zu: function (aenderung) {
+      Object.keys(aenderung).forEach(function (k) { state.position[k] = aenderung[k]; });
+      controller.render();
+      if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
     },
 
     laden: function () {
-      state.laden = true;
-      state.fehler = null;
-      controller.render();
-      return graph.kurseLaden()
+      state.laden = true; state.fehler = null; controller.render();
+      return Promise.all([graph.kurseLaden(), root.inhalt.laden(graph)])
         .then(function () { state.laden = false; controller.render(); })
         .catch(controller.scheitern);
     },
@@ -315,37 +385,92 @@
 
     /* Aus einem Klick heraus — nur so laesst der Browser das Popup zu. */
     anmelden: function () {
-      state.laden = true;
-      state.fehler = null;
-      controller.render();
-      return auth.anmelden()
-        .then(controller.laden)
-        .catch(controller.scheitern);
+      state.laden = true; state.fehler = null; controller.render();
+      return auth.anmelden().then(controller.laden).catch(controller.scheitern);
+    },
+
+    erledigt: function (n) {
+      var k = nav.kurs();
+      if (!k) return;
+      return graph.standSetzen(k, +n)
+        .then(function () { controller.render(); })
+        .catch(function (e) { alert('Nicht gespeichert: ' + (e.message || e)); });
     },
 
     start: function () {
-      state.laden = true;
-      controller.render();
+      state.laden = true; controller.render();
       return auth.stilleAnmeldung()
         .then(function (konto) {
           state.laden = false;
-          if (!konto) { controller.render(); return; }   /* Anmelde-Knopf zeigen */
+          if (!konto) { controller.render(); return; }
           return controller.laden();
         })
         .catch(controller.scheitern);
     }
   };
 
+  /* ---------- Ereignisse ---------- */
+  function kopieren(text, knopf) {
+    function fertig() {
+      var alt = knopf.textContent;
+      knopf.textContent = 'kopiert ✓';
+      setTimeout(function () { knopf.textContent = alt; }, 1500);
+    }
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(fertig, fertig);
+    } else { fertig(); }
+  }
+
   if (typeof document !== 'undefined') {
     document.addEventListener('click', function (e) {
       var t = e.target.closest('[data-action]');
       if (!t) return;
-      if (t.dataset.action === 'anmelden') { controller.anmelden(); return; }
-      if (t.dataset.action === 'zuruecksetzen') { auth.zuruecksetzen(); return; }
-      if (t.dataset.action === 'theme') {
+      var a = t.dataset.action;
+
+      if (a === 'anmelden')      { controller.anmelden(); return; }
+      if (a === 'zuruecksetzen') { auth.zuruecksetzen(); return; }
+      if (a === 'theme') {
         var cur = document.documentElement.getAttribute('data-theme');
         if (!cur) cur = window.matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light';
         document.documentElement.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+        return;
+      }
+      if (a === 'bereich') {
+        controller.zu({ bereich: t.dataset.bereich === 'nachschlagen' ? 'nachschlagen' : 'arbeiten' });
+        return;
+      }
+      if (a === 'werk')   { controller.zu({ bereich: 'nachschlagen', werk: t.dataset.werk }); return; }
+      if (a === 'kurse')  { controller.zu({ bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null }); return; }
+      if (a === 'kurs')   { controller.zu({ bereich: 'arbeiten', kursId: t.dataset.kurs, schrittId: null, werkzeugId: null }); return; }
+      if (a === 'schritt'){ controller.zu({ bereich: 'arbeiten', schrittId: t.dataset.schritt, werkzeugId: null }); return; }
+      if (a === 'erledigt') { controller.erledigt(t.dataset.schritt); return; }
+
+      /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
+      if (a === 'werkzeug') {
+        var id = t.dataset.werkzeug;
+        state.position.werkzeugId = (state.position.werkzeugId === id) ? null : id;
+        var karte = document.getElementById('wt-' + id);
+        Array.prototype.forEach.call(document.querySelectorAll('.wtool'), function (x) {
+          x.classList.toggle('auf', x === karte && state.position.werkzeugId === id);
+        });
+        return;
+      }
+      if (a === 'kopieren') {
+        var w = root.inhalt.werkzeug(state.data.inhalt, t.dataset.werkzeug);
+        if (!w) return;
+        var karte2 = t.closest('.wtool');
+        var aktiv = karte2 && karte2.querySelector('.prompt.on');
+        kopieren(aktiv ? aktiv.textContent : (w.claude || w.chatgpt || ''), t);
+        return;
+      }
+      if (a === 'fassung') {
+        var box = t.closest('.wtool');
+        Array.prototype.forEach.call(box.querySelectorAll('.ptab'), function (x) {
+          x.classList.toggle('on', x === t);
+        });
+        Array.prototype.forEach.call(box.querySelectorAll('.prompt'), function (x) {
+          x.classList.toggle('on', x.dataset.box === t.dataset.fassung);
+        });
       }
     });
   }
@@ -355,6 +480,7 @@
   }
 
   /* ---------- Export ---------- */
+  root.nav = nav;
   root.CONFIG = CONFIG;
   root.auth = auth;
   root.graph = graph;
