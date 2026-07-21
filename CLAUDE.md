@@ -29,11 +29,13 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 |---|---|
 | `index.html` | App-Shell + **gesamtes CSS** (`:root`-Tokens oben, aus v0.2 übernommen) |
 | `app.js` | `CONFIG` · `state` · `helpers` · `controller` |
+| `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
+| `ansichten.js` | Kette, alle Kurse, ein Kurs, ein Schritt, Nachschlagen — reine String-Builder |
+| `test/fixture.js` | Testdaten in der Struktur der echten Dateien, ohne echte Prompt-Texte |
 | `test/*.test.js` | `node --test`, ein File je Modul |
 | `service-worker.js` | Network-first für Navigationen, cacht nur die Offline-URL |
 | `manifest.json` | PWA-Manifest, scope `/bbz_Kurswerkstatt/` |
 
-Noch nicht gebaut: `daten-schritte.js` · `daten-werkzeuge.js` · `daten-referenz.js` ·
 `daten-hf.js` · die Ansichten · `auth`/`graph`.
 
 ## Konventionen — strikt einhalten
@@ -110,10 +112,28 @@ bleiben so testbar; der Transport wird im Browser gegen echte Daten geprüft.
 Green-field-Entwurf (Schritt 4) wird nie freigegeben. Maschinenregel für alle:
 gibt es `_final`, gilt sie; sonst die höchste Versionsnummer.
 
+## Stand 2026-07-21
+
+Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
+mit der Kette, Schrittansicht mit Anleitung und inline aufklappbarem Masterprompt, Nachschlagen
+mit Bloom. **75 Tests grün**, keine Konsolenfehler.
+
 ## Offen
 
+**Die Anleitungstexte nennen noch die alten Ordner.** `guide-2a` sagt „speichere in
+`03_content-arbeit/`", der Ablage-Kontrakt sagt `04_greenfield/`. Die Werkzeugtexte stammen aus
+v0.2 und kennen die neue Struktur nicht — in der laufenden App stehen beide Angaben
+untereinander und widersprechen sich. Beim nächsten Durchgang durch `werkzeuge.json` nachziehen;
+die Datei liegt in SharePoint, nicht im Repo.
+
+**Die Nachschlagewerke rendern flach.** Ihr HTML nutzt Komponentenklassen aus v0.2 —
+`principle`, `wugrow`, `bloomcal`, `anchor` — die hier nicht portiert sind. Inhaltlich
+vollständig, optisch ohne Raster.
+
+**Weg B fehlt noch:** Ergebnis entgegennehmen und nach Ablage-Kontrakt ablegen. Dazu der
+Gate-Ablauf mit `_final`-Umbenennung und die Steckbrief-Auswertung.
+
 **Die Navigation ist nicht abgenommen.** Eine Zoom-Achse über fünf Ebenen wurde als Mockup
-gebaut und verworfen (unübersichtlich). Aktuelle Richtung: zwei Bereiche — *Arbeiten*
-(Kurse → ein Kurs → ein Schritt, Werkzeuge inline) und *Nachschlagen* (Didaktisches Modell mit
-Bloom, Prompt-Handwerk, Ablage & Benennung, Governance). Wird an der laufenden App beurteilt,
-nicht an einer Skizze.
+gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →
+ein Schritt, Werkzeuge inline) und *Nachschlagen*. Wird an der laufenden App beurteilt, nicht
+an einer Skizze.
