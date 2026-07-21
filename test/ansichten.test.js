@@ -14,22 +14,24 @@ const AFL = KURSE[1];   // Schritt 1, offen
 test('die Kette zeigt alle 9 Schritte in 5 Phasen', () => {
   const h = ansichten.kette(INHALT, DBS, null);
   assert.strictEqual((h.match(/data-action="schritt"/g) || []).length, 9);
-  assert.strictEqual((h.match(/class="phl"/g) || []).length, 5);
+  assert.strictEqual((h.match(/class="abname"/g) || []).length, 5);
 });
 
 test('die Kette faerbt nach dem echten Stand', () => {
   const h = ansichten.kette(INHALT, DBS, null);
-  assert.ok(/node fertig/.test(h), 'kein erledigter Schritt');
-  assert.ok(/node inArbeit/.test(h), 'kein Schritt in Arbeit');
-  assert.ok(/node offen/.test(h), 'kein offener Schritt');
+  assert.ok(/stn fertig/.test(h), 'kein erledigter Schritt');
+  assert.ok(/stn inArbeit/.test(h), 'kein Schritt in Arbeit');
+  assert.ok(/stn offen/.test(h), 'kein offener Schritt');
 });
 
 test('die Kette markiert den aktiven Schritt', () => {
-  assert.ok(/node inArbeit hier/.test(ansichten.kette(INHALT, DBS, 4)));
+  var hh = ansichten.kette(INHALT, DBS, 4);
+  assert.ok(/stn inArbeit hier/.test(hh), 'aktive Station nicht markiert');
+  assert.ok(/class="zeiger"/.test(hh), 'Zeiger auf die aktive Station fehlt');
 });
 
 test('die Kette markiert die drei Gates', () => {
-  assert.strictEqual((ansichten.kette(INHALT, DBS, null).match(/class="lock"/g) || []).length, 3);
+  assert.strictEqual((ansichten.kette(INHALT, DBS, null).match(/class="pruef"/g) || []).length, 3);
 });
 
 /* ---------- Alle Kurse ---------- */
@@ -79,27 +81,27 @@ test('ein unbekannter Kurs erzeugt eine Meldung statt einer Ausnahme', () => {
 
 test('der Kopf nennt Nummer und Namen', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null);
-  assert.ok(/SCHRITT 4 \/ 9/.test(h));
+  assert.ok(/Station 4 von 9/.test(h));
   assert.ok(/Green-field W-Content/.test(h));
 });
 
 test('die Schrittansicht traegt die Kette mit', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null);
-  assert.strictEqual((h.match(/class="phl"/g) || []).length, 5);
+  assert.strictEqual((h.match(/class="abname"/g) || []).length, 5);
 });
 
 test('Woher und Wohin sind da und verlinkt', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null);
   assert.ok(/Kommt herein/.test(h));
   assert.ok(/Geht weiter/.test(h));
-  assert.ok(/aus Schritt 3/.test(h));
-  assert.ok(/an Schritt 5/.test(h));
+  assert.ok(/Station 3 ansehen/.test(h));
+  assert.ok(/Station 5 ansehen/.test(h));
 });
 
 test('Schritt 1 hat keinen Vorgaenger und sagt das', () => {
   const h = ansichten.einSchritt(INHALT, AFL, 1, null);
-  assert.ok(/von aussen/.test(h));
-  assert.ok(!/aus Schritt 0/.test(h));
+  assert.ok(/ausserhalb der Linie/.test(h));
+  assert.ok(!/Station 0/.test(h));
 });
 
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {
@@ -128,7 +130,7 @@ test('das aufgeklappte Werkzeug ist markiert', () => {
 
 test('die Ablage nach Kontrakt wird angezeigt', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null);
-  assert.ok(/04_greenfield\/DBS-001_greenfield_v\{N\}\.md/.test(h));
+  assert.ok(/04_greenfield\/<b>DBS-001_greenfield_v\{N\}\.md<\/b>/.test(h));
 });
 
 test('das Uebergabekriterium steht da', () => {
@@ -200,20 +202,19 @@ test('ein unbekanntes Werk faellt auf das erste zurueck', () => {
 
 test('die Kette sagt im Klartext, wo man ist', () => {
   const h = ansichten.kette(INHALT, DBS, 4);
-  assert.ok(/Du bist hier/.test(h));
-  assert.ok(/Schritt 4 von 9/.test(h));
+  assert.ok(/class="zeiger"/.test(h), 'Zeiger fehlt');
+  assert.ok(/abschnitt an/.test(h), 'aktive Phase nicht markiert');
   assert.ok(/Inhalt entwerfen/.test(h), 'Phase fehlt');
 });
 
 test('ohne aktiven Schritt gibt es keine Standort-Marke', () => {
-  assert.ok(!/Du bist hier/.test(ansichten.kette(INHALT, DBS, null)));
+  assert.ok(!/class="zeiger"/.test(ansichten.kette(INHALT, DBS, null)));
 });
 
 test('die Phase des aktiven Schritts wird hervorgehoben', () => {
   const h = ansichten.kette(INHALT, DBS, 4);
-  assert.ok(/class="kette fokus"/.test(h));
-  assert.ok(/class="phase an"/.test(h));
-  assert.strictEqual((h.match(/class="phase an"/g) || []).length, 1, 'genau eine Phase aktiv');
+  assert.ok(/class="linie fokus"/.test(h));
+  assert.strictEqual((h.match(/abschnitt an"/g) || []).length, 1, 'genau eine Phase aktiv');
 });
 
 test('die Dateiliste zeigt Ladezustand, Leere und Inhalt unterschiedlich', () => {
@@ -249,6 +250,6 @@ test('der Vorgaenger-Ordner ist aus Kommt-herein heraus zu oeffnen', () => {
 
 test('ohne Basis-URL bleiben die Pfade lesbar, aber ohne Link', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
-  assert.ok(/04_greenfield\/DBS-001_greenfield_v\{N\}\.md/.test(h));
+  assert.ok(/04_greenfield\/<b>DBS-001_greenfield_v\{N\}\.md<\/b>/.test(h));
   assert.ok(!/href="undefined/.test(h));
 });

@@ -7,46 +7,42 @@
   var G = function () { return root.graph; };
   var I = function () { return root.inhalt; };
 
-  /* ---------- Die Kette: 9 Schritte in 5 Phasen ---------- */
+  /* ---------- Die Linie: eine Fertigungsstrasse mit neun Stationen ----------
+     Kein Kachelraster. Eine durchgehende Bahn, bis zur aktuellen Station gefuellt.
+     Die Phasen stehen als Abschnitte darueber. */
   function kette(inh, kurs, aktiv) {
     var phasen = (inh.schritte && inh.schritte.phasen) || [];
     var aktivePhase = aktiv ? I().phaseVon(inh, aktiv) : null;
-    var h = '';
 
-    if (aktiv) {
-      var sA = I().schritt(inh, aktiv);
-      h += '<div class="standort">' +
-             '<span class="marke">Du bist hier</span>' +
-             '<span class="wo"><b>Schritt ' + esc(aktiv) + ' von 9</b>' +
-             (aktivePhase ? ' &middot; ' + esc(aktivePhase.nm) : '') +
-             (sA ? ' &middot; ' + esc(sA.nm) : '') + '</span></div>';
-    }
-
-    h += '<div class="kette' + (aktiv ? ' fokus' : '') + '">';
-    phasen.forEach(function (p) {
+    var h = '<div class="linie' + (aktiv ? ' fokus' : '') + '">';
+    phasen.forEach(function (p, pi) {
       var phAktiv = aktivePhase && aktivePhase.nm === p.nm;
-      h += '<div class="phase' + (phAktiv ? ' an' : '') + '">' +
-           '<span class="phl">' + esc(p.nm) + '</span><div class="pnodes">';
-      p.ids.forEach(function (id) {
+      h += '<section class="abschnitt' + (phAktiv ? ' an' : '') + '"' +
+           ' style="--n:' + p.ids.length + '">' +
+           '<h4 class="abname">' + esc(p.nm) + '</h4><div class="bahn">';
+      p.ids.forEach(function (id, si) {
         var s = I().schritt(inh, id);
         if (!s) return;
         var st = kurs ? G().standVon(kurs, +id) : 'offen';
-        var cls = 'node ' + st + (String(aktiv) === String(id) ? ' hier' : '');
-        h += '<button class="' + cls + '" data-action="schritt" data-schritt="' + esc(id) + '"' +
-             ' title="' + esc(s.nm) + '">' +
-             (s.gate ? '<span class="lock" title="' + esc(s.gate) + '">&#9873;</span>' : '') +
-             '<span class="nn">' + (st === 'fertig' ? '&#10003;' : esc(id)) + '</span>' +
-             '<span class="nl">' + esc(kurz(s.nm)) + '</span></button>';
+        var hier = String(aktiv) === String(id);
+        var letzte = (pi === phasen.length - 1) && (si === p.ids.length - 1);
+        h += '<button class="stn ' + st + (hier ? ' hier' : '') + (letzte ? ' ende' : '') + '"' +
+             ' data-action="schritt" data-schritt="' + esc(id) + '" title="' + esc(s.nm) + '">' +
+             (s.gate ? '<span class="pruef" title="' + esc(s.gate) + '">&#9873;</span>' : '') +
+             '<span class="punkt">' + (st === 'fertig' ? '&#10003;' : esc(id)) + '</span>' +
+             '<span class="stname">' + esc(kurz(s.nm)) + '</span>' +
+             (hier ? '<span class="zeiger" aria-hidden="true"></span>' : '') +
+             '</button>';
       });
-      h += '</div></div>';
+      h += '</div></section>';
     });
     return h + '</div>';
   }
 
   /* ---------- Dateien eines Schritt-Ordners ---------- */
   function dateiliste(dateien, ordnerUrl, ordner) {
-    var kopf = '<div class="dateien">' +
-      '<div class="dkopf"><span class="h">Was im Ordner liegt</span>' +
+    var kopf = '<div class="kblock dateien">' +
+      '<div class="dkopf"><h3>Im Ordner</h3>' +
       (ordnerUrl ? '<a class="oeffnen" href="' + esc(ordnerUrl) + '" target="_blank" ' +
                    'rel="noopener">' + esc(ordner) + ' in SharePoint &#8599;</a>' : '') +
       '</div>';
@@ -163,7 +159,7 @@
         '<h2>' + esc(kurs.kurstitel) + '</h2>' +
         '<p class="lead">' + esc(kurs.kompetenzfeld) + ' &middot; ' +
         '<b>' + G().fortschritt(kurs) + ' von 9 Schritten erledigt</b></p></div>' +
-      '<div class="card">' + kette(inh, kurs, null) + legende() + '</div>' +
+      '<div class="orientierung">' + kette(inh, kurs, null) + legende() + '</div>' +
       (naechster ? '<div class="card naechst">' +
         '<span class="eyebrow">Als N&auml;chstes dran</span>' +
         '<h3>Schritt ' + esc(naechster.id) + ' &middot; ' + esc(naechster.nm) + '</h3>' +
@@ -195,110 +191,111 @@
     var ablage = I().ablageVon(inh, schrittId, kurs ? kurs.kursId : '<Kurs>');
     var typMeta = (inh.werkzeuge && inh.werkzeuge.typMeta) || {};
 
-    var h = '<div class="card kettekarte">' +
-      (kurs ? '<div class="eyebrow" style="margin-bottom:9px">' + esc(kurs.kursId) +
-              ' &middot; ' + esc(kurs.kurstitel) + '</div>' : '') +
+    var zielUrl = (ablage && ablageDaten.basisUrl)
+      ? ablageDaten.basisUrl + '/' + encodeURIComponent(ablage.ordner) : null;
+
+    /* --- Orientierung: die Linie, volle Breite --- */
+    var h = '<div class="orientierung">' +
+      (kurs ? '<div class="werkstueck">' + esc(kurs.kursId) +
+              '<span>' + esc(kurs.kurstitel) + '</span></div>' : '') +
       kette(inh, kurs, schrittId) + '</div>';
 
-    h += '<div class="card">';
-    h += '<div class="shead"><span class="snum">SCHRITT ' + esc(s.id) + ' / 9</span>' +
-         '<h2>' + esc(s.nm) + '</h2>' +
-         (am ? '<span class="badge ' + esc(s.auto) + '">' + esc(am.label) + '</span>' : '') +
-         (s.tool ? '<span class="badge tool">' + esc(s.tool) + '</span>' : '') +
-         (s.gate ? '<span class="gatetag">&#9873; ' + esc(s.gate) + '</span>' : '') + '</div>';
+    h += '<div class="werkbank">';
 
-    h += '<p class="lead">' + s.zweck + '</p>';
+    /* --- ARBEIT: was tue ich, womit --- */
+    h += '<div class="arbeit">';
+    h += '<header class="sk"><span class="stelle">Station ' + esc(s.id) + ' von 9</span>' +
+         '<h1>' + esc(s.nm) + '</h1>' +
+         '<div class="marken">' +
+           (am ? '<span class="marke ' + esc(s.auto) + '">' + esc(am.label) + '</span>' : '') +
+           (s.tool ? '<span class="marke tool">' + esc(s.tool) + '</span>' : '') +
+           (s.gate ? '<span class="marke pruefstelle">&#9873; ' + esc(s.gate) + '</span>' : '') +
+         '</div></header>';
 
-    /* Woher — Wohin. Der Vorgaenger-Ordner ist direkt in SharePoint zu oeffnen. */
-    h += '<div class="chain">' +
-      '<div class="ch her"><div class="chl">&#9666; Kommt herein</div><p>' +
-        (s.her || []).map(function (x) {
-          if (!x.von) return esc(x.was) + ' <span class="dim">(von aussen)</span>';
-          var vorAb = I().ablageVon(inh, x.von, kurs ? kurs.kursId : '<Kurs>');
-          var url = ablageDaten.basisUrl && vorAb
-            ? ablageDaten.basisUrl + '/' + encodeURIComponent(vorAb.ordner) : null;
-          return esc(x.was) +
-            ' <a data-action="schritt" data-schritt="' + x.von + '">aus Schritt ' + x.von + ' &rsaquo;</a>' +
-            (url ? ' <a class="oeffnen" href="' + esc(url) + '" target="_blank" rel="noopener">' +
-                   esc(vorAb.ordner) + ' &#8599;</a>' : '');
-        }).join('<br>') + '</p></div>' +
-      '<div class="ch hin"><div class="chl">Geht weiter &#9656;</div><p>' +
-        (s.hin || []).map(function (x) {
-          return esc(x.was) + (x.an ? ' <a data-action="schritt" data-schritt="' + x.an +
-                 '">an Schritt ' + x.an + ' &rsaquo;</a>' : '');
-        }).join('<br>') + '</p></div></div>';
+    h += '<p class="zweck">' + s.zweck + '</p>';
 
-    /* Wege */
-    if (s.wege && s.wege.length) {
-      h += '<div class="wege">' + s.wege.map(function (w) {
-        var t = { B: 'Im Chat', C: 'Mit Claude Code', hand: 'Von Hand',
-                  kurswerkstatt: 'Macht die Kurswerkstatt' }[w] || w;
-        return '<span class="weg ' + esc(w) + '">' + esc(t) + '</span>';
-      }).join('') + '</div>';
+    var schritte = anleitung ? (anleitung.steps || []) : (s.taet || []);
+    h += '<h2 class="tun">So gehst du vor</h2>';
+    h += '<ol class="rezept">' + schritte.map(function (x) {
+      return '<li><span>' + x + '</span></li>';
+    }).join('') + '</ol>';
+
+    if (anleitung && (anleitung.dos || []).length) {
+      h += '<div class="dd">' +
+        '<div class="ddc do"><h5>Do</h5><ul>' +
+          anleitung.dos.map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
+        '</ul></div>' +
+        '<div class="ddc dont"><h5>Don\'t</h5><ul>' +
+          (anleitung.donts || []).map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
+        '</ul></div></div>';
     }
 
-    /* Anleitung — immer ausgeklappt, das ist das Kochrezept */
-    if (anleitung) {
-      h += abschnitt('So gehst du vor');
-      h += '<ol class="rezept">' + (anleitung.steps || []).map(function (x) {
-        return '<li><span>' + x + '</span></li>';
-      }).join('') + '</ol>';
-      if ((anleitung.dos || []).length) {
-        h += '<div class="dd" style="margin-top:16px">' +
-          '<div class="ddc do"><h5>Do</h5><ul>' +
-            anleitung.dos.map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
-          '</ul></div>' +
-          '<div class="ddc dont"><h5>Don\'t</h5><ul>' +
-            (anleitung.donts || []).map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
-          '</ul></div></div>';
-      }
-    } else {
-      h += abschnitt('So gehst du vor');
-      h += '<ol class="rezept">' + (s.taet || []).map(function (x) {
-        return '<li><span>' + x + '</span></li>';
-      }).join('') + '</ol>';
-    }
-
-    /* Werkzeuge — inline, kein Seitenwechsel */
     if (hilfsmittel.length) {
-      h += abschnitt('Werkzeuge &mdash; hier aufklappen und arbeiten');
+      h += '<h2 class="tun">Werkzeuge</h2>';
       h += '<div class="wtools">' + hilfsmittel.map(function (w) {
         return werkzeug(w, typMeta, offenesWerkzeug === w.id);
       }).join('') + '</div>';
     }
 
-    /* Ergebnis und Ablage */
-    h += abschnitt('Das Ergebnis');
-    h += '<div class="liefer"><span class="h">Lieferobjekt</span>' + s.lief + '</div>';
-    if (ablage) {
-      var zielUrl = ablageDaten.basisUrl
-        ? ablageDaten.basisUrl + '/' + encodeURIComponent(ablage.ordner) : null;
-      h += '<div class="ablage"><span class="h">Wohin es kommt</span>' +
-           (zielUrl
-             ? '<a href="' + esc(zielUrl) + '" target="_blank" rel="noopener"><code>' +
-               esc(ablage.ordner) + '/' + esc(ablage.datei) + '</code> &#8599;</a>'
-             : '<code>' + esc(ablage.ordner) + '/' + esc(ablage.datei) + '</code>') +
-           '<p class="dim">Legt die Kurswerkstatt beim Ablegen selbst an &mdash; ' +
-           'du tippst keinen Pfad und keinen Dateinamen.</p></div>';
-      h += dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
-    }
     if (anleitung && anleitung.dod) {
-      h += '<div class="liefer dod"><span class="h">Fertig, wenn</span>' + esc(anleitung.dod) + '</div>';
+      h += '<div class="dod"><span class="h">Fertig, wenn</span>' + esc(anleitung.dod) + '</div>';
     }
 
-    /* Fuss */
     h += '<div class="fuss">' +
       (kurs ? '<button class="haken' + (fertig ? ' an' : '') + '" data-action="erledigt" ' +
               'data-schritt="' + esc(s.id) + '"><span class="box">&#10003;</span>' +
               (fertig ? 'Schritt erledigt' : 'Als erledigt markieren') + '</button>' : '') +
       (+s.id < 9 ? '<button class="weiter" data-action="schritt" data-schritt="' + (+s.id + 1) + '"' +
-                   (fertig ? '' : ' disabled') + '>Weiter zu Schritt ' + (+s.id + 1) + ' &rsaquo;</button>' : '') +
+                   (fertig ? '' : ' disabled') + '>Weiter zu Station ' + (+s.id + 1) + ' &rsaquo;</button>' : '') +
       '<p class="wirkung">' + (fertig
         ? 'Der Stand steht in KWKurse &mdash; alle sehen diesen Kurs jetzt weiter vorn.'
         : '&bdquo;Weiter&ldquo; wird frei, sobald der Schritt erledigt ist. So bleibt die Reihenfolge gewahrt.') +
       '</p></div>';
+    h += '</div>';
 
-    return h + '</div>';
+    /* --- KONTEXT: schmale Spalte, keine Karten --- */
+    h += '<aside class="kontext">';
+
+    h += '<div class="kblock"><h3>Kommt herein</h3>' +
+      (s.her || []).map(function (x) {
+        if (!x.von) return '<p>' + esc(x.was) + '<em>von ausserhalb der Linie</em></p>';
+        var vorAb = I().ablageVon(inh, x.von, kurs ? kurs.kursId : '<Kurs>');
+        var url = ablageDaten.basisUrl && vorAb
+          ? ablageDaten.basisUrl + '/' + encodeURIComponent(vorAb.ordner) : null;
+        return '<p>' + esc(x.was) +
+          '<a data-action="schritt" data-schritt="' + x.von + '">Station ' + x.von + ' ansehen</a>' +
+          (url ? '<a class="oeffnen" href="' + esc(url) + '" target="_blank" rel="noopener">' +
+                 esc(vorAb.ordner) + ' &#8599;</a>' : '') + '</p>';
+      }).join('') + '</div>';
+
+    h += '<div class="kblock"><h3>Geht weiter</h3>' +
+      (s.hin || []).map(function (x) {
+        return '<p>' + esc(x.was) + (x.an ? '<a data-action="schritt" data-schritt="' + x.an +
+               '">Station ' + x.an + ' ansehen</a>' : '') + '</p>';
+      }).join('') + '</div>';
+
+    if (s.wege && s.wege.length) {
+      h += '<div class="kblock"><h3>Weg</h3><div class="wege">' + s.wege.map(function (w) {
+        var t = { B: 'Im Chat', C: 'Mit Claude Code', hand: 'Von Hand',
+                  kurswerkstatt: 'Macht die Kurswerkstatt' }[w] || w;
+        return '<span class="weg ' + esc(w) + '">' + esc(t) + '</span>';
+      }).join('') + '</div></div>';
+    }
+
+    h += '<div class="kblock"><h3>Was entsteht</h3><p>' + s.lief + '</p></div>';
+
+    if (ablage) {
+      h += '<div class="kblock"><h3>Wohin es kommt</h3>' +
+        (zielUrl
+          ? '<a class="pfad" href="' + esc(zielUrl) + '" target="_blank" rel="noopener">' +
+            esc(ablage.ordner) + '/<b>' + esc(ablage.datei) + '</b> &#8599;</a>'
+          : '<span class="pfad">' + esc(ablage.ordner) + '/<b>' + esc(ablage.datei) + '</b></span>') +
+        '<em>Legt die Kurswerkstatt an &mdash; du tippst keinen Pfad.</em></div>';
+      h += dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
+    }
+
+    h += '</aside></div>';
+    return h;
   }
 
   /* ---------- Ansicht: Nachschlagen ---------- */
