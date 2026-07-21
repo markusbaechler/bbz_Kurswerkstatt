@@ -1,0 +1,10 @@
+{
+  "name": "bbz Kurswerkstatt",
+  "short_name": "Kurswerkstatt",
+  "start_url": "/bbz_Kurswerkstatt/",
+  "scope": "/bbz_Kurswerkstatt/",
+  "display": "standalone",
+  "background_color": "#eef1f3",
+  "theme_color": "#0d6f7a",
+  "icons": []
+}
