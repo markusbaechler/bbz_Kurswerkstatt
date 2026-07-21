@@ -202,6 +202,21 @@ test('ein unbekanntes Werk faellt auf das erste zurueck', () => {
   assert.ok(/Didaktisches Modell/.test(ansichten.nachschlagen(INHALT, 'gibtsnicht')));
 });
 
+test('Nachschlagen traegt dasselbe Schriftfeld wie die Laufkarte', () => {
+  const h = ansichten.nachschlagen(INHALT, 'didaktik');
+  assert.ok(/class="schriftfeld"/.test(h), 'kein Schriftfeld');
+  assert.ok(/Nachschlagewerk/.test(h), 'Werk nicht benannt');
+  assert.ok(!/class="eyebrow"/.test(h), 'alte Kopfvorlage noch da');
+});
+
+test('jedes Kapitel ist ankerbar und steht im Verzeichnis', () => {
+  const h = ansichten.nachschlagen(INHALT, 'didaktik');
+  const anz = INHALT.referenz.didaktik.abschnitte.length;
+  assert.strictEqual((h.match(/id="kap-\d+"/g) || []).length, anz, 'Anker fehlen');
+  assert.strictEqual((h.match(/href="#kap-\d+"/g) || []).length, anz, 'Verzeichnis unvollstaendig');
+  assert.ok(/class="kapliste"/.test(h), 'kein Kapitelverzeichnis');
+});
+
 /* ---------- Standort und Ordner-Verknuepfung ---------- */
 
 test('die Kette sagt im Klartext, wo man ist', () => {

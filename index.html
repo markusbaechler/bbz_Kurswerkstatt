@@ -396,17 +396,148 @@
            padding:13px 17px;margin-bottom:18px;font-size:14.5px;color:var(--ink)}
   .hinweis b{color:var(--g)}
 
-  /* ===== Nachschlagen ===== */
-  .reiter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
-  .reiter button{border:1px solid var(--line);background:transparent;border-radius:var(--radius-s);
-                 padding:8px 16px;font-size:14px;color:var(--ink-soft)}
-  .reiter button.on{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
-  .kapitel{margin-bottom:16px}
-  .kapitel h3{font-size:19px;margin-bottom:14px}
-  .kapitel .inhalt{font-size:15px;color:var(--ink-soft);line-height:1.6}
-  .kapitel .inhalt table{width:100%;border-collapse:collapse;font-size:14px;margin:10px 0}
-  .kapitel .inhalt th,.kapitel .inhalt td{padding:9px 11px;border-bottom:1px solid var(--line);
-                                          text-align:left}
+  /* =====================================================================
+     NACHSCHLAGEN — ein Regelwerk, kein Kachelbrett.
+     Die Bausteine stammen aus v0.2 (principle, wugrow, bloomcal, anchor,
+     govgrid, flowsteps ...). Sie bekommen hier Regeln statt Kaesten,
+     dieselbe Sprache wie die Laufkarte.
+     ===================================================================== */
+  .werkkopf{border-top:2px solid var(--ink);margin-bottom:34px}
+  .werkwahl{display:flex;gap:0;flex-wrap:wrap;border-bottom:1px solid var(--line)}
+  .werkwahl button{background:transparent;border:0;border-bottom:2px solid transparent;
+                   margin-bottom:-1px;padding:12px 20px 13px;font-family:var(--font-eng);
+                   font-size:15px;letter-spacing:.02em;color:var(--muted);font-weight:600}
+  .werkwahl button:hover{color:var(--ink)}
+  .werkwahl button.on{color:var(--accent);border-bottom-color:var(--accent)}
+
+  .werkbank.werk{grid-template-columns:minmax(0,1fr) 240px}
+  @media(max-width:1000px){.werkbank.werk{grid-template-columns:1fr}}
+  .werktext{max-width:70ch}
+  .kapitel{padding-bottom:38px;margin-bottom:38px;border-bottom:1px solid var(--line)}
+  .kapitel:last-child{border-bottom:0;margin-bottom:0}
+  .kapitel h2{font-size:25px;letter-spacing:-.02em;margin-bottom:20px;
+              display:flex;align-items:baseline;gap:14px}
+  .knr{font-family:var(--font-mono);font-size:14px;font-weight:500;color:var(--accent);
+       flex:none}
+  .kapitel .inhalt{font-size:16px;line-height:1.65;color:var(--ink-soft)}
+  .kapitel .inhalt > p{margin-bottom:14px}
+  .kapitel .inhalt b{color:var(--ink)}
+  .kapliste{margin:0;padding:0;list-style:none;counter-reset:kk;
+            display:flex;flex-direction:column;gap:10px}
+  .kapliste li{counter-increment:kk;display:flex;gap:10px;font-size:13.5px;line-height:1.4}
+  .kapliste li::before{content:counter(kk);font-family:var(--font-mono);font-size:11px;
+                       color:var(--accent);flex:none;padding-top:2px}
+  .kapliste a{color:var(--ink-soft);text-decoration:none;margin-top:0;font-size:13.5px}
+  .kapliste a:hover{color:var(--accent)}
+
+  /* --- Test – Learn – Test --- */
+  .principle{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:6px 0 4px}
+  .principle .step{flex:1;min-width:150px;padding:16px 20px 18px;border-left:2px solid var(--accent)}
+  .principle .step .n{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.2em;
+                      color:var(--accent);font-weight:600}
+  .principle .step h4{font-size:17px;margin:7px 0 6px}
+  .principle .step p{font-size:14px;color:var(--muted);line-height:1.5}
+  .principle .arrow{align-self:center;color:var(--line);font-size:20px;padding:0 4px}
+
+  /* --- W-U-G --- */
+  .wugrow{display:grid;grid-template-columns:repeat(3,1fr);gap:0;margin:6px 0}
+  @media(max-width:760px){.wugrow{grid-template-columns:1fr}}
+  .wugcard{padding:18px 22px;border-left:1px solid var(--line)}
+  .wugcard:first-child{border-left:0;padding-left:0}
+  .wugcard h4{font-size:18px;margin:10px 0 4px}
+  .wugcard .sub{display:block;font-family:var(--font-eng);font-size:12.5px;
+                letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:9px}
+  .wugcard p{font-size:14px;line-height:1.55;color:var(--ink-soft)}
+  .wug{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;
+       font-family:var(--font-mono);font-weight:600;font-size:14px;color:#fff}
+  .wug.W{background:var(--w)} .wug.U{background:var(--u)} .wug.G{background:var(--g)}
+
+  /* --- Praesenzdesign 30/50/20 --- */
+  .ratio{display:flex;height:34px;margin:8px 0 4px;font-family:var(--font-eng);
+         font-size:12.5px;font-weight:600;color:#fff;letter-spacing:.04em}
+  .ratio > div{display:grid;place-items:center;padding:0 8px;text-align:center}
+
+  /* --- Bloom-Kalibrierung: eine Leiter, keine Kaesten --- */
+  .bloomcal{display:flex;flex-direction:column;margin:4px 0}
+  .bloomcal .r{display:flex;align-items:baseline;gap:16px;padding:11px 0;
+               border-bottom:1px solid var(--line);font-size:15px}
+  .bloomcal .r:last-child{border-bottom:0}
+  .bloomcal .lvl{font-family:var(--font-mono);font-size:11.5px;letter-spacing:.1em;
+                 text-transform:uppercase;color:var(--accent);min-width:64px;flex:none}
+
+  /* --- Bloom-Anker: Zitate --- */
+  .anchor{border-left:2px solid var(--line);padding:4px 0 4px 18px;margin-bottom:14px;
+          font-size:15px;line-height:1.55}
+  .anchor b{display:block;font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;
+            text-transform:uppercase;color:var(--muted);font-weight:500;margin-bottom:5px}
+
+  /* --- Raster fuer Merksaetze --- */
+  .govgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:0;margin:4px 0}
+  @media(max-width:760px){.govgrid{grid-template-columns:1fr}}
+  .govcard{padding:16px 22px 18px;border-left:1px solid var(--line);
+           border-bottom:1px solid var(--line)}
+  .govcard h5{font-family:var(--font-eng);font-size:14px;letter-spacing:.02em;
+              color:var(--ink);margin:0 0 9px}
+  .govcard ul{margin:0;padding-left:16px;display:flex;flex-direction:column;gap:7px}
+  .govcard li{font-size:14px;line-height:1.5;color:var(--ink-soft)}
+
+  /* --- Ablauf in Schritten --- */
+  .flowsteps{display:flex;align-items:stretch;flex-wrap:wrap;gap:0;margin:6px 0}
+  .fstep{flex:1;min-width:150px;padding:14px 18px;border-top:2px solid var(--accent)}
+  .fstep .n{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.16em;
+            color:var(--accent);font-weight:600}
+  .fstep h5{font-size:15px;margin:7px 0 5px}
+  .fstep p{font-size:13.5px;color:var(--muted);line-height:1.5}
+  .farr{align-self:center;color:var(--line);font-size:18px;padding:0 2px}
+
+  /* --- Do / Dont im Regelwerk --- */
+  .ddgrid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin:6px 0}
+  @media(max-width:760px){.ddgrid{grid-template-columns:1fr}}
+  .ddcol{border-top:2px solid var(--line);padding-top:12px}
+  .ddcol.do{border-top-color:var(--g)} .ddcol.dont{border-top-color:var(--rot)}
+  .ddcol h5{font-family:var(--font-mono);font-size:11px;letter-spacing:.16em;
+            text-transform:uppercase;margin:0 0 10px}
+  .ddcol.do h5{color:var(--g)} .ddcol.dont h5{color:var(--rot)}
+  .ddcol ul{margin:0;padding-left:17px;display:flex;flex-direction:column;gap:8px}
+  .ddcol li{font-size:14px;line-height:1.5}
+
+  /* --- Hinweise, Warnungen --- */
+  .note{border-left:2px solid var(--accent);background:var(--surface-3);
+        padding:14px 18px;margin:6px 0 12px;font-size:14.5px;line-height:1.55}
+  .note .h{display:block;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:6px}
+  .disclaimer{border-left:2px solid var(--u);background:var(--u-t);padding:15px 19px;
+              margin:14px 0;font-size:14.5px;line-height:1.55;color:var(--ink)}
+  .disclaimer .h{display:block;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.14em;
+                 text-transform:uppercase;color:var(--u);font-weight:600;margin-bottom:6px}
+
+  /* --- Listen, Tabellen, Kleinteile --- */
+  ol.gsteps{margin:0;padding-left:0;list-style:none;counter-reset:g;
+            display:flex;flex-direction:column;gap:13px}
+  ol.gsteps li{counter-increment:g;display:flex;gap:14px;font-size:15px;line-height:1.6}
+  ol.gsteps li::before{content:counter(g);flex:none;width:24px;height:24px;border-radius:50%;
+        background:var(--accent-tint);color:var(--accent);font-family:var(--font-mono);
+        font-size:12px;font-weight:600;display:grid;place-items:center;margin-top:1px}
+  .kapitel .inhalt table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
+  .kapitel .inhalt th{text-align:left;font-family:var(--font-mono);font-size:10.5px;
+                      letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
+                      font-weight:500;padding:0 12px 9px 0;border-bottom:1px solid var(--line)}
+  .kapitel .inhalt td{padding:11px 12px 11px 0;border-bottom:1px solid var(--line);
+                      vertical-align:top}
+  .kapitel .inhalt td.center{text-align:center}
+  .grid{display:grid;gap:22px} .grid.g2{grid-template-columns:1fr 1fr}
+  @media(max-width:760px){.grid.g2{grid-template-columns:1fr}}
+  .th{font-weight:600;color:var(--ink)}
+  .tick{color:var(--g);font-weight:600} .cross{color:var(--rot);font-weight:600}
+  .proto-flag{font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;
+              color:var(--muted);background:var(--surface-2);border-radius:3px;padding:1px 6px}
+  .toolbadge{font-family:var(--font-eng);font-size:12px;letter-spacing:.04em;font-weight:600;
+             border:1px solid var(--line);border-radius:3px;padding:2px 8px;color:var(--ink-soft)}
+  .toolbadge.claude{border-color:var(--accent);color:var(--accent)}
+  .toolbadge.chatgpt{border-color:var(--g);color:var(--g)}
+  .toolbadge.beide{border-color:var(--muted);color:var(--muted)}
+  /* Verweise aus v0.2 zeigen hier ins Leere — nicht als Knopf ausgeben. */
+  .kapitel .inhalt .linklike{all:unset;color:var(--ink-soft);font-style:italic;cursor:default}
 
   .naechst{border-left:3px solid var(--u);margin-top:18px}
   .naechst h3{font-size:20px;margin:8px 0 9px}

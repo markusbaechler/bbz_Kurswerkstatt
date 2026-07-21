@@ -403,16 +403,33 @@
     var aktiv = werke.indexOf(werkId) >= 0 ? werkId : werke[0];
     var w = r[aktiv];
 
-    var h = '<div class="kopf"><span class="eyebrow">Nachschlagen</span>' +
-      '<h2>' + esc(w.titel) + '</h2></div>';
-    h += '<div class="reiter">' + werke.map(function (k) {
-      return '<button class="' + (k === aktiv ? 'on' : '') + '" data-action="werk" ' +
-             'data-werk="' + k + '">' + esc(r[k].titel) + '</button>';
+    /* Kopf im Stil des Schriftfelds — dieselbe Sprache wie die Laufkarte. */
+    var h = '<div class="werkkopf"><div class="schriftfeld">' +
+      '<div class="feld"><span class="fk">Nachschlagewerk</span>' +
+        '<span class="fw kennung">' + esc(aktiv) + '</span></div>' +
+      '<div class="feld weit"><span class="fk">Titel</span>' +
+        '<span class="fw">' + esc(w.titel) + '</span></div>' +
+      '<div class="feld"><span class="fk">Kapitel</span>' +
+        '<span class="fw zahl">' + w.abschnitte.length + '</span></div>' +
+      '</div>' +
+      '<nav class="werkwahl">' + werke.map(function (k) {
+        return '<button class="' + (k === aktiv ? 'on' : '') + '" data-action="werk" ' +
+               'data-werk="' + k + '">' + esc(r[k].titel) + '</button>';
+      }).join('') + '</nav></div>';
+
+    /* Inhaltsverzeichnis links, Text rechts — ein Nachschlagewerk liest man,
+       man scrollt es nicht. */
+    h += '<div class="werkbank werk">';
+    h += '<div class="werktext">' + w.abschnitte.map(function (a, i) {
+      return '<section class="kapitel" id="kap-' + i + '">' +
+             '<h2><span class="knr">' + (i + 1) + '</span>' + a.h + '</h2>' +
+             '<div class="inhalt">' + a.html + '</div></section>';
     }).join('') + '</div>';
-    h += w.abschnitte.map(function (a) {
-      return '<div class="card kapitel"><h3>' + a.h + '</h3><div class="inhalt">' + a.html + '</div></div>';
-    }).join('');
-    return h;
+    h += '<aside class="kontext"><div class="kblock"><h3>Kapitel</h3>' +
+      '<ol class="kapliste">' + w.abschnitte.map(function (a, i) {
+        return '<li><a href="#kap-' + i + '">' + a.h + '</a></li>';
+      }).join('') + '</ol></div></aside>';
+    return h + '</div>';
   }
 
   /* ---------- Hilfen ---------- */
