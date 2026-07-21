@@ -283,7 +283,11 @@
     ablegen: function (kursId, ordner, datei, text) {
       return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
         var did = r[0], ord = r[1];
-        if (!ord) throw new Error('Kursordner für ' + kursId + ' nicht gefunden');
+        if (!ord) {
+          throw new Error('In der Bibliothek Kursproduktion gibt es keinen Ordner für ' +
+            kursId + '. Die Kurswerkstatt kann ihn noch nicht selbst anlegen — leg ihn ' +
+            'als ' + kursId + '_<kurzname> von Hand an. Dein Text bleibt im Feld stehen.');
+        }
         return auth.token().then(function (t) {
           return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
                 '/items/' + ord.id + ':/' + encodeURI(ordner + '/' + datei) + ':/content', {
@@ -419,14 +423,31 @@
         var schl = k && ab ? k.kursId + '/' + ab.ordner : null;
         controller.setz(meldung + root.ansichten.einSchritt(inh, k, p.schrittId, p.werkzeugId, {
           basisUrl: ordn ? ordn.webUrl : null,
-          dateien: schl ? state.data.dateien[schl] : null
+          dateien: schl ? state.data.dateien[schl] : null,
+          /* undefined = noch nicht nachgesehen, null = nachgesehen und nicht da */
+          ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
       } else if (p.kursId) {
-        controller.setz(root.ansichten.einKurs(inh, nav.kurs()));
+        var kk = nav.kurs();
+        controller.setz(root.ansichten.einKurs(inh, kk, {
+          ordnerFehlt: kk ? state.data.ordner[kk.kursId] === null : false
+        }));
+        if (kk) controller.ordnerPruefen(kk.kursId);
       } else {
         controller.setz(root.ansichten.alleKurse(state.data.kurse));
       }
+    },
+
+    /* Nur nachsehen, ob der Kursordner ueberhaupt existiert — fuer die Kursansicht,
+       die keinen Ordnerinhalt braucht. Ergebnis landet in state.data.ordner. */
+    ordnerPruefen: function (kursId) {
+      if (state.data.ordner[kursId] !== undefined) return;
+      graph.kursOrdner(kursId)
+        .then(function () {
+          if (state.position.kursId === kursId && !state.position.schrittId) controller.render();
+        })
+        .catch(function () {});
     },
 
     /* Ordnerinhalt nachladen und danach neu zeichnen — der erste Aufbau wartet nicht darauf. */
@@ -499,7 +520,11 @@
         })
         .catch(function (e) {
           knopf.disabled = false; knopf.textContent = 'Ablegen';
-          alert('Nicht abgelegt: ' + (e.message || e));
+          /* Kein alert: die Meldung ist mehrsaetzig und der eingegebene Text soll
+             daneben sichtbar bleiben, statt hinter einem Modal zu verschwinden. */
+          var m = document.getElementById('ablegefehler');
+          if (m) { m.textContent = 'Nicht abgelegt. ' + (e.message || e); m.hidden = false; }
+          else { alert('Nicht abgelegt: ' + (e.message || e)); }
         });
     },
 

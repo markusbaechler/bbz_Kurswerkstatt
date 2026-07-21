@@ -438,3 +438,38 @@ test('die Kursliste traegt das Schriftfeld, nicht die alte Vorlage', () => {
   assert.ok(!/class="eyebrow"/.test(h), 'alte Vorlage noch da');
   assert.ok(!/kdot gate/.test(h), 'Gate-Legende passt nicht zur Liste');
 });
+
+/* ---------- Fehlender Kursordner ---------- */
+
+test('die Kursansicht sagt es, wenn der Kursordner fehlt', () => {
+  const h = ansichten.einKurs(INHALT, DBS, { ordnerFehlt: true });
+  assert.ok(/class="fehlt"/.test(h), 'keine Sperre');
+  assert.ok(/Kein Kursordner in SharePoint/.test(h));
+  assert.ok(/DBS-001_&lt;kurzname&gt;/.test(h), 'sagt nicht, wie der Ordner heissen muss');
+});
+
+test('solange nichts nachgesehen wurde, wird nichts behauptet', () => {
+  /* undefined heisst „noch nicht nachgesehen" — daraus darf keine Warnung werden. */
+  assert.ok(!/class="fehlt"/.test(ansichten.einKurs(INHALT, DBS, {})));
+  assert.ok(!/class="fehlt"/.test(ansichten.einKurs(INHALT, DBS)));
+  assert.ok(!/class="fehlt"/.test(ansichten.einKurs(INHALT, DBS, { ordnerFehlt: false })));
+});
+
+test('die Schrittansicht warnt statt ein Versprechen zu geben', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null, { ordnerFehlt: true });
+  assert.ok(/class="fehlt"/.test(h), 'keine Sperre in der Schrittansicht');
+  assert.ok(!/Legt die Kurswerkstatt an/.test(h),
+            'verspricht Ablage, obwohl der Ordner fehlt');
+});
+
+test('mit Ordner bleibt das Versprechen stehen', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null, { ordnerFehlt: false });
+  assert.ok(/Legt die Kurswerkstatt an/.test(h));
+  assert.ok(!/class="fehlt"/.test(h));
+});
+
+test('die Schrittansicht haelt einen Platz fuer die Fehlermeldung bereit', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
+  assert.ok(/id="ablegefehler"/.test(h), 'kein Platz fuer die Meldung');
+  assert.ok(/id="ablegefehler" hidden/.test(h), 'Meldung ist nicht von Anfang an versteckt');
+});

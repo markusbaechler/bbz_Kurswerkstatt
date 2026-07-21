@@ -313,11 +313,12 @@
   }
 
   /* ---------- Ansicht: ein Kurs ---------- */
-  function einKurs(inh, kurs) {
+  function einKurs(inh, kurs, lage) {
     if (!kurs) return karte('Kurs', 'Nicht gefunden', 'Dieser Kurs steht nicht in KWKurse.');
     var naechster = I().schritt(inh, kurs.schritt);
     return '<div class="laufkarte">' + schriftfeld(inh, kurs, null) +
         kette(inh, kurs, null) + legende(true) + '</div>' +
+      ((lage && lage.ordnerFehlt) ? ohneOrdner(kurs) : '') +
       (naechster ? '<div class="card naechst">' +
         '<span class="eyebrow">Als N&auml;chstes dran</span>' +
         '<h3>Schritt ' + esc(naechster.id) + ' &middot; ' + esc(naechster.nm) + '</h3>' +
@@ -431,6 +432,7 @@
                   esc(ziel.datei) + '</code></span>'
                 : '<span class="dim">Ordner wird gelesen &hellip;</span>') +
         '</div>' +
+        '<p class="klemmt" id="ablegefehler" hidden></p>' +
         '<p class="dim">Die Kurswerkstatt vergibt Ordner und Dateinamen nach dem ' +
         'Ablage-Kontrakt. Du tippst keinen Pfad.</p>' +
       '</div>';
@@ -489,12 +491,27 @@
           ? '<a class="pfad" href="' + esc(zielUrl) + '" target="_blank" rel="noopener">' +
             esc(ablage.ordner) + '/<b>' + esc(ablage.datei) + '</b> &#8599;</a>'
           : '<span class="pfad">' + esc(ablage.ordner) + '/<b>' + esc(ablage.datei) + '</b></span>') +
-        '<em>Legt die Kurswerkstatt an &mdash; du tippst keinen Pfad.</em></div>';
-      h += dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
+        (ablageDaten.ordnerFehlt ? '' : '<em>Legt die Kurswerkstatt an &mdash; du tippst keinen Pfad.</em>') +
+        '</div>';
+      h += ablageDaten.ordnerFehlt ? ohneOrdner(kurs) : dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
     }
 
     h += '</aside></div>';
     return h;
+  }
+
+  /* Ein Kurs ohne Ordner in der Bibliothek. Das trifft jeden neu angelegten Kurs,
+     und es traf bisher erst beim Klick auf Ablegen — also nachdem die Arbeit
+     getan war. Lieber vorher sagen, was fehlt und wer es anlegen muss. */
+  function ohneOrdner(kurs) {
+    var id = kurs ? esc(kurs.kursId) : 'diesen Kurs';
+    return '<div class="fehlt"><h4>Kein Kursordner in SharePoint</h4>' +
+      '<p>F&uuml;r <b>' + id + '</b> gibt es in der Bibliothek <b>Kursproduktion</b> ' +
+      'noch keinen Ordner. Ablegen schl&auml;gt deshalb fehl &mdash; auch wenn du den ' +
+      'Text schon geschrieben hast.</p>' +
+      '<p>Die Kurswerkstatt kann ihn noch nicht selbst anlegen. Bis dahin: Ordner ' +
+      '<code>' + id + '_&lt;kurzname&gt;</code> von Hand anlegen, darin die ' +
+      'Unterordner nach Ablage-Kontrakt.</p></div>';
   }
 
   /* ---------- Ansicht: Nachschlagen ---------- */
@@ -546,7 +563,7 @@
   root.ansichten = {
     kette: kette, schriftfeld: schriftfeld, werkzeug: werkzeug, dateiliste: dateiliste,
     alleKurse: alleKurse, einKurs: einKurs, einSchritt: einSchritt, nachschlagen: nachschlagen,
-    entschaerfe: entschaerfe, standort: standort
+    entschaerfe: entschaerfe, standort: standort, ohneOrdner: ohneOrdner
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = { ansichten: root.ansichten };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

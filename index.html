@@ -593,6 +593,19 @@
   .kapitel .inhalt .section-label .rule{flex:1;height:1px;background:var(--line)}
   .kapitel .inhalt .tablewrap{overflow-x:auto}
 
+  /* Was fehlt, bevor gearbeitet werden kann — kein Kasten am Rand, sondern
+     eine Sperre in Lesebreite an der Stelle, an der es klemmt. */
+  .fehlt{border-left:3px solid var(--rot);background:var(--rot-t);padding:15px 19px;
+         margin:18px 0;border-radius:0 var(--radius-s) var(--radius-s) 0}
+  .fehlt h4{font-family:var(--font-mono);font-size:11px;letter-spacing:.14em;
+            text-transform:uppercase;color:var(--rot);margin-bottom:9px}
+  .fehlt p{font-size:14px;line-height:1.6;color:var(--ink);margin-bottom:8px}
+  .fehlt p:last-child{margin-bottom:0}
+  .fehlt code{font-family:var(--font-mono);font-size:.9em;background:var(--surface-2);
+              border-radius:3px;padding:1px 5px}
+  .klemmt{border-left:3px solid var(--rot);background:var(--rot-t);padding:11px 15px;
+          margin-top:12px;font-size:14px;line-height:1.55;color:var(--ink)}
+
   .naechst{border-left:3px solid var(--u);margin-top:18px}
   .naechst h3{font-size:20px;margin:8px 0 9px}
 
