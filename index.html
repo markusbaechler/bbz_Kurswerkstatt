@@ -411,6 +411,9 @@
   .werkwahl button.on{color:var(--accent);border-bottom-color:var(--accent)}
 
   .werkbank.werk{grid-template-columns:minmax(0,1fr) 240px}
+  /* Ohne volle Spaltenhoehe hat position:sticky keinen Weg — das Verzeichnis
+     scrollte sonst nach dem ersten Kapitel weg. */
+  .werkbank.werk .kontext{align-self:stretch}
   @media(max-width:1000px){.werkbank.werk{grid-template-columns:1fr}}
   /* Nicht auf 70ch geklemmt: die Kapitel sind ueberwiegend Schaubilder
      (W-U-G, Bloom-Leiter, Do/Dont). Die Lesebreite steuern die Absaetze selbst. */
@@ -427,9 +430,10 @@
   .kapitel .inhalt b{color:var(--ink)}
   .kapliste{margin:0;padding:0;list-style:none;counter-reset:kk;
             display:flex;flex-direction:column;gap:10px}
-  .kapliste li{counter-increment:kk;display:flex;gap:10px;font-size:13.5px;line-height:1.4}
-  .kapliste li::before{content:counter(kk);font-family:var(--font-mono);font-size:11px;
-                       color:var(--accent);flex:none;padding-top:2px}
+  .kapliste li{counter-increment:kk;position:relative;padding-left:20px;
+               font-size:13.5px;line-height:1.4}
+  .kapliste li::before{content:counter(kk);position:absolute;left:0;top:2px;
+                       font-family:var(--font-mono);font-size:11px;color:var(--accent)}
   .kapliste a{color:var(--ink-soft);text-decoration:none;margin-top:0;font-size:13.5px}
   .kapliste a:hover{color:var(--accent)}
 
@@ -456,9 +460,10 @@
   .wug.W{background:var(--w)} .wug.U{background:var(--u)} .wug.G{background:var(--g)}
 
   /* --- Praesenzdesign 30/50/20 --- */
-  .ratio{display:flex;height:34px;margin:8px 0 4px;font-family:var(--font-eng);
+  .ratio{display:flex;min-height:34px;margin:8px 0 4px;font-family:var(--font-eng);
          font-size:12.5px;font-weight:600;color:#fff;letter-spacing:.04em}
-  .ratio > div{display:grid;place-items:center;padding:0 8px;text-align:center}
+  .ratio > div{display:grid;place-items:center;padding:7px 10px;text-align:center;
+               line-height:1.25}
 
   /* --- Bloom-Kalibrierung: eine Leiter, keine Kaesten --- */
   .bloomcal{display:flex;flex-direction:column;margin:4px 0}
@@ -515,12 +520,16 @@
                  text-transform:uppercase;color:var(--u);font-weight:600;margin-bottom:6px}
 
   /* --- Listen, Tabellen, Kleinteile --- */
+  /* Der Zaehler steht neben dem Absatz, nicht darin: ein Flex-Container hier
+     wuerde Fliesstext und Einschuebe zu eigenen Spalten auseinanderziehen. */
   ol.gsteps{margin:0;padding-left:0;list-style:none;counter-reset:g;
             display:flex;flex-direction:column;gap:13px}
-  ol.gsteps li{counter-increment:g;display:flex;gap:14px;font-size:15px;line-height:1.6}
-  ol.gsteps li::before{content:counter(g);flex:none;width:24px;height:24px;border-radius:50%;
+  ol.gsteps li{counter-increment:g;position:relative;padding-left:38px;
+               font-size:15px;line-height:1.6;max-width:70ch}
+  ol.gsteps li::before{content:counter(g);position:absolute;left:0;top:3px;
+        width:24px;height:24px;border-radius:50%;
         background:var(--accent-tint);color:var(--accent);font-family:var(--font-mono);
-        font-size:12px;font-weight:600;display:grid;place-items:center;margin-top:1px}
+        font-size:12px;font-weight:600;display:grid;place-items:center}
   .kapitel .inhalt table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}
   .kapitel .inhalt th{text-align:left;font-family:var(--font-mono);font-size:10.5px;
                       letter-spacing:.13em;text-transform:uppercase;color:var(--muted);
