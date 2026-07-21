@@ -202,6 +202,20 @@ test('ein unbekanntes Werk faellt auf das erste zurueck', () => {
   assert.ok(/Didaktisches Modell/.test(ansichten.nachschlagen(INHALT, 'gibtsnicht')));
 });
 
+test('tote Verweise aus v0.2 werden zu Text, der Wortlaut bleibt', () => {
+  const roh = 'Die Prompts liegen in der <button class="linklike" data-open-tool="x" ' +
+              'style="all:unset;color:teal">Toolbox</button> bereit.';
+  const h = ansichten.entschaerfe(roh);
+  assert.ok(!/<button/.test(h), 'Knopf noch da');
+  assert.ok(/<span class="verweis">Toolbox<\/span>/.test(h), 'Wortlaut verloren');
+  assert.ok(/Die Prompts liegen in der /.test(h) && /bereit\./.test(h), 'Satz zerschnitten');
+});
+
+test('entschaerfe laesst andere Knoepfe unberuehrt', () => {
+  const roh = '<button class="knopf" data-action="ablegen">Ablegen</button>';
+  assert.strictEqual(ansichten.entschaerfe(roh), roh);
+});
+
 test('Nachschlagen traegt dasselbe Schriftfeld wie die Laufkarte', () => {
   const h = ansichten.nachschlagen(INHALT, 'didaktik');
   assert.ok(/class="schriftfeld"/.test(h), 'kein Schriftfeld');

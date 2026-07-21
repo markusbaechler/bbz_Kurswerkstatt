@@ -536,8 +536,19 @@
   .toolbadge.claude{border-color:var(--accent);color:var(--accent)}
   .toolbadge.chatgpt{border-color:var(--g);color:var(--g)}
   .toolbadge.beide{border-color:var(--muted);color:var(--muted)}
-  /* Verweise aus v0.2 zeigen hier ins Leere — nicht als Knopf ausgeben. */
-  .kapitel .inhalt .linklike{all:unset;color:var(--ink-soft);font-style:italic;cursor:default}
+  .verweis{font-weight:600;color:var(--ink)}
+  .kapitel .inhalt code{font-family:var(--font-mono);font-size:.88em;background:var(--surface-2);
+                        border-radius:3px;padding:1px 5px}
+  /* Reste aus v0.2, die im Referenztext mitgereist sind. Die Kaesten kommen weg —
+     das !important schlaegt die Inline-Paddings aus der alten Datei. */
+  .kapitel .inhalt .card{background:transparent;border:0;box-shadow:none;border-radius:0;
+                         padding:0!important}
+  .kapitel .inhalt .section-label{display:flex;align-items:center;gap:14px;margin:26px 0 12px}
+  .kapitel .inhalt .section-label h3{font-family:var(--font-mono);font-size:10.5px;
+        letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:500;
+        white-space:nowrap;margin:0}
+  .kapitel .inhalt .section-label .rule{flex:1;height:1px;background:var(--line)}
+  .kapitel .inhalt .tablewrap{overflow-x:auto}
 
   .naechst{border-left:3px solid var(--u);margin-top:18px}
   .naechst h3{font-size:20px;margin:8px 0 9px}

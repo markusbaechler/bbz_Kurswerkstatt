@@ -7,6 +7,15 @@
   var G = function () { return root.graph; };
   var I = function () { return root.inhalt; };
 
+  /* Referenztexte stammen aus dem alten Cockpit v0.2. Sie tragen Knoepfe, die
+     dort Werkzeuge oeffneten — hier zeigen sie ins Leere. Ein Knopf, der nichts
+     tut, ist schlimmer als kein Knopf: raus damit, der Text bleibt stehen. */
+  function entschaerfe(html) {
+    return String(html || '')
+      .replace(/<button\b[^>]*class="[^"]*\blinklike\b[^"]*"[^>]*>([\s\S]*?)<\/button>/g,
+               '<span class="verweis">$1</span>');
+  }
+
   /* ---------- Die Linie: eine Fertigungsstrasse mit neun Stationen ----------
      Kein Kachelraster. Eine durchgehende Bahn, bis zur aktuellen Station gefuellt.
      Die Phasen stehen als Abschnitte darueber. */
@@ -423,7 +432,7 @@
     h += '<div class="werktext">' + w.abschnitte.map(function (a, i) {
       return '<section class="kapitel" id="kap-' + i + '">' +
              '<h2><span class="knr">' + (i + 1) + '</span>' + a.h + '</h2>' +
-             '<div class="inhalt">' + a.html + '</div></section>';
+             '<div class="inhalt">' + entschaerfe(a.html) + '</div></section>';
     }).join('') + '</div>';
     h += '<aside class="kontext"><div class="kblock"><h3>Kapitel</h3>' +
       '<ol class="kapliste">' + w.abschnitte.map(function (a, i) {
@@ -443,7 +452,8 @@
 
   root.ansichten = {
     kette: kette, schriftfeld: schriftfeld, werkzeug: werkzeug, dateiliste: dateiliste,
-    alleKurse: alleKurse, einKurs: einKurs, einSchritt: einSchritt, nachschlagen: nachschlagen
+    alleKurse: alleKurse, einKurs: einKurs, einSchritt: einSchritt, nachschlagen: nachschlagen,
+    entschaerfe: entschaerfe
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = { ansichten: root.ansichten };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
