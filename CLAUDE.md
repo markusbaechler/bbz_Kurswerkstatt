@@ -55,7 +55,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 5. **Styling:** Nur CSS-Variablen und bestehende Klassen. Keine Ad-hoc-Farben.
 6. **Deutsch (CH):** UI-Texte deutsch, „ß" immer als „ss".
 7. **Vokabular — strikt:** „**Schritt**" 1–9 für den Prozess · „**Stufe**" ausschliesslich für
-   Bloom · „**Weg B**" = Chat + Ablegen durch die App, „**Weg C**" = Claude Code. Nie mischen.
+   Bloom · „**Chat**" = Prompt kopieren, Ergebnis zurueck, die App legt ab · „**Claude-Code**" = CC erzeugt und legt in einem Zug ab. Nie „Weg B/C" — das waren Buchstaben aus einer verworfenen Auswahlliste.
 8. **Doku im selben Commit.** Jede Verhaltensänderung aktualisiert diese Datei.
 9. **Eine Quelle pro Begriff.** Wo dieselbe Frage an zwei Stellen beantwortet wird, gehört sie in
    einen Helper. Genau das war der Hauptbefund an v0.2.

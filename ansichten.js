@@ -305,7 +305,7 @@
 
     if (s.wege && s.wege.length) {
       h += '<div class="kblock"><h3>Weg</h3><div class="wege">' + s.wege.map(function (w) {
-        var t = { B: 'Im Chat', C: 'Mit Claude Code', hand: 'Von Hand',
+        var t = { chat: 'Im Chat', 'claude-code': 'Mit Claude Code', hand: 'Von Hand',
                   kurswerkstatt: 'Macht die Kurswerkstatt' }[w] || w;
         return '<span class="weg ' + esc(w) + '">' + esc(t) + '</span>';
       }).join('') + '</div></div>';

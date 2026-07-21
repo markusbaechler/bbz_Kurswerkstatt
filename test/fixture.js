@@ -14,7 +14,7 @@
       auto: 'ki',
       her: [{ was: 'Vorgaenger-Ergebnis', von: id > 1 ? id - 1 : null }],
       hin: [{ was: 'Nachfolger-Eingang', an: id < 9 ? id + 1 : null }],
-      wege: ['B', 'C']
+      wege: ['chat', 'claude-code']
     }, extra || {});
   }
 
@@ -24,15 +24,15 @@
       benennung: { muster: '{K}_{lieferobjekt}_v{N}.{ext}', final: '{K}_{lieferobjekt}_final.{ext}' },
       gate_datei: '_gate.md',
       schritte: {
-        '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['B','C'], gate: null },
+        '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
         '2': { ordner: '02_setup', datei: '{K}_manifest.json', format: 'json', wege: ['kurswerkstatt'], gate: null },
-        '3': { ordner: '03_contract', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['C','hand'], gate: 'Gate 1 · 4-Augen' },
-        '4': { ordner: '04_greenfield', lieferobjekt: 'greenfield', ext: 'md', format: 'text', wege: ['B','C'], gate: null },
-        '5': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['B','C'], gate: null },
-        '6': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['B','C'], gate: 'Sign-off' },
-        '7': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['C'], gate: null },
+        '3': { ordner: '03_contract', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand'], gate: 'Gate 1 · 4-Augen' },
+        '4': { ordner: '04_greenfield', lieferobjekt: 'greenfield', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
+        '5': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
+        '6': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: 'Sign-off' },
+        '7': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['claude-code'], gate: null },
         '8': { ordner: '07_abnahme', lieferobjekt: 'abnahme', ext: 'md', format: 'text', wege: ['kurswerkstatt'], gate: 'Gate 2 · Schluss' },
-        '9': { ordner: '08_backbone', datei: '{K}_publiziert.md', format: 'text', wege: ['B','C'], gate: null }
+        '9': { ordner: '08_backbone', datei: '{K}_publiziert.md', format: 'text', wege: ['chat','claude-code'], gate: null }
       }
     },
 
@@ -57,7 +57,7 @@
         schritt(4, 'Green-field W-Content', { auto: 'ki', tool: 'claude' }),
         schritt(5, 'Screening & Gap-Analyse', { auto: 'ki', tool: 'chatgpt' }),
         schritt(6, 'Verdichtung & Umsetzung', { auto: 'kimensch', tool: 'claude', gate: 'Sign-off' }),
-        schritt(7, 'Moodle-Selbstlernstrecke', { auto: 'auto', wege: ['C'] }),
+        schritt(7, 'Moodle-Selbstlernstrecke', { auto: 'auto', wege: ['claude-code'] }),
         schritt(8, 'Fach-Review & Freigabe', { auto: 'mensch', gate: 'Gate 2 · Schluss' }),
         schritt(9, 'Kuratierung & Backbone', { auto: 'auto' })
       ]

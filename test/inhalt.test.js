@@ -109,8 +109,8 @@ test('Schritt 5 und 6 schreiben in dieselbe Datei', () => {
 });
 
 test('ablageVon liefert die zulaessigen Wege', () => {
-  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 7, 'DBS-001').wege, ['C']);
-  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 3, 'DBS-001').wege, ['C', 'hand']);
+  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 7, 'DBS-001').wege, ['claude-code']);
+  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 3, 'DBS-001').wege, ['claude-code', 'hand']);
 });
 
 /* --- Laden --- */
