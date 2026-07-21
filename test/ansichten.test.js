@@ -125,7 +125,8 @@ test('die Anleitung erscheint NICHT nochmals als Klappe', () => {
 
 test('das aufgeklappte Werkzeug ist markiert', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, 'prompt-greenfield');
-  assert.ok(/class="wtool auf"/.test(h));
+  assert.ok(/class="wtool instrument auf"/.test(h), 'Masterprompt nicht als aufgeklappt markiert');
+  assert.ok(/zuklappen/.test(h), 'Knopf sagt nicht zuklappen');
 });
 
 test('die Ablage nach Kontrakt wird angezeigt', () => {
@@ -252,4 +253,41 @@ test('ohne Basis-URL bleiben die Pfade lesbar, aber ohne Link', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
   assert.ok(/04_greenfield\/<b>DBS-001_greenfield_v\{N\}\.md<\/b>/.test(h));
   assert.ok(!/href="undefined/.test(h));
+});
+
+/* ---------- Der Masterprompt ist das Instrument ---------- */
+
+test('der Masterprompt traegt eigenes Gewicht, nicht die Zeilendarstellung', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  assert.ok(/class="wtool instrument/.test(h), 'Masterprompt nicht als Instrument ausgezeichnet');
+  assert.ok(/class="wtitel"><h3>/.test(h), 'Titel nicht als Ueberschrift');
+});
+
+test('der Prompt ist kopierbar OHNE ihn aufzuklappen', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});   // nichts aufgeklappt
+  const kopf = h.slice(h.indexOf('class="wkopf"'), h.indexOf('class="wbody"'));
+  assert.ok(/data-action="kopieren"/.test(kopf), 'Kopier-Knopf steckt im aufklappbaren Teil');
+});
+
+test('der Masterprompt steht VOR den Leitplanken', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  assert.ok(h.indexOf('Dein Masterprompt') < h.indexOf('Leitplanken'),
+    'Do/Dont steht vor dem Werkzeug');
+});
+
+test('der Masterprompt steht NACH der Anleitung, die ihn erwaehnt', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  assert.ok(h.indexOf('So gehst du vor') < h.indexOf('Dein Masterprompt'));
+});
+
+test('Vorlagen bleiben ruhig — kein Instrument', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});
+  assert.ok(/data-werkzeug="tpl-contract"/.test(h), 'Vorlage fehlt');
+  const karte = h.slice(h.indexOf('wt-tpl-contract'));
+  assert.ok(!/instrument/.test(karte.slice(0, 200)), 'Vorlage faelschlich als Instrument');
+});
+
+test('ohne Masterprompt gibt es auch keine Masterprompt-Ueberschrift', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 5, null, {});
+  assert.ok(!/Dein Masterprompt/.test(h));
 });

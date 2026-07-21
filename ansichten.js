@@ -64,10 +64,43 @@
     return String(nm).split(/[&(,]/)[0].split(' ').slice(0, 2).join(' ').replace(/[:\-–]$/, '').trim();
   }
 
-  /* ---------- Werkzeug ---------- */
+  /* ---------- Werkzeug ----------
+     Der Masterprompt ist das Instrument des Schritts, kein Anhang. Er traegt
+     den Akzent, den Kopier-Knopf im Kopf (ohne Aufklappen) und eigenes Gewicht.
+     Vorlagen bleiben ruhig — sie sind Zubehoer. */
   function werkzeug(w, typMeta, offen) {
     var ty = (typMeta && typMeta[w.type]) || { short: w.type };
     var koerper = '';
+
+    if (w.type === 'prompt') {
+      var fass = [];
+      if (w.claude)  fass.push({ k: 'claude',  t: 'Claude',  txt: w.claude });
+      if (w.chatgpt) fass.push({ k: 'chatgpt', t: 'ChatGPT', txt: w.chatgpt });
+
+      if (w.when) koerper += '<div class="when">' + w.when + '</div>';
+      if (fass.length > 1) {
+        koerper += '<div class="ptabs">' + fass.map(function (f, i) {
+          return '<button class="ptab' + (i === 0 ? ' on' : '') + '" data-action="fassung" ' +
+                 'data-fassung="' + f.k + '">' + f.t + '</button>';
+        }).join('') + '</div>';
+      }
+      koerper += fass.map(function (f, i) {
+        return '<pre class="prompt' + (i === 0 ? ' on' : '') + '" data-box="' + f.k + '">' +
+               esc(f.txt) + '</pre>';
+      }).join('');
+
+      return '<div class="wtool instrument' + (offen ? ' auf' : '') + '" id="wt-' + esc(w.id) + '">' +
+        '<div class="wkopf">' +
+          '<span class="tt">' + esc(ty.short) + '</span>' +
+          '<div class="wtitel"><h3>' + esc(w.title) + '</h3>' +
+            (w.sub ? '<p>' + esc(w.sub) + '</p>' : '') + '</div>' +
+          '<button class="knopf gross" data-action="kopieren" data-werkzeug="' + esc(w.id) + '">' +
+            'Prompt kopieren</button>' +
+          '<button class="ansehen" data-action="werkzeug" data-werkzeug="' + esc(w.id) + '">' +
+            (offen ? 'zuklappen' : 'ansehen') + ' <span class="ar">&#9656;</span></button>' +
+        '</div>' +
+        '<div class="wbody">' + koerper + '</div></div>';
+    }
 
     if (w.type === 'guide') {
       koerper += '<ol class="rezept">' + (w.steps || []).map(function (s) {
@@ -83,25 +116,6 @@
           '</ul></div></div>';
       }
       if (w.dod) koerper += '<div class="liefer"><span class="h">Fertig, wenn</span>' + esc(w.dod) + '</div>';
-
-    } else if (w.type === 'prompt') {
-      if (w.when) koerper += '<div class="when">' + w.when + '</div>';
-      var fassungen = [];
-      if (w.claude) fassungen.push({ k: 'claude', t: 'Claude', txt: w.claude });
-      if (w.chatgpt) fassungen.push({ k: 'chatgpt', t: 'ChatGPT', txt: w.chatgpt });
-      if (fassungen.length > 1) {
-        koerper += '<div class="ptabs">' + fassungen.map(function (f, i) {
-          return '<button class="ptab' + (i === 0 ? ' on' : '') + '" data-action="fassung" ' +
-                 'data-fassung="' + f.k + '">' + f.t + '</button>';
-        }).join('') + '</div>';
-      }
-      koerper += fassungen.map(function (f, i) {
-        return '<pre class="prompt' + (i === 0 ? ' on' : '') + '" data-box="' + f.k + '">' +
-               esc(f.txt) + '</pre>';
-      }).join('');
-      koerper += '<div class="prow"><button class="knopf" data-action="kopieren" ' +
-                 'data-werkzeug="' + esc(w.id) + '">Prompt kopieren</button>' +
-                 '<span class="dim">geht direkt in Claude oder ChatGPT</span></div>';
 
     } else {
       if (w.sub) koerper += '<p class="lead">' + esc(w.sub) + '</p>';
@@ -220,7 +234,29 @@
       return '<li><span>' + x + '</span></li>';
     }).join('') + '</ol>';
 
+    /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
+       nicht hinter den Leitplanken. Der Masterprompt zuerst. */
+    if (hilfsmittel.length) {
+      var prompts = hilfsmittel.filter(function (w) { return w.type === 'prompt'; });
+      var zubehoer = hilfsmittel.filter(function (w) { return w.type !== 'prompt'; });
+
+      if (prompts.length) {
+        h += '<h2 class="tun">' + (prompts.length > 1 ? 'Deine Masterprompts' : 'Dein Masterprompt') +
+             '<span class="tun-sub">kopieren und in Claude oder ChatGPT einf&uuml;gen</span></h2>';
+        h += '<div class="wtools">' + prompts.map(function (w) {
+          return werkzeug(w, typMeta, offenesWerkzeug === w.id);
+        }).join('') + '</div>';
+      }
+      if (zubehoer.length) {
+        h += '<h2 class="tun">Dazu</h2>';
+        h += '<div class="wtools">' + zubehoer.map(function (w) {
+          return werkzeug(w, typMeta, offenesWerkzeug === w.id);
+        }).join('') + '</div>';
+      }
+    }
+
     if (anleitung && (anleitung.dos || []).length) {
+      h += '<h2 class="tun">Leitplanken</h2>';
       h += '<div class="dd">' +
         '<div class="ddc do"><h5>Do</h5><ul>' +
           anleitung.dos.map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
@@ -228,13 +264,6 @@
         '<div class="ddc dont"><h5>Don\'t</h5><ul>' +
           (anleitung.donts || []).map(function (d) { return '<li>' + esc(d) + '</li>'; }).join('') +
         '</ul></div></div>';
-    }
-
-    if (hilfsmittel.length) {
-      h += '<h2 class="tun">Werkzeuge</h2>';
-      h += '<div class="wtools">' + hilfsmittel.map(function (w) {
-        return werkzeug(w, typMeta, offenesWerkzeug === w.id);
-      }).join('') + '</div>';
     }
 
     if (anleitung && anleitung.dod) {
