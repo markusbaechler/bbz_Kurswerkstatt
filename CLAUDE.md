@@ -36,8 +36,6 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `service-worker.js` | Network-first für Navigationen, cacht nur die Offline-URL |
 | `manifest.json` | PWA-Manifest, scope `/bbz_Kurswerkstatt/` |
 
-`daten-hf.js` · die Ansichten · `auth`/`graph`.
-
 ## Konventionen — strikt einhalten
 
 1. **Kein Framework, kein Bundler, kein Paketmanager.** Nie eine `package.json` mit Dependencies.
@@ -64,12 +62,14 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 
 ## Datenmodell
 
-### Statisch, im Repo
-Die 9 Schritte, die Werkzeuge, die Nachschlagewerke, das HF-Mapping.
+### Inhalte: SharePoint, Bibliothek `Kursproduktion`, Ordner `_zentral`
+Vier Dateien, nach der Anmeldung geladen (Weg B — nichts davon liegt im oeffentlichen Repo):
+`ablage-kontrakt.json` · `schritte.json` · `werkzeuge.json` · `referenz.json` · `hf.json`
 
-**HF-Verortung liegt in `daten-hf.js` und nirgends sonst.** Die Systematik ist noch nicht
-abgenommen. Ändert sie sich, ändert sich nur diese Datei; fällt sie weg, wird eine Ansicht
-ausgeblendet. **Nie HF-Felder in `daten-schritte.js` einbauen** — genau das war der Fehler in v0.2.
+**Die HF-Verortung liegt in `hf.json` und nirgends sonst.** Die Systematik ist nicht abgenommen.
+Ändert sie sich, ändert sich nur diese Datei; fehlt sie, laeuft die App weiter — `inhalt.laden`
+fuehrt sie bewusst nicht als Pflichtdatei. **Nie HF-Felder in `schritte.json`** — genau das war
+der Fehler in v0.2.
 
 ### Live: SharePoint-Liste `KWKurse`
 Site `/sites/ffentlicheAngebote`. Interne Feldnamen = Anzeigenamen (geprüft):
