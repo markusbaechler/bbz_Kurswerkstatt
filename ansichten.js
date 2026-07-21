@@ -12,30 +12,54 @@
      Die Phasen stehen als Abschnitte darueber. */
   function kette(inh, kurs, aktiv) {
     var phasen = (inh.schritte && inh.schritte.phasen) || [];
+    var alle = (inh.schritte && inh.schritte.schritte) || [];
+    if (!alle.length) return '';
+    var n = alle.length;
     var aktivePhase = aktiv ? I().phaseVon(inh, aktiv) : null;
 
-    var h = '<div class="linie' + (aktiv ? ' fokus' : '') + '">';
-    phasen.forEach(function (p, pi) {
-      var phAktiv = aktivePhase && aktivePhase.nm === p.nm;
-      h += '<section class="abschnitt' + (phAktiv ? ' an' : '') + '"' +
-           ' style="--n:' + p.ids.length + '">' +
-           '<h4 class="abname">' + esc(p.nm) + '</h4><div class="bahn">';
-      p.ids.forEach(function (id, si) {
-        var s = I().schritt(inh, id);
-        if (!s) return;
-        var st = kurs ? G().standVon(kurs, +id) : 'offen';
-        var hier = String(aktiv) === String(id);
-        var letzte = (pi === phasen.length - 1) && (si === p.ids.length - 1);
-        h += '<button class="stn ' + st + (hier ? ' hier' : '') + (letzte ? ' ende' : '') + '"' +
-             ' data-action="schritt" data-schritt="' + esc(id) + '" title="' + esc(s.nm) + '">' +
-             (s.gate ? '<span class="pruef" title="' + esc(s.gate) + '">&#9873;</span>' : '') +
-             '<span class="punkt">' + (st === 'fertig' ? '&#10003;' : esc(id)) + '</span>' +
-             '<span class="stname">' + esc(kurz(s.nm)) + '</span>' +
-             (hier ? '<span class="zeiger" aria-hidden="true"></span>' : '') +
-             '</button>';
-      });
-      h += '</div></section>';
+    /* Ein durchgehendes Gleis. Die Fuellung endet auf dem letzten erledigten Punkt —
+       Mitte der Spalte, deshalb (fertig - 0.5) / n. */
+    var fertig = kurs ? G().fortschritt(kurs) : 0;
+    var fuell = fertig > 0 ? ((fertig - 0.5) / n * 100) : 0;
+
+    var h = '<div class="strasse' + (aktiv ? ' fokus' : '') + '"' +
+            ' style="--spalten:' + n + '">';
+
+    /* Zeile 1: die Phasen als Spannen ueber ihre Stationen */
+    var spalte = 1;
+    phasen.forEach(function (p) {
+      var breite = p.ids.length;
+      var an = aktivePhase && aktivePhase.nm === p.nm;
+      h += '<div class="spanne' + (an ? ' an' : '') + '"' +
+           ' style="grid-column:' + spalte + ' / span ' + breite + '">' +
+           '<span class="spname">' + esc(p.nm) + '</span></div>';
+      spalte += breite;
     });
+
+    /* Zeile 2: das Gleis, quer ueber alle Spalten, hinter den Punkten */
+    h += '<div class="gleis" style="grid-column:1 / -1"><i style="width:' +
+         fuell.toFixed(2) + '%"></i></div>';
+
+    /* Zeile 2: die Stationen, jede in ihrer Spalte */
+    alle.forEach(function (s, i) {
+      var st = kurs ? G().standVon(kurs, +s.id) : 'offen';
+      var hier = String(aktiv) === String(s.id);
+      h += '<button class="station ' + st + (hier ? ' hier' : '') + '"' +
+           ' style="grid-column:' + (i + 1) + '"' +
+           ' data-action="schritt" data-schritt="' + esc(s.id) + '"' +
+           ' title="' + esc(s.nm) + '">' +
+           '<span class="stempel">' + (st === 'fertig' ? '&#10003;' : esc(s.id)) + '</span>' +
+           (s.gate ? '<span class="pruefzeichen" title="' + esc(s.gate) + '">&#9873;</span>' : '') +
+           '</button>';
+    });
+
+    /* Zeile 3: die Beschriftungen, unter ihrer Station */
+    alle.forEach(function (s, i) {
+      var st = kurs ? G().standVon(kurs, +s.id) : 'offen';
+      h += '<span class="stbez ' + st + (String(aktiv) === String(s.id) ? ' hier' : '') + '"' +
+           ' style="grid-column:' + (i + 1) + '">' + esc(kurz(s.nm)) + '</span>';
+    });
+
     return h + '</div>';
   }
 
@@ -58,6 +82,30 @@
              (d.lastModifiedDateTime ? ' &middot; ' + root.helpers.datum(d.lastModifiedDateTime) : '') +
              '</span></li>';
     }).join('') + '</ul></div>';
+  }
+
+  /* ---------- Das Schriftfeld ----------
+     Der Titelblock einer technischen Zeichnung: Kennung, Gegenstand, Stand.
+     Kein Eyebrow-Titel-Lead — die Angaben sind Daten, keine Überschriften. */
+  function schriftfeld(inh, kurs, s) {
+    var f = [];
+    if (kurs) {
+      f.push(['Kurs', esc(kurs.kursId), 'kennung']);
+      f.push(['Gegenstand', esc(kurs.kurstitel), '', true]);
+      f.push(['Kompetenzfeld', esc(kurs.kompetenzfeld), '']);
+      f.push(['Stand', G().fortschritt(kurs) + '&#8202;/&#8202;9', 'zahl']);
+    }
+    if (s) {
+      var ph = I().phaseVon(inh, s.id);
+      f.push(['Station', esc(s.id) + '&#8202;/&#8202;9', 'zahl']);
+      if (ph) f.push(['Phase', esc(ph.nm), '']);
+    }
+    if (!f.length) return '';
+    return '<div class="schriftfeld">' + f.map(function (x) {
+      return '<div class="feld' + (x[3] ? ' weit' : '') + '">' +
+             '<span class="fk">' + x[0] + '</span>' +
+             '<span class="fw ' + (x[2] || '') + '">' + x[1] + '</span></div>';
+    }).join('') + '</div>';
   }
 
   function kurz(nm) {
@@ -169,11 +217,8 @@
   function einKurs(inh, kurs) {
     if (!kurs) return karte('Kurs', 'Nicht gefunden', 'Dieser Kurs steht nicht in KWKurse.');
     var naechster = I().schritt(inh, kurs.schritt);
-    return '<div class="kopf"><span class="eyebrow">' + esc(kurs.kursId) + '</span>' +
-        '<h2>' + esc(kurs.kurstitel) + '</h2>' +
-        '<p class="lead">' + esc(kurs.kompetenzfeld) + ' &middot; ' +
-        '<b>' + G().fortschritt(kurs) + ' von 9 Schritten erledigt</b></p></div>' +
-      '<div class="orientierung">' + kette(inh, kurs, null) + legende() + '</div>' +
+    return '<div class="laufkarte">' + schriftfeld(inh, kurs, null) +
+        kette(inh, kurs, null) + legende() + '</div>' +
       (naechster ? '<div class="card naechst">' +
         '<span class="eyebrow">Als N&auml;chstes dran</span>' +
         '<h3>Schritt ' + esc(naechster.id) + ' &middot; ' + esc(naechster.nm) + '</h3>' +
@@ -208,10 +253,9 @@
     var zielUrl = (ablage && ablageDaten.basisUrl)
       ? ablageDaten.basisUrl + '/' + encodeURIComponent(ablage.ordner) : null;
 
-    /* --- Orientierung: die Linie, volle Breite --- */
-    var h = '<div class="orientierung">' +
-      (kurs ? '<div class="werkstueck">' + esc(kurs.kursId) +
-              '<span>' + esc(kurs.kurstitel) + '</span></div>' : '') +
+    /* --- Die Laufkarte: Schriftfeld und Fertigungsstrasse --- */
+    var h = '<div class="laufkarte">' +
+      schriftfeld(inh, kurs, s) +
       kette(inh, kurs, schrittId) + '</div>';
 
     h += '<div class="werkbank">';
@@ -381,7 +425,7 @@
   }
 
   root.ansichten = {
-    kette: kette, werkzeug: werkzeug, dateiliste: dateiliste,
+    kette: kette, schriftfeld: schriftfeld, werkzeug: werkzeug, dateiliste: dateiliste,
     alleKurse: alleKurse, einKurs: einKurs, einSchritt: einSchritt, nachschlagen: nachschlagen
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = { ansichten: root.ansichten };

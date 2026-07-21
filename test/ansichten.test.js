@@ -14,24 +14,24 @@ const AFL = KURSE[1];   // Schritt 1, offen
 test('die Kette zeigt alle 9 Schritte in 5 Phasen', () => {
   const h = ansichten.kette(INHALT, DBS, null);
   assert.strictEqual((h.match(/data-action="schritt"/g) || []).length, 9);
-  assert.strictEqual((h.match(/class="abname"/g) || []).length, 5);
+  assert.strictEqual((h.match(/class="spanne/g) || []).length, 5);
 });
 
 test('die Kette faerbt nach dem echten Stand', () => {
   const h = ansichten.kette(INHALT, DBS, null);
-  assert.ok(/stn fertig/.test(h), 'kein erledigter Schritt');
-  assert.ok(/stn inArbeit/.test(h), 'kein Schritt in Arbeit');
-  assert.ok(/stn offen/.test(h), 'kein offener Schritt');
+  assert.ok(/station fertig/.test(h), 'kein erledigter Schritt');
+  assert.ok(/station inArbeit/.test(h), 'kein Schritt in Arbeit');
+  assert.ok(/station offen/.test(h), 'kein offener Schritt');
 });
 
 test('die Kette markiert den aktiven Schritt', () => {
   var hh = ansichten.kette(INHALT, DBS, 4);
-  assert.ok(/stn inArbeit hier/.test(hh), 'aktive Station nicht markiert');
-  assert.ok(/class="zeiger"/.test(hh), 'Zeiger auf die aktive Station fehlt');
+  assert.ok(/station inArbeit hier/.test(hh), 'aktive Station nicht markiert');
+  assert.ok(/stbez inArbeit hier/.test(hh), 'Beschriftung der aktiven Station nicht markiert');
 });
 
 test('die Kette markiert die drei Gates', () => {
-  assert.strictEqual((ansichten.kette(INHALT, DBS, null).match(/class="pruef"/g) || []).length, 3);
+  assert.strictEqual((ansichten.kette(INHALT, DBS, null).match(/class="pruefzeichen"/g) || []).length, 3);
 });
 
 /* ---------- Alle Kurse ---------- */
@@ -61,9 +61,10 @@ test('Kurstitel werden escaped', () => {
 
 test('die Kursansicht nennt Kurs, Titel und Fortschritt', () => {
   const h = ansichten.einKurs(INHALT, DBS);
+  assert.ok(/class="schriftfeld"/.test(h), 'kein Schriftfeld');
   assert.ok(/DBS-001/.test(h));
   assert.ok(/Derivate/.test(h));
-  assert.ok(/3 von 9/.test(h));
+  assert.ok(/3&#8202;\/&#8202;9/.test(h), 'Stand fehlt im Schriftfeld');
 });
 
 test('die Kursansicht zeigt, was als Naechstes dran ist', () => {
@@ -85,9 +86,11 @@ test('der Kopf nennt Nummer und Namen', () => {
   assert.ok(/Green-field W-Content/.test(h));
 });
 
-test('die Schrittansicht traegt die Kette mit', () => {
+test('die Schrittansicht traegt die Fertigungsstrasse mit', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null);
-  assert.strictEqual((h.match(/class="abname"/g) || []).length, 5);
+  assert.strictEqual((h.match(/class="spanne/g) || []).length, 5);
+  assert.ok(/class="gleis"/.test(h), 'kein durchgehendes Gleis');
+  assert.ok(/class="schriftfeld"/.test(h), 'kein Schriftfeld');
 });
 
 test('Woher und Wohin sind da und verlinkt', () => {
@@ -203,19 +206,19 @@ test('ein unbekanntes Werk faellt auf das erste zurueck', () => {
 
 test('die Kette sagt im Klartext, wo man ist', () => {
   const h = ansichten.kette(INHALT, DBS, 4);
-  assert.ok(/class="zeiger"/.test(h), 'Zeiger fehlt');
-  assert.ok(/abschnitt an/.test(h), 'aktive Phase nicht markiert');
+  assert.ok(/station inArbeit hier/.test(h), 'aktive Station fehlt');
+  assert.ok(/spanne an/.test(h), 'aktive Phase nicht markiert');
   assert.ok(/Inhalt entwerfen/.test(h), 'Phase fehlt');
 });
 
 test('ohne aktiven Schritt gibt es keine Standort-Marke', () => {
-  assert.ok(!/class="zeiger"/.test(ansichten.kette(INHALT, DBS, null)));
+  assert.ok(!/ hier"/.test(ansichten.kette(INHALT, DBS, null)), 'ohne aktiven Schritt darf nichts markiert sein');
 });
 
 test('die Phase des aktiven Schritts wird hervorgehoben', () => {
   const h = ansichten.kette(INHALT, DBS, 4);
-  assert.ok(/class="linie fokus"/.test(h));
-  assert.strictEqual((h.match(/abschnitt an"/g) || []).length, 1, 'genau eine Phase aktiv');
+  assert.ok(/class="strasse fokus"/.test(h));
+  assert.strictEqual((h.match(/spanne an"/g) || []).length, 1, 'genau eine Phase aktiv');
 });
 
 test('die Dateiliste zeigt Ladezustand, Leere und Inhalt unterschiedlich', () => {
@@ -290,4 +293,46 @@ test('Vorlagen bleiben ruhig — kein Instrument', () => {
 test('ohne Masterprompt gibt es auch keine Masterprompt-Ueberschrift', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 5, null, {});
   assert.ok(!/Dein Masterprompt/.test(h));
+});
+
+/* ---------- Die Laufkarte: Schriftfeld und Gleis ---------- */
+
+test('das Schriftfeld nennt Kennung, Gegenstand und Stand', () => {
+  const h = ansichten.schriftfeld(INHALT, DBS, null);
+  assert.ok(/class="fk">Kurs</.test(h));
+  assert.ok(/class="fk">Gegenstand</.test(h));
+  assert.ok(/class="fk">Stand</.test(h));
+  assert.ok(/fw kennung">DBS-001/.test(h), 'Kurs-ID nicht als Kennung ausgezeichnet');
+});
+
+test('in der Schrittansicht kommen Station und Phase dazu', () => {
+  const s = { id: '4', nm: 'Green-field W-Content' };
+  const h = ansichten.schriftfeld(INHALT, DBS, s);
+  assert.ok(/class="fk">Station</.test(h));
+  assert.ok(/class="fk">Phase</.test(h));
+  assert.ok(/Inhalt entwerfen/.test(h));
+});
+
+test('ohne Kurs und ohne Schritt bleibt das Schriftfeld leer', () => {
+  assert.strictEqual(ansichten.schriftfeld(INHALT, null, null), '');
+});
+
+test('das Gleis ist gefuellt bis zum letzten erledigten Punkt', () => {
+  const h = ansichten.kette(INHALT, DBS, null);   // 3 von 9 erledigt
+  const m = /<i style="width:([\d.]+)%"/.exec(h);
+  assert.ok(m, 'keine Fuellung im Gleis');
+  const soll = ((3 - 0.5) / 9 * 100).toFixed(2);
+  assert.strictEqual(m[1], soll, 'Fuellung endet nicht auf dem dritten Punkt');
+});
+
+test('ohne Kurs ist das Gleis leer', () => {
+  const h = ansichten.kette(INHALT, null, null);
+  assert.ok(/<i style="width:0.00%"/.test(h));
+});
+
+test('jede Station steht in ihrer eigenen Rasterspalte', () => {
+  const h = ansichten.kette(INHALT, DBS, null);
+  for (let i = 1; i <= 9; i++) {
+    assert.ok(h.indexOf('grid-column:' + i + '"') >= 0, 'Spalte ' + i + ' fehlt');
+  }
 });
