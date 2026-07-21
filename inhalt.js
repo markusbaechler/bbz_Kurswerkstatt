@@ -110,11 +110,14 @@
 
     /* --- Ablegen: welche Version, welcher Name --- */
 
-    /* Höchste vorhandene Nummer + 1. Lücken werden nicht gefüllt, _final zählt nicht mit. */
-    naechsteVersion: function (dateien, kursId, lieferobjekt, ext) {
+    /* Höchste vorhandene Nummer + 1. Lücken werden nicht gefüllt, _final zählt nicht mit.
+       Die Endung ist bewusst NICHT Teil des Musters: die Version zählt das Lieferobjekt,
+       nicht das Dateiformat. Sonst stünde neben einem migrierten _v1.html ein neues
+       _v1.md — zweimal Version 1 für dasselbe Lieferobjekt. */
+    naechsteVersion: function (dateien, kursId, lieferobjekt) {
       if (!Array.isArray(dateien)) return 1;
       var muster = new RegExp('^' + reEsc(kursId) + '_' + reEsc(lieferobjekt) +
-                              '_v(\\d+)\\.' + reEsc(ext) + '$', 'i');
+                              '_v(\\d+)\\.[a-z0-9]+$', 'i');
       var max = 0;
       dateien.forEach(function (d) {
         var m = muster.exec(d.name || '');
@@ -127,7 +130,7 @@
     naechsteDatei: function (i, schrittId, kursId, dateien) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
       if (!e || !e.lieferobjekt || !e.ext) return null;
-      var v = inhalt.naechsteVersion(dateien, kursId, e.lieferobjekt, e.ext);
+      var v = inhalt.naechsteVersion(dateien, kursId, e.lieferobjekt);
       return {
         ordner: e.ordner,
         datei: kursId + '_' + e.lieferobjekt + '_v' + v + '.' + e.ext,

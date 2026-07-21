@@ -12,43 +12,44 @@ function datei(name) { return { name: name }; }
 /* ---------- Nächste Versionsnummer ---------- */
 
 test('ein leerer Ordner ergibt v1', () => {
-  assert.strictEqual(inhalt.naechsteVersion([], 'DBS-001', 'greenfield', 'md'), 1);
+  assert.strictEqual(inhalt.naechsteVersion([], 'DBS-001', 'greenfield'), 1);
 });
 
 test('ein nicht gelesener Ordner ergibt ebenfalls v1', () => {
-  assert.strictEqual(inhalt.naechsteVersion(null, 'DBS-001', 'greenfield', 'md'), 1);
-  assert.strictEqual(inhalt.naechsteVersion(undefined, 'DBS-001', 'greenfield', 'md'), 1);
+  assert.strictEqual(inhalt.naechsteVersion(null, 'DBS-001', 'greenfield'), 1);
+  assert.strictEqual(inhalt.naechsteVersion(undefined, 'DBS-001', 'greenfield'), 1);
 });
 
 test('die hoechste vorhandene Nummer plus eins', () => {
   const d = [datei('DBS-001_greenfield_v1.md'), datei('DBS-001_greenfield_v2.md')];
-  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield', 'md'), 3);
+  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield'), 3);
 });
 
 test('Luecken werden nicht gefuellt — es zaehlt das Maximum', () => {
   const d = [datei('DBS-001_greenfield_v1.md'), datei('DBS-001_greenfield_v7.md')];
-  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield', 'md'), 8);
+  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield'), 8);
 });
 
 test('eine _final zaehlt nicht als Nummer, blockiert aber auch nicht', () => {
   const d = [datei('DBS-001_content_v1.md'), datei('DBS-001_content_final.md')];
-  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'content', 'md'), 2);
+  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'content'), 2);
 });
 
 test('fremde Kurse und fremde Lieferobjekte zaehlen nicht mit', () => {
   const d = [datei('AFL-001_greenfield_v9.md'), datei('DBS-001_content_v5.md'),
              datei('DBS-001_greenfield_v2.md')];
-  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield', 'md'), 3);
+  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield'), 3);
 });
 
-test('eine andere Endung zaehlt nicht mit', () => {
-  const d = [datei('DBS-001_greenfield_v4.html')];
-  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield', 'md'), 1);
+test('eine andere Endung zaehlt MIT — die Version gilt dem Lieferobjekt', () => {
+  const d = [datei('DBS-001_greenfield_v1.html')];
+  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield'), 2,
+    'sonst entstuende ein zweites v1 fuer dasselbe Lieferobjekt');
 });
 
 test('Beistehendes wie _gate.md oder _verlauf stoert nicht', () => {
   const d = [datei('_gate.md'), datei('_hinweis.md'), datei('DBS-001_greenfield_v1.md')];
-  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield', 'md'), 2);
+  assert.strictEqual(inhalt.naechsteVersion(d, 'DBS-001', 'greenfield'), 2);
 });
 
 /* ---------- Der konkrete Dateiname ---------- */
