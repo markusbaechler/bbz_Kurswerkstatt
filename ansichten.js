@@ -266,6 +266,30 @@
         '</ul></div></div>';
     }
 
+    /* --- Ergebnis ablegen: der Weg Chat --- */
+    if (kurs && I().darfAblegen(inh, schrittId)) {
+      /* Den Zielnamen erst nennen, wenn der Ordner wirklich gelesen ist —
+         sonst verspricht die Ansicht _v1, obwohl dort schon _v3 liegt. */
+      var ziel = Array.isArray(ablageDaten.dateien)
+        ? I().naechsteDatei(inh, schrittId, kurs.kursId, ablageDaten.dateien)
+        : null;
+      h += '<h2 class="tun">Ergebnis ablegen' +
+           '<span class="tun-sub">aus Claude oder ChatGPT hierher zur&uuml;ck</span></h2>';
+      h += '<div class="ablegen">' +
+        '<textarea id="ergebnis" rows="6" spellcheck="false" ' +
+          'placeholder="Antwort der KI hier einf&uuml;gen &hellip;"></textarea>' +
+        '<div class="arow">' +
+          '<button class="knopf gross" data-action="ablegen" data-schritt="' + esc(schrittId) + '">' +
+            'Ablegen</button>' +
+          (ziel ? '<span class="zielname">wird zu <code>' + esc(ziel.ordner) + '/' +
+                  esc(ziel.datei) + '</code></span>'
+                : '<span class="dim">Ordner wird gelesen &hellip;</span>') +
+        '</div>' +
+        '<p class="dim">Die Kurswerkstatt vergibt Ordner und Dateinamen nach dem ' +
+        'Ablage-Kontrakt. Du tippst keinen Pfad.</p>' +
+      '</div>';
+    }
+
     if (anleitung && anleitung.dod) {
       h += '<div class="dod"><span class="h">Fertig, wenn</span>' + esc(anleitung.dod) + '</div>';
     }

@@ -5,6 +5,11 @@
 (function (root) {
   'use strict';
 
+  /* Sonderzeichen fuer den Einsatz in einem regulaeren Ausdruck entschaerfen. */
+  function reEsc(x) {
+    return String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
   var DATEIEN = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz', 'hf'];
   var PFLICHT = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz'];  /* hf darf fehlen */
 
@@ -101,6 +106,41 @@
         : (kursId + '_' + e.lieferobjekt + '_v{N}.' + e.ext);
       return { ordner: e.ordner, datei: datei, format: e.format, gate: e.gate || null,
                wege: e.wege || [] };
+    },
+
+    /* --- Ablegen: welche Version, welcher Name --- */
+
+    /* Höchste vorhandene Nummer + 1. Lücken werden nicht gefüllt, _final zählt nicht mit. */
+    naechsteVersion: function (dateien, kursId, lieferobjekt, ext) {
+      if (!Array.isArray(dateien)) return 1;
+      var muster = new RegExp('^' + reEsc(kursId) + '_' + reEsc(lieferobjekt) +
+                              '_v(\\d+)\\.' + reEsc(ext) + '$', 'i');
+      var max = 0;
+      dateien.forEach(function (d) {
+        var m = muster.exec(d.name || '');
+        if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+      });
+      return max + 1;
+    },
+
+    /* Wohin die nächste Fassung kommt — null, wenn der Schritt keine Versionen führt. */
+    naechsteDatei: function (i, schrittId, kursId, dateien) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      if (!e || !e.lieferobjekt || !e.ext) return null;
+      var v = inhalt.naechsteVersion(dateien, kursId, e.lieferobjekt, e.ext);
+      return {
+        ordner: e.ordner,
+        datei: kursId + '_' + e.lieferobjekt + '_v' + v + '.' + e.ext,
+        version: v,
+        format: e.format
+      };
+    },
+
+    /* Der Weg Chat ist nur dort vorgesehen, wo der Kontrakt ihn nennt. */
+    darfAblegen: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      if (!e || !Array.isArray(e.wege)) return false;
+      return e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt;
     },
 
     /* --- Netz --- */

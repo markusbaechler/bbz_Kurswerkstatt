@@ -358,6 +358,22 @@
   h2.tun .tun-sub{display:block;font-family:var(--font-sans);font-size:13px;letter-spacing:0;
                   text-transform:none;color:var(--muted);font-weight:400;margin-top:5px}
 
+  /* ===== Ergebnis ablegen — der Weg Chat ===== */
+  .ablegen{border:1px dashed var(--accent);border-radius:var(--radius-s);padding:18px 20px;
+           background:var(--surface-3)}
+  .ablegen textarea{width:100%;font-family:var(--font-mono);font-size:12.5px;line-height:1.6;
+                    background:var(--surface);color:var(--ink);border:1px solid var(--line);
+                    border-radius:8px;padding:13px 15px;resize:vertical}
+  .ablegen textarea:focus{border-color:var(--accent);outline:none}
+  .arow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:13px}
+  .zielname{font-size:13px;color:var(--muted)}
+  .zielname code{font-size:12.5px;background:var(--surface-2);color:var(--ink-soft)}
+  .ablegen p.dim{margin-top:10px;font-size:12.5px}
+  .hinweis{display:flex;align-items:center;gap:11px;background:var(--g-t);
+           border-left:3px solid var(--g);border-radius:0 var(--radius-s) var(--radius-s) 0;
+           padding:13px 17px;margin-bottom:18px;font-size:14.5px;color:var(--ink)}
+  .hinweis b{color:var(--g)}
+
   /* ===== Nachschlagen ===== */
   .reiter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
   .reiter button{border:1px solid var(--line);background:transparent;border-radius:var(--radius-s);

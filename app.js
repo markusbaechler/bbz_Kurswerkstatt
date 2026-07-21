@@ -33,7 +33,8 @@
     data:      { kurse: [], inhalt: null, ordner: {}, dateien: {} },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null },
     laden:     false,
-    fehler:    null
+    fehler:    null,
+    hinweis:   null
   };
 
   /* ---------- helpers ---------- */
@@ -181,6 +182,14 @@
       return (kurs.schritt - 1) + (kurs.status === 'fertig' ? 1 : 0);
     },
 
+    /* Was das Ablegen auf Schritt n am Stand aendert.
+       null = nichts aendern. Nacharbeit an einem frueheren Schritt darf den
+       Fortschritt nicht zuruecksetzen. */
+    standNachAblage: function (kurs, n) {
+      if (n < kurs.schritt) return null;
+      return { Schritt: n, Status: 'inArbeit' };
+    },
+
     /* Was der Erledigt-Haken auf Schritt n bewirkt. */
     naechsterStand: function (kurs, n) {
       if (graph.standVon(kurs, n) === 'fertig') return { Schritt: n, Status: 'offen' };
@@ -269,6 +278,27 @@
       });
     },
 
+    /* Ergebnis ablegen — der Weg Chat. Ordner und Name kommen aus dem
+       Ablage-Kontrakt, nicht von der Person. */
+    ablegen: function (kursId, ordner, datei, text) {
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
+        var did = r[0], ord = r[1];
+        if (!ord) throw new Error('Kursordner für ' + kursId + ' nicht gefunden');
+        return auth.token().then(function (t) {
+          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                '/items/' + ord.id + ':/' + encodeURI(ordner + '/' + datei) + ':/content', {
+            method: 'PUT',
+            headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'text/plain; charset=utf-8' },
+            body: new Blob([text], { type: 'text/plain;charset=utf-8' })
+          });
+        });
+      }).then(function (r) {
+        if (!r.ok) throw new Error('Nicht abgelegt (Graph ' + r.status + ')');
+        delete state.data.dateien[kursId + '/' + ordner];   /* Ordner neu lesen */
+        return r.json();
+      });
+    },
+
     kurseLaden: function () {
       return graph.siteId().then(function (sid) {
         return graph._hole('https://graph.microsoft.com/v1.0/sites/' + sid +
@@ -278,6 +308,25 @@
           return a.kursId < b.kursId ? -1 : 1;
         });
         return state.data.kurse;
+      });
+    },
+
+    /* Schreibt Schritt und Status roh — der Aufrufer hat sie schon bestimmt. */
+    standSetzenRoh: function (kurs, neu) {
+      return graph.siteId().then(function (sid) {
+        return auth.token().then(function (t) {
+          return fetch('https://graph.microsoft.com/v1.0/sites/' + sid +
+                       '/lists/' + CONFIG.lists.kurse + '/items/' + kurs.id + '/fields', {
+            method: 'PATCH',
+            headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+            body: JSON.stringify(neu)
+          });
+        });
+      }).then(function (r) {
+        if (!r.ok) throw new Error('Stand nicht gespeichert (Graph ' + r.status + ')');
+        kurs.schritt = neu.Schritt;
+        kurs.status = neu.Status;
+        return kurs;
       });
     },
 
@@ -389,6 +438,11 @@
       }
 
       var inh = state.data.inhalt, p = state.position;
+      var meldung = '';
+      if (state.hinweis) {
+        meldung = '<div class="hinweis"><b>&#10003;</b>' + esc(state.hinweis) + '</div>';
+        state.hinweis = null;
+      }
       if (!inh) { controller.setz('<p class="lead">Inhalte werden geladen &hellip;</p>'); return; }
 
       if (p.bereich === 'nachschlagen') {
@@ -398,7 +452,7 @@
         var ab = root.inhalt.ablageVon(inh, p.schrittId, k ? k.kursId : '');
         var ordn = k ? state.data.ordner[k.kursId] : null;
         var schl = k && ab ? k.kursId + '/' + ab.ordner : null;
-        controller.setz(root.ansichten.einSchritt(inh, k, p.schrittId, p.werkzeugId, {
+        controller.setz(meldung + root.ansichten.einSchritt(inh, k, p.schrittId, p.werkzeugId, {
           basisUrl: ordn ? ordn.webUrl : null,
           dateien: schl ? state.data.dateien[schl] : null
         }));
@@ -443,6 +497,43 @@
     anmelden: function () {
       state.laden = true; state.fehler = null; controller.render();
       return auth.anmelden().then(controller.laden).catch(controller.scheitern);
+    },
+
+    /* Weg Chat: Ergebnis entgegennehmen und nach Kontrakt ablegen. */
+    ablegen: function (n, knopf) {
+      var k = nav.kurs(), inh = state.data.inhalt;
+      var feld = document.getElementById('ergebnis');
+      if (!k || !feld) return;
+      var text = feld.value.trim();
+      if (!text) { feld.focus(); return; }
+
+      var ab = root.inhalt.ablageVon(inh, n, k.kursId);
+      var schl = k.kursId + '/' + ab.ordner;
+      knopf.disabled = true; knopf.textContent = 'wird abgelegt …';
+
+      /* Den Ordner frisch lesen — die Nummer darf nicht aus einem alten Stand kommen. */
+      delete state.data.dateien[schl];
+      graph.ordnerInhalt(k.kursId, ab.ordner)
+        .then(function (dateien) {
+          var ziel = root.inhalt.naechsteDatei(inh, n, k.kursId, dateien);
+          if (!ziel) throw new Error('Für diesen Schritt ist kein versioniertes Ablegen vorgesehen.');
+          return graph.ablegen(k.kursId, ziel.ordner, ziel.datei, text).then(function () { return ziel; });
+        })
+        .then(function (ziel) {
+          var neu = graph.standNachAblage(k, +n);
+          var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
+          return weiter.then(function () { return ziel; });
+        })
+        .then(function (ziel) {
+          return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
+            state.hinweis = 'Abgelegt als ' + ziel.datei;
+            controller.render();
+          });
+        })
+        .catch(function (e) {
+          knopf.disabled = false; knopf.textContent = 'Ablegen';
+          alert('Nicht abgelegt: ' + (e.message || e));
+        });
     },
 
     erledigt: function (n) {
@@ -500,6 +591,7 @@
       if (a === 'kurs')   { controller.zu({ bereich: 'arbeiten', kursId: t.dataset.kurs, schrittId: null, werkzeugId: null }); return; }
       if (a === 'schritt'){ controller.zu({ bereich: 'arbeiten', schrittId: t.dataset.schritt, werkzeugId: null }); return; }
       if (a === 'erledigt') { controller.erledigt(t.dataset.schritt); return; }
+      if (a === 'ablegen')  { controller.ablegen(t.dataset.schritt, t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {
