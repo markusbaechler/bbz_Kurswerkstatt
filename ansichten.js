@@ -192,6 +192,81 @@
       '<div class="wbody">' + koerper + '</div></div>';
   }
 
+  /* ---------- Standort: die Zeile, die immer sagt, wo man ist ----------
+     Drei Zonen in einer Zeile: links der Raum, in dem man sich befindet
+     (Arbeiten oder Nachschlagen — ein Umschalter, bewusst anders geformt als
+     die Reiter im Seiteninhalt), in der Mitte der Weg dorthin, rechts der
+     Sprung zur Nachbarstation. Die Zeile klebt oben; in einem langen Schritt
+     ging die Orientierung sonst beim ersten Scrollen verloren. */
+  function standort(inh, kurs, pos) {
+    pos = pos || {};
+    var nach = pos.bereich === 'nachschlagen';
+
+    var h = '<div class="standort">';
+
+    h += '<div class="raeume">' +
+      raum('arbeiten', 'Arbeiten', !nach) +
+      raum('nachschlagen', 'Nachschlagen', nach) + '</div>';
+
+    var weg = spur(inh, kurs, pos, nach);
+    h += '<nav class="spur">' + weg.map(function (x, i) {
+      var letzt = i === weg.length - 1;
+      if (letzt || !x.a) return '<span class="hier">' + x.t + '</span>';
+      return '<button class="sprung" data-action="' + x.a + '"' +
+             (x.kurs ? ' data-kurs="' + esc(x.kurs) + '"' : '') +
+             (x.werk ? ' data-werk="' + esc(x.werk) + '"' : '') +
+             '>' + x.t + '</button>';
+    }).join('<i class="trenn">&rsaquo;</i>') + '</nav>';
+
+    if (!nach && kurs && pos.schrittId) h += schrittSchalter(inh, pos.schrittId);
+
+    return h + '</div>';
+  }
+
+  function raum(k, t, an) {
+    return '<button class="' + (an ? 'an' : '') + '" data-action="bereich" ' +
+           'data-bereich="' + k + '">' + t + '</button>';
+  }
+
+  function spur(inh, kurs, pos, nach) {
+    if (nach) {
+      var r = (inh && inh.referenz) || {};
+      var id = r[pos.werk] ? pos.werk : ['didaktik', 'promptcraft', 'governance']
+        .filter(function (k) { return r[k]; })[0];
+      var w = [{ t: 'Nachschlagen', a: null }];
+      if (id && r[id]) w.push({ t: esc(r[id].titel), a: null });
+      return w;
+    }
+    var st = [{ t: 'Alle Kurse', a: kurs ? 'kurse' : null }];
+    if (!kurs) return st;
+    st.push({ t: '<b>' + esc(kurs.kursId) + '</b>', a: pos.schrittId ? 'kurs' : null,
+              kurs: kurs.kursId });
+    if (pos.schrittId) {
+      var s = I().schritt(inh, pos.schrittId);
+      st.push({ t: '<b>' + esc(pos.schrittId) + '</b>&#8202;&middot;&#8202;' +
+                   esc(s ? s.nm : 'Schritt'), a: null });
+    }
+    return st;
+  }
+
+  /* Vor und zurueck, ohne den Umweg ueber die Laufkarte. */
+  function schrittSchalter(inh, schrittId) {
+    var alle = (inh.schritte && inh.schritte.schritte) || [];
+    var n = alle.length;
+    var i = 0;
+    alle.forEach(function (s, x) { if (String(s.id) === String(schrittId)) i = x; });
+    var zurueck = alle[i - 1], vor = alle[i + 1];
+
+    var knopf = function (s, zeichen, was) {
+      if (!s) return '<span class="wechsel aus">' + zeichen + '</span>';
+      return '<button class="wechsel" data-action="schritt" data-schritt="' + esc(s.id) + '" ' +
+             'title="' + was + ': ' + esc(s.id) + ' &middot; ' + esc(s.nm) + '">' + zeichen + '</button>';
+    };
+    return '<div class="stationswahl">' + knopf(zurueck, '&#8249;', 'Zur&uuml;ck') +
+      '<span class="zaehler">' + esc(schrittId) + '&#8202;/&#8202;' + n + '</span>' +
+      knopf(vor, '&#8250;', 'Weiter') + '</div>';
+  }
+
   /* ---------- Ansicht: alle Kurse ---------- */
   function alleKurse(kurse) {
     if (!kurse.length) {
@@ -213,13 +288,29 @@
         '<td class="mono fort">' + G().fortschritt(k) + '&#8202;/&#8202;9</td></tr>';
     }).join('');
 
-    return '<div class="kopf"><span class="eyebrow">Arbeiten</span>' +
-        '<h2>' + kurse.length + ' Kurse &middot; ' + fertig + ' fertig</h2>' +
-        '<p class="lead">Klick auf eine Zeile zeigt, wo dieser Kurs steht.</p></div>' +
-      '<div class="card" style="padding:14px 16px"><div class="tblwrap"><table class="tbl">' +
-        '<thead><tr><th>Kurs</th><th>Titel</th><th>Kompetenzfeld</th>' +
-        '<th>Schritt 1&thinsp;&ndash;&thinsp;9</th><th>Stand</th></tr></thead>' +
-        '<tbody>' + zeilen + '</tbody></table></div></div>';
+    /* Auftragsbuch statt Eyebrow-Titel-Lead: dieselben Datenfelder wie das
+       Schriftfeld der Laufkarte, damit die Liste und der einzelne Kurs
+       erkennbar zur selben Werkstatt gehoeren. */
+    var inArbeit = kurse.filter(function (k) {
+      var f = G().fortschritt(k); return f > 0 && f < 9;
+    }).length;
+
+    return '<div class="laufkarte auftragsbuch">' +
+        '<div class="schriftfeld">' +
+          '<div class="feld"><span class="fk">Auftragsbuch</span>' +
+            '<span class="fw kennung">Kursproduktion</span></div>' +
+          '<div class="feld weit"><span class="fk">Kurse</span>' +
+            '<span class="fw">' + kurse.length + ' erfasst</span></div>' +
+          '<div class="feld"><span class="fk">In Arbeit</span>' +
+            '<span class="fw zahl">' + inArbeit + '</span></div>' +
+          '<div class="feld"><span class="fk">Fertig</span>' +
+            '<span class="fw zahl">' + fertig + '&#8202;/&#8202;' + kurse.length + '</span></div>' +
+        '</div>' +
+        '<div class="tblwrap"><table class="tbl">' +
+          '<thead><tr><th>Kurs</th><th>Titel</th><th>Kompetenzfeld</th>' +
+          '<th>Schritt 1&thinsp;&ndash;&thinsp;9</th><th>Stand</th></tr></thead>' +
+          '<tbody>' + zeilen + '</tbody></table></div>' +
+      '</div>' + legende();
   }
 
   /* ---------- Ansicht: ein Kurs ---------- */
@@ -227,7 +318,7 @@
     if (!kurs) return karte('Kurs', 'Nicht gefunden', 'Dieser Kurs steht nicht in KWKurse.');
     var naechster = I().schritt(inh, kurs.schritt);
     return '<div class="laufkarte">' + schriftfeld(inh, kurs, null) +
-        kette(inh, kurs, null) + legende() + '</div>' +
+        kette(inh, kurs, null) + legende(true) + '</div>' +
       (naechster ? '<div class="card naechst">' +
         '<span class="eyebrow">Als N&auml;chstes dran</span>' +
         '<h3>Schritt ' + esc(naechster.id) + ' &middot; ' + esc(naechster.nm) + '</h3>' +
@@ -237,12 +328,15 @@
         '</div>' : '');
   }
 
-  function legende() {
+  /* mitGate nur dort, wo die Pruefzeichen auch gezeichnet werden — in der
+     Kursliste stehen neun schlichte Felder ohne Gate-Marke. */
+  function legende(mitGate) {
     return '<div class="kettenote">' +
       '<span><i class="kdot fertig"></i>erledigt</span>' +
       '<span><i class="kdot inArbeit"></i>in Arbeit</span>' +
       '<span><i class="kdot"></i>offen</span>' +
-      '<span><i class="kdot gate"></i>&#9873; Gate &mdash; hier entscheidet ein Mensch</span></div>';
+      (mitGate ? '<span><i class="kdot gate"></i>&#9873; Gate &mdash; hier entscheidet ein Mensch</span>' : '') +
+      '</div>';
   }
 
   /* ---------- Ansicht: ein Schritt ---------- */
@@ -453,7 +547,7 @@
   root.ansichten = {
     kette: kette, schriftfeld: schriftfeld, werkzeug: werkzeug, dateiliste: dateiliste,
     alleKurse: alleKurse, einKurs: einKurs, einSchritt: einSchritt, nachschlagen: nachschlagen,
-    entschaerfe: entschaerfe
+    entschaerfe: entschaerfe, standort: standort
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = { ansichten: root.ansichten };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

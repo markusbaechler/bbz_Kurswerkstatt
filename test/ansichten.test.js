@@ -365,3 +365,75 @@ test('jede Station steht in ihrer eigenen Rasterspalte', () => {
     assert.ok(h.indexOf('grid-column:' + i + '"') >= 0, 'Spalte ' + i + ' fehlt');
   }
 });
+
+/* ---------- Standort: die Navigationszeile ---------- */
+
+test('Standort zeigt beide Raeume, der aktive ist markiert', () => {
+  const h = ansichten.standort(INHALT, null, { bereich: 'arbeiten' });
+  assert.ok(/data-bereich="arbeiten"/.test(h) && /data-bereich="nachschlagen"/.test(h));
+  assert.ok(/class="an" data-action="bereich" data-bereich="arbeiten"/.test(h),
+            'Arbeiten nicht als aktiver Raum markiert');
+});
+
+test('Standort zeigt den Weg schon auf der obersten Ebene', () => {
+  /* Die alte Leiste blendete den Pfad aus, solange man nicht tief drin war —
+     genau dann fehlte die Auskunft, wo man ist. */
+  const h = ansichten.standort(INHALT, null, { bereich: 'arbeiten' });
+  assert.ok(/class="spur"/.test(h), 'keine Spur');
+  assert.ok(/Alle Kurse/.test(h));
+});
+
+test('Standort fuehrt vom Schritt ueber den Kurs zurueck zur Liste', () => {
+  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '4' });
+  assert.ok(/data-action="kurse"/.test(h), 'kein Rueckweg zur Liste');
+  assert.ok(/data-action="kurs" data-kurs="DBS-001"/.test(h), 'kein Rueckweg zum Kurs');
+  assert.ok(/class="hier">.*Green-field W-Content/.test(h),
+            'aktuelle Station nicht als Standort markiert');
+});
+
+test('im Kurs ist der Kurs selbst der Standort, nicht mehr anklickbar', () => {
+  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten' });
+  assert.ok(!/data-action="kurs"/.test(h), 'Kurs verweist auf sich selbst');
+  assert.ok(/class="hier"[^>]*>.*DBS-001/.test(h), 'Kurs nicht als Standort markiert');
+});
+
+test('Stationswahl springt zu Nachbarschritten', () => {
+  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '4' });
+  assert.ok(/data-action="schritt" data-schritt="3"/.test(h), 'kein Weg zurueck');
+  assert.ok(/data-action="schritt" data-schritt="5"/.test(h), 'kein Weg vorwaerts');
+  assert.ok(/4&#8202;\/&#8202;9/.test(h), 'Zaehler fehlt');
+});
+
+test('an den Enden der Strasse zeigt die Stationswahl ins Leere', () => {
+  const erst = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '1' });
+  assert.ok(/class="wechsel aus"/.test(erst), 'vor Schritt 1 muesste tot sein');
+  assert.ok(/data-schritt="2"/.test(erst));
+  const letzt = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '9' });
+  assert.ok(/class="wechsel aus"/.test(letzt), 'nach Schritt 9 muesste tot sein');
+  assert.ok(/data-schritt="8"/.test(letzt));
+});
+
+test('ohne Schritt gibt es keine Stationswahl', () => {
+  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten' });
+  assert.ok(!/class="stationswahl"/.test(h));
+});
+
+test('im Nachschlagen nennt die Spur das Werk statt eines Kurses', () => {
+  const h = ansichten.standort(INHALT, DBS, { bereich: 'nachschlagen', werk: 'promptcraft' });
+  assert.ok(/Prompt-Handwerk/.test(h), 'Werk nicht benannt');
+  assert.ok(!/DBS-001/.test(h), 'Kurs gehoert nicht in diesen Raum');
+  assert.ok(!/class="stationswahl"/.test(h), 'Stationswahl gehoert nicht in diesen Raum');
+});
+
+test('ein unbekanntes Werk faellt in der Spur auf das erste zurueck', () => {
+  const h = ansichten.standort(INHALT, null, { bereich: 'nachschlagen', werk: 'gibtsnicht' });
+  assert.ok(/Didaktisches Modell/.test(h));
+});
+
+test('die Kursliste traegt das Schriftfeld, nicht die alte Vorlage', () => {
+  const h = ansichten.alleKurse([DBS]);
+  assert.ok(/class="schriftfeld"/.test(h), 'kein Schriftfeld');
+  assert.ok(/Auftragsbuch/.test(h));
+  assert.ok(!/class="eyebrow"/.test(h), 'alte Vorlage noch da');
+  assert.ok(!/kdot gate/.test(h), 'Gate-Legende passt nicht zur Liste');
+});

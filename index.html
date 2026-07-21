@@ -76,8 +76,10 @@
   .lead{color:var(--ink-soft);max-width:68ch}
 
   /* ===== Kopfzeile ===== */
-  .topbar{position:sticky;top:0;z-index:40;
-          background:color-mix(in srgb,var(--surface) 88%,transparent);
+  /* Marke und Standort kleben zusammen: in einem langen Schritt ging die
+     Orientierung sonst beim ersten Scrollen verloren. */
+  .kopfleiste{position:sticky;top:0;z-index:40}
+  .topbar{background:color-mix(in srgb,var(--surface) 88%,transparent);
           backdrop-filter:saturate(1.2) blur(10px);border-bottom:1px solid var(--line)}
   .topbar-in{max-width:var(--maxw);margin:0 auto;display:flex;align-items:center;gap:16px;
              padding:11px 20px;flex-wrap:wrap}
@@ -131,19 +133,46 @@
   .knopfreihe{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
 
   /* ===== Navigation ===== */
-  .navleiste{background:var(--surface);border-bottom:1px solid var(--line)}
+  /* =====================================================================
+     DER STANDORT — eine Zeile, drei Zonen: in welchem Raum, auf welchem Weg,
+     welche Nachbarstation. Der Raumumschalter ist bewusst anders geformt als
+     die Reiter im Seiteninhalt; zwei gleich aussehende Reiterreihen
+     uebereinander sagten nicht, welche die uebergeordnete ist.
+     ===================================================================== */
+  .navleiste{background:var(--surface-3);border-bottom:1px solid var(--line)}
   .navleiste-in{max-width:var(--maxw);margin:0 auto;padding:0 20px}
   .navleiste-in:empty{display:none}
-  .bereiche{display:flex;gap:4px;padding:9px 0 0}
-  .bereiche button{background:transparent;border:0;border-bottom:2px solid transparent;
-                   padding:7px 14px 9px;font-size:14px;color:var(--muted);font-weight:600}
-  .bereiche button:hover{color:var(--ink)}
-  .bereiche button.on{color:var(--accent);border-bottom-color:var(--accent)}
-  .pfad{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 0 10px;
-        font-family:var(--font-mono);font-size:12px}
-  .pfad a{color:var(--accent);cursor:pointer;text-decoration:none}
-  .pfad a:hover{text-decoration:underline}
-  .pfad .hier{color:var(--ink-soft)} .pfad .sep{color:var(--line)}
+  .standort{display:flex;align-items:center;gap:18px;min-height:44px;flex-wrap:wrap}
+
+  .raeume{display:flex;flex:none;border:1px solid var(--line);border-radius:5px;
+          overflow:hidden;background:var(--bg)}
+  .raeume button{background:transparent;border:0;padding:5px 13px 6px;
+                 font-family:var(--font-mono);font-size:10.5px;letter-spacing:.13em;
+                 text-transform:uppercase;color:var(--muted);font-weight:500}
+  .raeume button + button{border-left:1px solid var(--line)}
+  .raeume button:hover{color:var(--ink)}
+  .raeume button.an{background:var(--accent);color:#fff;font-weight:600}
+
+  .spur{display:flex;align-items:center;gap:9px;flex-wrap:wrap;min-width:0;
+        margin-right:auto;font-size:13px}
+  .spur .sprung{background:transparent;border:0;padding:0;font-size:13px;
+                color:var(--muted);font-family:inherit}
+  .spur .sprung:hover{color:var(--accent);text-decoration:underline}
+  .spur .hier{color:var(--ink)}
+  .spur b{font-family:var(--font-mono);font-weight:600;letter-spacing:.02em}
+  .spur .trenn{color:var(--line);font-style:normal}
+
+  .stationswahl{display:flex;align-items:center;gap:2px;flex:none}
+  .wechsel{display:grid;place-items:center;width:26px;height:26px;border-radius:4px;
+           background:transparent;border:1px solid var(--line);color:var(--ink-soft);
+           font-size:15px;line-height:1}
+  .wechsel:hover{border-color:var(--accent);color:var(--accent)}
+  .wechsel.aus{opacity:.3}
+  .stationswahl .zaehler{font-family:var(--font-mono);font-size:11.5px;color:var(--muted);
+                         padding:0 8px;font-variant-numeric:tabular-nums}
+
+  /* Ankersprünge im Nachschlagen duerfen nicht unter der Kopfleiste landen. */
+  .kapitel{scroll-margin-top:110px}
 
   /* =====================================================================
      DIE LAUFKARTE — das Begleitblatt des Werkstuecks.
@@ -154,6 +183,8 @@
      ===================================================================== */
   .laufkarte{border-top:2px solid var(--ink);border-bottom:1px solid var(--line);
              padding:0 0 26px;margin-bottom:30px}
+  .auftragsbuch{padding-bottom:0}
+  .auftragsbuch .tblwrap{margin-top:-8px}
 
   /* Schriftfeld — wie der Titelblock einer technischen Zeichnung */
   .schriftfeld{display:flex;flex-wrap:wrap;align-items:stretch;
@@ -570,17 +601,18 @@
 </head>
 <body>
 
-<div class="topbar">
-  <div class="topbar-in">
-    <div class="brand">
-      <div class="brand-mark">&#8635;</div>
-      <div class="brand-t">Kurswerkstatt<small>Lerninhalte umgiessen</small></div>
+<header class="kopfleiste">
+  <div class="topbar">
+    <div class="topbar-in">
+      <div class="brand">
+        <div class="brand-mark">&#8635;</div>
+        <div class="brand-t">Kurswerkstatt<small>Lerninhalte umgiessen</small></div>
+      </div>
+      <button class="iconbtn" data-action="theme" title="Hell / Dunkel">&#9681;</button>
     </div>
-    <button class="iconbtn" data-action="theme" title="Hell / Dunkel">&#9681;</button>
   </div>
-</div>
-
-<div class="navleiste"><div class="navleiste-in" id="nav"></div></div>
+  <div class="navleiste"><div class="navleiste-in" id="nav"></div></div>
+</header>
 
 <main id="app"><p class="lead">Wird geladen &hellip;</p></main>
 

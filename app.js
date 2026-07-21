@@ -363,43 +363,8 @@
       })[0] || null;
     },
 
-    /* Pfad im Bereich Arbeiten. */
-    pfad: function () {
-      var p = state.position, k = nav.kurs();
-      var st = [{ t: 'Alle Kurse', a: 'kurse' }];
-      if (!k) return st;
-      st.push({ t: k.kursId, a: 'kurs', v: k.kursId });
-      if (p.schrittId) {
-        var s = root.inhalt.schritt(state.data.inhalt, p.schrittId);
-        st.push({ t: 'Schritt ' + p.schrittId + (s ? ' · ' + s.nm : ''), a: null });
-      }
-      return st;
-    },
-
     kopf: function () {
-      var p = state.position;
-      var reiter = [
-        { k: 'arbeiten', t: 'Arbeiten' },
-        { k: 'nachschlagen', t: 'Nachschlagen' }
-      ];
-      var h = '<div class="bereiche">' + reiter.map(function (r) {
-        var an = (r.k === 'nachschlagen') === (p.bereich === 'nachschlagen');
-        return '<button class="' + (an ? 'on' : '') + '" data-action="bereich" ' +
-               'data-bereich="' + r.k + '">' + r.t + '</button>';
-      }).join('') + '</div>';
-
-      if (p.bereich !== 'nachschlagen') {
-        var st = nav.pfad();
-        if (st.length > 1) {
-          h += '<div class="pfad">' + st.map(function (x, i) {
-            var letzt = i === st.length - 1;
-            if (letzt || !x.a) return '<span class="hier">' + esc(x.t) + '</span>';
-            return '<a data-action="' + x.a + '"' + (x.v ? ' data-kurs="' + esc(x.v) + '"' : '') +
-                   '>' + esc(x.t) + '</a>';
-          }).join('<span class="sep">&rsaquo;</span>') + '</div>';
-        }
-      }
-      return h;
+      return root.ansichten.standort(state.data.inhalt, nav.kurs(), state.position);
     }
   };
 
