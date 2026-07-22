@@ -31,7 +31,8 @@
   var state = {
     auth:      { account: null },
     data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {} },
-    position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null },
+    position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
+                 variante: null },
     laden:     false,
     fehler:    null,
     hinweis:   null
@@ -559,7 +560,8 @@
           dateien: schl ? state.data.dateien[schl] : null,
           /* undefined = noch nicht nachgesehen, null = nachgesehen und nicht da */
           ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false,
-          briefing: k ? state.data.briefing[k.kursId] : undefined
+          briefing: k ? state.data.briefing[k.kursId] : undefined,
+          variante: p.variante
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         if (k && String(p.schrittId) === '2' && state.data.ordner[k.kursId]) {
@@ -760,6 +762,8 @@
 
       var ab = root.inhalt.ablageVon(inh, n, k.kursId);
       var schl = k.kursId + '/' + ab.ordner;
+      var vari = root.inhalt.varianten(inh, n);
+      var gewaehlt = vari ? (state.position.variante || vari[0]) : undefined;
       if (meld) meld.hidden = true;
       knopf.disabled = true; knopf.textContent = 'wird hochgeladen …';
 
@@ -767,8 +771,12 @@
       delete state.data.dateien[schl];
       graph.ordnerInhalt(k.kursId, ab.ordner)
         .then(function (dateien) {
-          var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien);
-          if (!ziel) throw new Error('Für diesen Schritt ist kein Hochladen vorgesehen.');
+          var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
+          if (!ziel) {
+            throw new Error(vari
+              ? 'Wähle zuerst die Variante — der Dateiname hängt davon ab.'
+              : 'Für diesen Schritt ist kein Hochladen vorgesehen.');
+          }
           return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, datei, function (anteil) {
             knopf.textContent = anteil >= 1 ? 'wird abgeschlossen …'
                                             : 'lädt … ' + Math.round(anteil * 100) + '%';
@@ -845,6 +853,7 @@
       if (a === 'erledigt') { controller.erledigt(t.dataset.schritt); return; }
       if (a === 'ablegen')  { controller.ablegen(t.dataset.schritt, t); return; }
       if (a === 'hochladen') { controller.hochladen(t.dataset.schritt, t); return; }
+      if (a === 'variante')  { controller.zu({ variante: t.dataset.variante }); return; }
       if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
       if (a === 'manifest-schreiben') { controller.manifestSchreiben(t); return; }
 

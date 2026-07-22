@@ -350,7 +350,9 @@
     var am = ((inh.schritte && inh.schritte.autoMeta) || {})[s.auto];
     var anleitung = I().anleitungVon(inh, schrittId);
     var hilfsmittel = I().hilfsmittelVon(inh, schrittId);
-    var ablage = I().ablageVon(inh, schrittId, kurs ? kurs.kursId : '<Kurs>');
+    var ablage = I().ablageVon(inh, schrittId, kurs ? kurs.kursId : '<Kurs>',
+                               ablageDaten.variante ||
+                               ((I().varianten(inh, schrittId) || [])[0]));
     var typMeta = (inh.werkzeuge && inh.werkzeuge.typMeta) || {};
 
     var zielUrl = (ablage && ablageDaten.basisUrl)
@@ -442,14 +444,32 @@
            Excel (Schritt 3) und der Moodle-Export (Schritt 7). Der Name wird
            angezeigt, nicht getippt — abgetippte Namen waren die Fehlerquelle. */
     if (kurs && I().darfHochladen(inh, schrittId) && !ablageDaten.ordnerFehlt) {
+      /* Verlangt der Kontrakt eine Variante (Schritt 4: claude / chatgpt), muss
+         sie gewaehlt sein, bevor der Name feststeht. Sonst stuende {variante}
+         woertlich im Dateinamen. */
+      var vari = I().varianten(inh, schrittId);
+      var gewaehlt = vari ? (ablageDaten.variante || vari[0]) : undefined;
       var hziel = Array.isArray(ablageDaten.dateien)
-        ? I().hochladeZiel(inh, schrittId, kurs.kursId, ablageDaten.dateien)
+        ? I().hochladeZiel(inh, schrittId, kurs.kursId, ablageDaten.dateien, gewaehlt)
         : null;
       var endung = I().erwarteteEndung(inh, schrittId);
+
       h += '<h2 class="tun">Datei hochladen' +
            '<span class="tun-sub">die Kurswerkstatt vergibt Ordner und Namen</span></h2>';
-      h += '<div class="ablegen">' +
-        '<input type="file" id="datei"' +
+      h += '<div class="ablegen">';
+
+      if (vari) {
+        h += '<div class="ptabs">' + vari.map(function (v) {
+          return '<button class="ptab' + (v === gewaehlt ? ' on' : '') + '" ' +
+                 'data-action="variante" data-variante="' + esc(v) + '" ' +
+                 'data-schritt="' + esc(schrittId) + '">' + esc(v) + '</button>';
+        }).join('') + '</div>' +
+        '<p class="dim" style="margin:8px 0 2px">Dieser Schritt f&uuml;hrt mehrere Entw&uuml;rfe ' +
+        'nebeneinander &mdash; je Werkzeug einen. Sie sind keine Versionen voneinander; ' +
+        'jede Variante z&auml;hlt eigene Nummern.</p>';
+      }
+
+      h += '<input type="file" id="datei"' +
           (endung ? ' accept=".' + esc(endung) + '"' : '') + ' />' +
         '<div class="arow">' +
           '<button class="knopf gross" data-action="hochladen" data-schritt="' +

@@ -117,15 +117,21 @@
     },
 
     /* Wohin gehoert das Lieferobjekt dieses Schritts, nach Ablage-Kontrakt. */
-    ablageVon: function (i, schrittId, kursId) {
+    ablageVon: function (i, schrittId, kursId, variante) {
       var k = i['ablage-kontrakt'];
       var e = k && k.schritte && k.schritte[String(schrittId)];
       if (!e) return null;
+      /* Verlangt der Schritt eine Variante und ist keine gewaehlt, wird der
+         Platzhalter sichtbar stehengelassen — aber als {variante}, nicht als
+         halber Dateiname. Der Mensch soll sehen, dass hier noch etwas fehlt. */
+      var lief = e.lieferobjekt
+        ? (inhalt.lieferobjektVon(i, schrittId, variante) || e.lieferobjekt)
+        : null;
       var datei = e.datei
         ? e.datei.replace('{K}', kursId)
-        : (kursId + '_' + e.lieferobjekt + '_v{N}.' + e.ext);
+        : (kursId + '_' + lief + '_v{N}.' + e.ext);
       return { ordner: e.ordner, datei: datei, format: e.format, gate: e.gate || null,
-               wege: e.wege || [] };
+               wege: e.wege || [], variante: variante || null };
     },
 
     /* --- Ablegen: welche Version, welcher Name --- */
@@ -146,17 +152,24 @@
       return max + 1;
     },
 
-    /* Wohin die nächste Fassung kommt — null, wenn der Schritt keine Versionen führt. */
-    naechsteDatei: function (i, schrittId, kursId, dateien) {
+    /* Wohin die nächste Fassung kommt — null, wenn der Schritt keine Versionen
+       führt oder eine Variante verlangt, die nicht gewählt ist. */
+    naechsteDatei: function (i, schrittId, kursId, dateien, variante) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
       if (!e || !e.lieferobjekt || !e.ext) return null;
-      var v = inhalt.naechsteVersion(dateien, kursId, e.lieferobjekt);
-      return {
+      var lief = inhalt.lieferobjektVon(i, schrittId, variante);
+      if (!lief) return null;
+      var v = inhalt.naechsteVersion(dateien, kursId, lief);
+      var ziel = {
         ordner: e.ordner,
-        datei: kursId + '_' + e.lieferobjekt + '_v' + v + '.' + e.ext,
+        datei: kursId + '_' + lief + '_v' + v + '.' + e.ext,
         version: v,
         format: e.format
       };
+      /* Nur setzen, wo es eine gibt — sonst aendert sich die Form fuer alle
+         Schritte ohne Varianten. */
+      if (variante) ziel.variante = variante;
+      return ziel;
     },
 
     /* Welche Fassung gilt? Maschinenregel aus dem Kontrakt: gibt es _final, gilt sie;
@@ -190,16 +203,39 @@
       return !!(e && Array.isArray(e.wege) && e.wege.indexOf('hochladen') >= 0);
     },
 
-    /* Wohin die hochgeladene Datei kommt. Zwei Faelle: der Kontrakt nennt einen
-       festen Dateinamen (Schritt 7: {K}_export.mbz) oder ein versioniertes
-       Lieferobjekt (Schritt 3). Der Mensch tippt in keinem Fall einen Namen. */
-    hochladeZiel: function (i, schrittId, kursId, dateien) {
+    /* --- Varianten ---
+       Schritt 4 erzeugt bewusst mehrere Entwuerfe nebeneinander, je Werkzeug
+       einen. Der Kontrakt schreibt das als lieferobjekt "greenfield-{variante}"
+       plus varianten: ["claude","chatgpt"]. Jede Variante fuehrt ihre eigene
+       Versionsreihe — sie sind keine Versionen voneinander. */
+    varianten: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      return (e && Array.isArray(e.varianten) && e.varianten.length) ? e.varianten : null;
+    },
+
+    /* Das Lieferobjekt mit aufgeloester Variante. null, wenn der Kontrakt eine
+       Variante verlangt und keine gewaehlt ist — dann darf nichts abgelegt
+       werden, sonst stuende {variante} woertlich im Dateinamen. */
+    lieferobjektVon: function (i, schrittId, variante) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      if (!e || !e.lieferobjekt) return null;
+      if (e.lieferobjekt.indexOf('{variante}') < 0) return e.lieferobjekt;
+      var erlaubt = inhalt.varianten(i, schrittId) || [];
+      if (erlaubt.indexOf(variante) < 0) return null;
+      return e.lieferobjekt.replace('{variante}', variante);
+    },
+
+    /* Wohin die hochgeladene Datei kommt. Drei Faelle: fester Dateiname aus dem
+       Kontrakt (Schritt 7: {K}_export.mbz), versioniertes Lieferobjekt
+       (Schritt 3) oder versioniertes Lieferobjekt mit Variante (Schritt 4).
+       Der Mensch tippt in keinem Fall einen Namen. */
+    hochladeZiel: function (i, schrittId, kursId, dateien, variante) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
       if (!e) return null;
       if (e.datei) {
         return { ordner: e.ordner, datei: e.datei.replace('{K}', kursId), version: null };
       }
-      return inhalt.naechsteDatei(i, schrittId, kursId, dateien);
+      return inhalt.naechsteDatei(i, schrittId, kursId, dateien, variante);
     },
 
     /* Die Endung, die der Kontrakt fuer diesen Schritt erwartet — als Vorauswahl
