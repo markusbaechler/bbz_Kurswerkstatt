@@ -751,8 +751,10 @@
         return;
       }
       if (a === 'kopieren-instruktionen') {
-        var box2 = document.getElementById('instruktionen');
-        if (box2) kopieren(box2.textContent, t);
+        /* Die sichtbare Fassung kopieren, nicht immer die erste. */
+        var karte3 = t.closest('.wtool');
+        var sicht = karte3 && karte3.querySelector('.prompt.on');
+        if (sicht) kopieren(sicht.textContent, t);
         return;
       }
       if (a === 'fassung') {

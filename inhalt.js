@@ -255,26 +255,28 @@
        noch die Ordner 01_altunterlagen … 05_moodle-export und brachte damit beiden
        KI-Projekten eine Struktur bei, die es seit dem Ablage-Kontrakt nicht mehr
        gibt. Was aus dem Kontrakt kommt, kann nicht mehr veralten. */
-    projektInstruktionen: function (i, kurs, briefing) {
+    /* Der Inhalt entsteht EINMAL als Abschnitte. Die beiden Fassungen unterscheiden
+       sich nur in der Verpackung — so koennen Claude und ChatGPT nicht auseinander-
+       driften, obwohl jede ihre eigene Form bekommt. */
+    projektInstruktionenTeile: function (i, kurs, briefing) {
       var kontrakt = (i && i['ablage-kontrakt']) || {};
       var schritte = (i && i.schritte && i.schritte.schritte) || [];
       var ordner = inhalt.ordnerliste(i);
       var kf = kurs.kompetenzfeld || 'offen';
-      var z = [];
+      var teile = [];
+      var z;
 
       function abs(n) { return n ? n : ''; }
+      function teil(tag, titel) { z = []; teile.push({ tag: tag, titel: titel, zeilen: z }); }
 
-      z.push('# Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel);
-      z.push('Kompetenzfeld: ' + kf);
-      z.push('');
-      z.push('## Rolle & Kontext');
+      teil('rolle', 'Rolle & Kontext');
       z.push('Du bist didaktischer Co-Autor im bbz-Produktionsprozess „Lerninhalte umgiessen". ' +
              'Wir bauen diesen Weiterbildungskurs (Kompetenzfeld: ' + kf + ') nach dem W-U-G-Modell ' +
              'neu auf. Dieser Kurs ist allgemeine Weiterbildung (oeffentlich), kein bankinternes ' +
              'oder kundenspezifisches Material. Du lieferst Entwuerfe; final ist nur, was ein ' +
              'Mensch freigibt.');
-      z.push('');
-      z.push('## Didaktisches Modell W-U-G (Kompass, kein starres Klassifikationssystem)');
+
+      teil('modell', 'Didaktisches Modell W-U-G (Kompass, kein starres Klassifikationssystem)');
       z.push('W-U-G ist der didaktische Kompass fuers Kursdesign, keine 1:1-Bloom-Zuordnung. ' +
              'Bloom dient als Orientierungsanker; Ueberschneidungen zwischen U und G sind zulaessig.');
       z.push('- W = Wissen: Selbstlernphase VOR dem Kurs (Moodle/Web), im Fokus Bloom 1–2. ' +
@@ -286,8 +288,8 @@
              'Abschlusspruefung der angestrebten Kompetenzen.');
       z.push('Praesenz-Orientierung ~30% Input · 50% Anwendung · 20% Reflexion — Zielbild, ' +
              'kein Abnahmekriterium.');
-      z.push('');
-      z.push('## Die neun Produktionsschritte');
+
+      teil('schritte', 'Die neun Produktionsschritte');
       schritte.forEach(function (s) {
         var a = kontrakt.schritte && kontrakt.schritte[String(s.id)];
         var ziel = a ? (a.ordner + '/' + (a.datei || ('{K}_' + a.lieferobjekt + '_v{N}.' + a.ext))) : '';
@@ -296,8 +298,8 @@
       });
       z.push('Sprint-Scope: Sprint 1 baut und gibt die W-Selbstlernstrecke frei. U- und ' +
              'G-Praesenzartefakte folgen nachgelagert im selben Projekt.');
-      z.push('');
-      z.push('## Ablage — verbindlich');
+
+      teil('ablage', 'Ablage — verbindlich');
       z.push('Bibliothek: ' + (kontrakt.bibliothek || 'Kursproduktion') + ' (SharePoint).');
       z.push('Kursordner dieses Kurses: ' + kurs.kursId + '_<kurzname>/');
       z.push('Unterordner: ' + ordner.join(' · '));
@@ -312,8 +314,8 @@
       z.push('Der Ordner sagt nie, ob etwas fertig ist — der Stand steht in der Liste KWKurse ' +
              '(Felder Schritt 1–9 und Status offen/inArbeit/fertig). Referenzen zeigen auf die ' +
              'Kurs-ID, nie auf einen Pfad.');
-      z.push('');
-      z.push('## Feste Regeln');
+
+      teil('regeln', 'Feste Regeln');
       z.push('- Arbeite streng entlang der konkreten Lernziele und Eingangskompetenzen ' +
              '(Halluzinations-Bremse).');
       z.push('- Evidenzregel: Fachliche Aussagen, Zahlen, Fristen, regulatorische Angaben und ' +
@@ -332,13 +334,13 @@
       z.push('- Standard-Kennzeichnungen woertlich: [ENTWURF — unvalidiert] · [ZU PRUEFEN: …] · ' +
              '[NEU — Sign-off noetig] · [FREIGEGEBEN DURCH: … / DATUM: …].');
       z.push('- Fehlende Angaben werden NICHT geraten → „offen".');
-      z.push('');
-      z.push('## Menschliche Freigabe (nicht verhandelbar)');
+
+      teil('freigabe', 'Menschliche Freigabe (nicht verhandelbar)');
       z.push('Fachliche Freigabe durch den Menschen an den Gates. Nichts gilt ohne menschliche ' +
              'Freigabe als final. Ist eine benoetigte Projektdatei nicht auffindbar, benenne die ' +
              'fehlende Grundlage — rekonstruiere ihren Inhalt NICHT aus Vermutungen.');
-      z.push('');
-      z.push('## Das freigegebene Kursbriefing');
+
+      teil('kursbriefing', 'Das freigegebene Kursbriefing');
       if (briefing) {
         z.push('Aus ' + kurs.kursId + '_briefing (Schritt 1). Es ist die Leitplanke fuer alles ' +
                'Weitere — bei Widerspruch zu einer Annahme gilt das Briefing.');
@@ -348,6 +350,49 @@
         z.push('[FEHLT — in Schritt 1 noch nicht abgelegt. Ohne freigegebenes Kursbriefing ' +
                'nicht mit Schritt 3 beginnen.]');
       }
+      return teile;
+    },
+
+    /* Die zwei Fassungen. Gleicher Inhalt, andere Verpackung:
+       Claude arbeitet mit XML-Tags, ChatGPT mit Trenn-Ueberschriften — dasselbe
+       Tool-Tuning, das die Masterprompts schon benutzen. */
+    projektInstruktionen: function (i, kurs, briefing, fassung) {
+      var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing);
+      var kopf = 'Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel +
+                 '\nKompetenzfeld: ' + (kurs.kompetenzfeld || 'offen');
+      var z = [];
+
+      if (fassung === 'chatgpt') {
+        z.push('=== ' + kopf.split('\n')[0].toUpperCase() + ' ===');
+        z.push(kopf.split('\n')[1]);
+        teile.forEach(function (t, n) {
+          z.push('');
+          z.push('=== ' + (n + 1) + '. ' + t.titel.toUpperCase() + ' ===');
+          z.push(t.zeilen.join('\n'));
+        });
+        z.push('');
+        z.push('=== ARBEITSWEISE ===');
+        z.push('Halte dich in jedem Chat an den jeweiligen Masterprompt UND an diese ' +
+               'Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den ' +
+               'Konflikt, statt ihn still aufzuloesen.');
+        return z.join('\n');
+      }
+
+      /* Claude */
+      z.push('# ' + kopf);
+      teile.forEach(function (t) {
+        z.push('');
+        z.push('<' + t.tag + '>');
+        z.push('<!-- ' + t.titel + ' -->');
+        z.push(t.zeilen.join('\n'));
+        z.push('</' + t.tag + '>');
+      });
+      z.push('');
+      z.push('<arbeitsweise>');
+      z.push('Halte dich in jedem Chat an den jeweiligen Masterprompt UND an diese ' +
+             'Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den ' +
+             'Konflikt, statt ihn still aufzuloesen.');
+      z.push('</arbeitsweise>');
       return z.join('\n');
     },
 

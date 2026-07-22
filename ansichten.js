@@ -538,7 +538,15 @@
      Kontrakt + KWKurse + dem eingelesenen Briefing — keine Platzhalter, keine
      Eingabefelder. Genau das war vorher Handarbeit an sechs Feldern. */
   function instruktionenBlock(inh, kurs, briefing) {
-    var text = I().projektInstruktionen(inh, kurs, briefing);
+    /* Zwei Fassungen aus derselben Quelle — dieselben Umschalter wie beim Masterprompt,
+       damit sie sich gleich bedienen und die Ereignisbehandlung wiederverwendet wird. */
+    var fass = [
+      { k: 'claude',  t: 'Claude'  },
+      { k: 'chatgpt', t: 'ChatGPT' }
+    ].map(function (f) {
+      f.txt = I().projektInstruktionen(inh, kurs, briefing, f.k);
+      return f;
+    });
     var quelle = briefing === undefined
       ? '<span class="dim">Briefing wird gelesen &hellip;</span>'
       : (briefing
@@ -558,7 +566,14 @@
         '</div>' +
         '<div class="wbody">' +
           '<div class="arow">' + quelle + '</div>' +
-          '<pre class="prompt on" id="instruktionen">' + esc(text) + '</pre>' +
+          '<div class="ptabs">' + fass.map(function (f, i) {
+            return '<button class="ptab' + (i === 0 ? ' on' : '') + '" data-action="fassung" ' +
+                   'data-fassung="' + f.k + '">' + f.t + '</button>';
+          }).join('') + '</div>' +
+          fass.map(function (f, i) {
+            return '<pre class="prompt' + (i === 0 ? ' on' : '') + '" data-box="' + f.k + '">' +
+                   esc(f.txt) + '</pre>';
+          }).join('') +
         '</div>' +
       '</div>';
   }

@@ -135,7 +135,7 @@ Beide Knöpfe fassen `Schritt`/`Status` **nicht** an: den Stand rückt das Ableg
 ## Projekt-Instruktionen (Schritt 2)
 
 `inhalt.projektInstruktionen()` erzeugt den Anweisungstext für die beiden KI-Projekte —
-**fertig ausgefüllt, ohne ein einziges Eingabefeld.** Kurs-ID, Titel und Kompetenzfeld kommen
+**fertig ausgefüllt, ohne ein einziges Eingabefeld** — in zwei Fassungen (Claude mit XML-Tags, ChatGPT mit `===`-Überschriften). Kurs-ID, Titel und Kompetenzfeld kommen
 aus `KWKurse`, das freigegebene Briefing wird aus `01_briefing/` gelesen
 (`inhalt.geltendeDatei()` → `_final` vor höchster Nummer, dann `graph.dateiLesen()`).
 
@@ -153,7 +153,7 @@ heisst, reviewer-freigegebene Prompt-Texte anzufassen — das gehört durch das 
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
 mit der Kette, Schrittansicht mit Anleitung und inline aufklappbarem Masterprompt, Nachschlagen
-mit Bloom, Ablegen über den Weg Chat. **184 Tests grün**, keine Konsolenfehler.
+mit Bloom, Ablegen über den Weg Chat. **191 Tests grün**, keine Konsolenfehler.
 
 ## Offen
 
