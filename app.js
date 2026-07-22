@@ -30,7 +30,7 @@
   /* ---------- state ---------- */
   var state = {
     auth:      { account: null },
-    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {} },
+    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {} },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null },
     laden:     false,
     fehler:    null,
@@ -345,6 +345,21 @@
       });
     },
 
+    /* Eine Textdatei aus dem Kursordner lesen — fuer das Briefing, das in die
+       Projekt-Instruktionen eingeht. Nicht gefunden ist kein Fehler, sondern null. */
+    dateiLesen: function (kursId, ordner, datei) {
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId), auth.token()])
+        .then(function (r) {
+          var did = r[0], ord = r[1], t = r[2];
+          if (!ord) return null;
+          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                '/items/' + ord.id + ':/' + encodeURI(ordner + '/' + datei) + ':/content',
+                { headers: { Authorization: 'Bearer ' + t } })
+            .then(function (x) { return x.ok ? x.text() : null; });
+        })
+        .catch(function () { return null; });
+    },
+
     /* Schritt 2: das Manifest. Ordner und Dateiname kommen aus dem Kontrakt. */
     manifestSchreiben: function (kurs, heute) {
       var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['2'] || {};
@@ -475,9 +490,13 @@
           basisUrl: ordn ? ordn.webUrl : null,
           dateien: schl ? state.data.dateien[schl] : null,
           /* undefined = noch nicht nachgesehen, null = nachgesehen und nicht da */
-          ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false
+          ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false,
+          briefing: k ? state.data.briefing[k.kursId] : undefined
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
+        if (k && String(p.schrittId) === '2' && state.data.ordner[k.kursId]) {
+          controller.briefingNachladen(k.kursId);
+        }
       } else if (p.kursId) {
         var kk = nav.kurs();
         controller.setz(root.ansichten.einKurs(inh, kk, {
@@ -496,6 +515,29 @@
       graph.kursOrdner(kursId)
         .then(function () {
           if (state.position.kursId === kursId && !state.position.schrittId) controller.render();
+        })
+        .catch(function () {});
+    },
+
+    /* Das freigegebene Briefing aus Schritt 1 lesen — es geht in die
+       Projekt-Instruktionen von Schritt 2 ein. undefined = noch nicht nachgesehen,
+       null = nachgesehen und nicht da. */
+    briefingNachladen: function (kursId) {
+      if (state.data.briefing[kursId] !== undefined) return;
+      var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['1'] || {};
+      var ordner = e.ordner || '01_briefing';
+      state.data.briefing[kursId] = null;              /* verhindert Doppelabruf */
+      graph.ordnerInhalt(kursId, ordner)
+        .then(function (dateien) {
+          var name = root.inhalt.geltendeDatei(dateien, kursId, e.lieferobjekt || 'briefing');
+          if (!name) return null;
+          return graph.dateiLesen(kursId, ordner, name);
+        })
+        .then(function (text) {
+          state.data.briefing[kursId] = text;
+          if (state.position.kursId === kursId && String(state.position.schrittId) === '2') {
+            controller.render();
+          }
         })
         .catch(function () {});
     },
@@ -706,6 +748,11 @@
         var karte2 = t.closest('.wtool');
         var aktiv = karte2 && karte2.querySelector('.prompt.on');
         kopieren(aktiv ? aktiv.textContent : (w.claude || w.chatgpt || ''), t);
+        return;
+      }
+      if (a === 'kopieren-instruktionen') {
+        var box2 = document.getElementById('instruktionen');
+        if (box2) kopieren(box2.textContent, t);
         return;
       }
       if (a === 'fassung') {

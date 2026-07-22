@@ -159,6 +159,22 @@
       };
     },
 
+    /* Welche Fassung gilt? Maschinenregel aus dem Kontrakt: gibt es _final, gilt sie;
+       sonst die hoechste Nummer. Liefert den Dateinamen oder null. */
+    geltendeDatei: function (dateien, kursId, lieferobjekt) {
+      if (!Array.isArray(dateien)) return null;
+      var f = new RegExp('^' + reEsc(kursId) + '_' + reEsc(lieferobjekt) + '_final\\.[a-z0-9]+$', 'i');
+      var v = new RegExp('^' + reEsc(kursId) + '_' + reEsc(lieferobjekt) + '_v(\\d+)\\.[a-z0-9]+$', 'i');
+      var final = null, best = null, max = 0;
+      dateien.forEach(function (d) {
+        var n = d.name || '';
+        if (f.test(n)) { final = n; return; }
+        var m = v.exec(n);
+        if (m) { var x = parseInt(m[1], 10); if (x > max) { max = x; best = n; } }
+      });
+      return final || best;
+    },
+
     /* Der Weg Chat ist nur dort vorgesehen, wo der Kontrakt ihn nennt. */
     darfAblegen: function (i, schrittId) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
@@ -231,6 +247,108 @@
         kompetenzfeld: kurs.kompetenzfeld || '',
         angelegt: angelegt
       };
+    },
+
+    /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 2) ---
+       Uebernommen aus dem Generator des abgeloesten Cockpits v0.2 — aber die
+       Ablage-Angaben werden ABGELEITET statt abgeschrieben. Die alte Fassung trug
+       noch die Ordner 01_altunterlagen … 05_moodle-export und brachte damit beiden
+       KI-Projekten eine Struktur bei, die es seit dem Ablage-Kontrakt nicht mehr
+       gibt. Was aus dem Kontrakt kommt, kann nicht mehr veralten. */
+    projektInstruktionen: function (i, kurs, briefing) {
+      var kontrakt = (i && i['ablage-kontrakt']) || {};
+      var schritte = (i && i.schritte && i.schritte.schritte) || [];
+      var ordner = inhalt.ordnerliste(i);
+      var kf = kurs.kompetenzfeld || 'offen';
+      var z = [];
+
+      function abs(n) { return n ? n : ''; }
+
+      z.push('# Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel);
+      z.push('Kompetenzfeld: ' + kf);
+      z.push('');
+      z.push('## Rolle & Kontext');
+      z.push('Du bist didaktischer Co-Autor im bbz-Produktionsprozess „Lerninhalte umgiessen". ' +
+             'Wir bauen diesen Weiterbildungskurs (Kompetenzfeld: ' + kf + ') nach dem W-U-G-Modell ' +
+             'neu auf. Dieser Kurs ist allgemeine Weiterbildung (oeffentlich), kein bankinternes ' +
+             'oder kundenspezifisches Material. Du lieferst Entwuerfe; final ist nur, was ein ' +
+             'Mensch freigibt.');
+      z.push('');
+      z.push('## Didaktisches Modell W-U-G (Kompass, kein starres Klassifikationssystem)');
+      z.push('W-U-G ist der didaktische Kompass fuers Kursdesign, keine 1:1-Bloom-Zuordnung. ' +
+             'Bloom dient als Orientierungsanker; Ueberschneidungen zwischen U und G sind zulaessig.');
+      z.push('- W = Wissen: Selbstlernphase VOR dem Kurs (Moodle/Web), im Fokus Bloom 1–2. ' +
+             'Entspricht den Eingangskompetenzen. Dieser Sprint baut die W-Strecke.');
+      z.push('- U = Urteil: Reflexion, Einordnung, begruendetes Urteil — haeufig Bloom 4–5. Praesenz.');
+      z.push('- G = Gestalten: Anwendung und Gestaltung in der Praesenz — haeufig Bloom 3–6. ' +
+             'Der KI-resistente Wertkern.');
+      z.push('Test–Learn–Test: Eingangsdiagnose, formative Wissenschecks in der W-Strecke, ' +
+             'Abschlusspruefung der angestrebten Kompetenzen.');
+      z.push('Praesenz-Orientierung ~30% Input · 50% Anwendung · 20% Reflexion — Zielbild, ' +
+             'kein Abnahmekriterium.');
+      z.push('');
+      z.push('## Die neun Produktionsschritte');
+      schritte.forEach(function (s) {
+        var a = kontrakt.schritte && kontrakt.schritte[String(s.id)];
+        var ziel = a ? (a.ordner + '/' + (a.datei || ('{K}_' + a.lieferobjekt + '_v{N}.' + a.ext))) : '';
+        z.push('- Schritt ' + s.id + ' — ' + s.nm + (a && a.gate ? '  [' + a.gate + ']' : '') +
+               (ziel ? '  →  ' + ziel.replace('{K}', kurs.kursId) : ''));
+      });
+      z.push('Sprint-Scope: Sprint 1 baut und gibt die W-Selbstlernstrecke frei. U- und ' +
+             'G-Praesenzartefakte folgen nachgelagert im selben Projekt.');
+      z.push('');
+      z.push('## Ablage — verbindlich');
+      z.push('Bibliothek: ' + (kontrakt.bibliothek || 'Kursproduktion') + ' (SharePoint).');
+      z.push('Kursordner dieses Kurses: ' + kurs.kursId + '_<kurzname>/');
+      z.push('Unterordner: ' + ordner.join(' · '));
+      z.push('Dateiname: ' + abs(kontrakt.benennung && kontrakt.benennung.muster) +
+             ' — freigegeben: ' + abs(kontrakt.benennung && kontrakt.benennung.final) + '.');
+      z.push('Aufloesung: gibt es eine _final, gilt sie; sonst die hoechste Versionsnummer. ' +
+             '_final entsteht durch Umbenennen, nie durch Kopieren.');
+      z.push('Verboten in Dateinamen: ' +
+             ((kontrakt.benennung && kontrakt.benennung.verboten) || []).join(', ') + '.');
+      z.push('Gate-Protokolle liegen als ' + (kontrakt.gate_datei || '_gate.md') +
+             ' neben der Datei, ueber die sie urteilen.');
+      z.push('Der Ordner sagt nie, ob etwas fertig ist — der Stand steht in der Liste KWKurse ' +
+             '(Felder Schritt 1–9 und Status offen/inArbeit/fertig). Referenzen zeigen auf die ' +
+             'Kurs-ID, nie auf einen Pfad.');
+      z.push('');
+      z.push('## Feste Regeln');
+      z.push('- Arbeite streng entlang der konkreten Lernziele und Eingangskompetenzen ' +
+             '(Halluzinations-Bremse).');
+      z.push('- Evidenzregel: Fachliche Aussagen, Zahlen, Fristen, regulatorische Angaben und ' +
+             'Definitionen nur uebernehmen, wenn durch eine freigegebene Projektquelle belegt. ' +
+             'Fehlt ein Beleg: [ZU PRUEFEN: Quelle fehlt]. Altmaterial ist Pruefgegenstand, ' +
+             'NICHT automatisch Wahrheitsquelle.');
+      z.push('- Fundament-Check (Orientierung, nicht mechanisch): in der Regel mindestens eine ' +
+             'stuetzende Eingangskompetenz je Ausgangskompetenz; Abweichung im Contract begruendet.');
+      z.push('- Vorrang bei Konflikt: Diese Projekt-Instruktionen gehen einzelnen Masterprompts ' +
+             'vor. Ein Masterprompt darf konkretisieren, nicht aushebeln. Arbeite nur am ' +
+             'angeforderten Schritt.');
+      z.push('- Stabile IDs: Lernziel-ID ' + kurs.kursId + '-LZ-###, Eingangskompetenz-ID ' +
+             kurs.kursId + '-EK-###, Baustein-ID ' + kurs.kursId + '-BS-###. IDs bleiben bei ' +
+             'Textaenderung bestehen und werden nie wiederverwendet. EK zu LZ ist n:m.');
+      z.push('- Die KI vergibt NIE einen Freigabestatus. „fertig" erst nach menschlicher Freigabe.');
+      z.push('- Standard-Kennzeichnungen woertlich: [ENTWURF — unvalidiert] · [ZU PRUEFEN: …] · ' +
+             '[NEU — Sign-off noetig] · [FREIGEGEBEN DURCH: … / DATUM: …].');
+      z.push('- Fehlende Angaben werden NICHT geraten → „offen".');
+      z.push('');
+      z.push('## Menschliche Freigabe (nicht verhandelbar)');
+      z.push('Fachliche Freigabe durch den Menschen an den Gates. Nichts gilt ohne menschliche ' +
+             'Freigabe als final. Ist eine benoetigte Projektdatei nicht auffindbar, benenne die ' +
+             'fehlende Grundlage — rekonstruiere ihren Inhalt NICHT aus Vermutungen.');
+      z.push('');
+      z.push('## Das freigegebene Kursbriefing');
+      if (briefing) {
+        z.push('Aus ' + kurs.kursId + '_briefing (Schritt 1). Es ist die Leitplanke fuer alles ' +
+               'Weitere — bei Widerspruch zu einer Annahme gilt das Briefing.');
+        z.push('');
+        z.push(briefing);
+      } else {
+        z.push('[FEHLT — in Schritt 1 noch nicht abgelegt. Ohne freigegebenes Kursbriefing ' +
+               'nicht mit Schritt 3 beginnen.]');
+      }
+      return z.join('\n');
     },
 
     /* --- Netz --- */

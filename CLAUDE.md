@@ -132,11 +132,28 @@ Schritt 2 schreibt nur noch `02_setup/{K}_manifest.json` und setzt die KI-Projek
 Beide Knöpfe fassen `Schritt`/`Status` **nicht** an: den Stand rückt das Ablegen
 (`standNachAblage`) oder der Erledigt-Haken.
 
+## Projekt-Instruktionen (Schritt 2)
+
+`inhalt.projektInstruktionen()` erzeugt den Anweisungstext für die beiden KI-Projekte —
+**fertig ausgefüllt, ohne ein einziges Eingabefeld.** Kurs-ID, Titel und Kompetenzfeld kommen
+aus `KWKurse`, das freigegebene Briefing wird aus `01_briefing/` gelesen
+(`inhalt.geltendeDatei()` → `_final` vor höchster Nummer, dann `graph.dateiLesen()`).
+
+**Ordner, Schrittnamen und Dateimuster werden aus `ablage-kontrakt.json` und `schritte.json`
+abgeleitet, nie im Text festgeschrieben.** Die abgelöste Fassung im Cockpit v0.2 hatte sie
+ausgeschrieben und trug deshalb die Ordner `01_altunterlagen … 05_moodle-export` aus der Zeit
+vor dem Kontrakt — sie hätte beiden KI-Projekten eine Ablage beigebracht, die es nicht gibt.
+Ein Test hält diese Namen dauerhaft draussen (`test/instruktionen.test.js`).
+
+Die übrigen Masterprompts in `werkzeuge.json` werden **nicht** ausgefüllt: sie werden mit
+`esc(f.txt)` unverändert gerendert, ihre Platzhalter füllt der Mensch. Sie zu vereinheitlichen
+heisst, reviewer-freigegebene Prompt-Texte anzufassen — das gehört durch das Prompt-QA-Gate.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
 mit der Kette, Schrittansicht mit Anleitung und inline aufklappbarem Masterprompt, Nachschlagen
-mit Bloom, Ablegen über den Weg Chat. **168 Tests grün**, keine Konsolenfehler.
+mit Bloom, Ablegen über den Weg Chat. **184 Tests grün**, keine Konsolenfehler.
 
 ## Offen
 

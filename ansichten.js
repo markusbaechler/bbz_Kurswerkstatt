@@ -442,6 +442,7 @@
            Erst wenn der Ordner steht — sonst gehoert der Arbeitsplatz Schritt 1. --- */
     if (kurs && +schrittId === 2 && !ablageDaten.ordnerFehlt) {
       h += manifestBlock(inh, kurs);
+      h += instruktionenBlock(inh, kurs, ablageDaten.briefing);
     }
 
     if (anleitung && anleitung.dod) {
@@ -531,6 +532,35 @@
       'Kleinbuchstaben, Ziffern und Bindestriche erlaubt. Angelegt werden ' +
       ordner.length + ' Unterordner: <code>' + ordner.map(esc).join('</code> <code>') +
       '</code></p></div>';
+  }
+
+  /* Die Projekt-Instruktionen fuer die beiden KI-Projekte. Fertig erzeugt aus
+     Kontrakt + KWKurse + dem eingelesenen Briefing — keine Platzhalter, keine
+     Eingabefelder. Genau das war vorher Handarbeit an sechs Feldern. */
+  function instruktionenBlock(inh, kurs, briefing) {
+    var text = I().projektInstruktionen(inh, kurs, briefing);
+    var quelle = briefing === undefined
+      ? '<span class="dim">Briefing wird gelesen &hellip;</span>'
+      : (briefing
+          ? '<span class="zielname">Briefing aus <code>01_briefing/</code> eingelesen &mdash; ' +
+            briefing.length + ' Zeichen</span>'
+          : '<span class="klemmt-inline">Kein freigegebenes Briefing in <code>01_briefing/</code> ' +
+            '&mdash; die Instruktionen tragen an dieser Stelle einen Platzhalter.</span>');
+
+    return '<h2 class="tun">Projekt-Instruktionen' +
+        '<span class="tun-sub">in Claude und ChatGPT als Projekt-Anweisung einf&uuml;gen</span></h2>' +
+      '<div class="wtool instrument auf">' +
+        '<div class="wkopf">' +
+          '<span class="tt">Instruktion</span>' +
+          '<div class="wtitel"><h3>Projekt-Instruktionen &middot; ' + esc(kurs.kursId) + '</h3>' +
+            '<p>Ein Satz f&uuml;r beide Projekte &mdash; fertig ausgef&uuml;llt</p></div>' +
+          '<button class="knopf gross" data-action="kopieren-instruktionen">Kopieren</button>' +
+        '</div>' +
+        '<div class="wbody">' +
+          '<div class="arow">' + quelle + '</div>' +
+          '<pre class="prompt on" id="instruktionen">' + esc(text) + '</pre>' +
+        '</div>' +
+      '</div>';
   }
 
   /* Schritt 2 legt kein Dokument ab, sondern schreibt eine Systemdatei.
