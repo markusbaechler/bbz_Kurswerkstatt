@@ -145,3 +145,78 @@ test('solange der Ordner nicht gelesen ist, steht kein Zielname da', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
   assert.ok(/Ordner wird gelesen/.test(h));
 });
+
+/* ---------- Der Controller legt unter der gewaehlten Variante ab ----------
+   Die Ansicht kann den Namen richtig anzeigen und der Knopf trotzdem scheitern —
+   beides berechnet ihn getrennt. Deshalb hier der Weg durch controller.ablegen,
+   mit gestelltem Graph und gestelltem Dokument. */
+
+const { controller, state } = require('../app.js');
+
+function mitVarianten() {
+  const i = JSON.parse(JSON.stringify(INHALT));
+  i['ablage-kontrakt'].schritte['4'] = {
+    ordner: '04_greenfield', lieferobjekt: 'greenfield-{variante}',
+    varianten: ['claude', 'chatgpt'], ext: 'html', format: 'html',
+    wege: ['chat', 'claude-code', 'hochladen'], gate: null
+  };
+  return i;
+}
+
+/* Legt den Controller in einen Zustand, in dem nur noch der Klick fehlt.
+   Gibt zurueck, was bei graph.ablegen ankam — und was in der Fehlerzeile steht. */
+async function ablegenLauf(variante, dateien) {
+  const abgelegt = { ordner: null, datei: null, text: null };
+  const meldung = { textContent: '', hidden: true };
+
+  state.data.inhalt = mitVarianten();
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
+                        schritt: 4, status: 'inArbeit' }];
+  state.data.dateien = {};
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '4',
+                     werkzeugId: null, werk: null, variante: variante, weg: null };
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'ergebnis') return { value: 'Entwurf aus dem Chat', focus: function () {} };
+      if (id === 'ablegefehler') return meldung;
+      return null;
+    }
+  };
+
+  graph.ordnerInhalt = function () { return Promise.resolve(dateien || []); };
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    abgelegt.ordner = ordner; abgelegt.datei = datei; abgelegt.text = text;
+    return Promise.resolve();
+  };
+  graph.standSetzenRoh = function () { return Promise.resolve(); };
+  controller.render = function () {};
+
+  controller.ablegen('4', { disabled: false, textContent: 'Ablegen' });
+  await new Promise(function (r) { setTimeout(r, 20); });
+  return { abgelegt: abgelegt, meldung: meldung.textContent };
+}
+
+test('der Weg Chat legt unter der gewaehlten Variante ab', async () => {
+  const l = await ablegenLauf('chatgpt', []);
+  assert.strictEqual(l.meldung, '', 'Ablegen ist gescheitert: ' + l.meldung);
+  assert.strictEqual(l.abgelegt.ordner, '04_greenfield');
+  assert.strictEqual(l.abgelegt.datei, 'AFL-001_greenfield-chatgpt_v1.html');
+});
+
+test('ohne getroffene Wahl legt der Weg Chat unter der ersten Variante ab', async () => {
+  const l = await ablegenLauf(null, []);
+  assert.strictEqual(l.abgelegt.datei, 'AFL-001_greenfield-claude_v1.html');
+});
+
+test('der Controller zaehlt je Variante hoch', async () => {
+  const l = await ablegenLauf('claude', [{ name: 'AFL-001_greenfield-claude_v1.html' },
+                                         { name: 'AFL-001_greenfield-chatgpt_v1.html' }]);
+  assert.strictEqual(l.abgelegt.datei, 'AFL-001_greenfield-claude_v2.html');
+});
+
+test('der Controller legt nichts neben eine freigegebene Fassung', async () => {
+  const l = await ablegenLauf('claude', [{ name: 'AFL-001_greenfield-claude_final.html' }]);
+  assert.strictEqual(l.abgelegt.datei, null, 'trotz _final abgelegt');
+  assert.ok(/Abgeschlossen/.test(l.meldung), 'kein Sperrhinweis: ' + l.meldung);
+});

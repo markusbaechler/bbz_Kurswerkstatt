@@ -169,19 +169,41 @@ regelmässig über der Grenze; ohne den zweiten Weg wäre Schritt 7 nicht bedien
 
 Der Stand rückt wie beim Weg Chat über `standNachAblage`.
 
+## Varianten (Schritt 4)
+
+Führt ein Schritt `varianten` im Kontrakt, hängt **jeder** Dateiname an der gewählten.
+`inhalt.gewaehlteVariante()` beantwortet das an **einer** Stelle: getroffene Wahl, sonst die
+erste des Kontrakts, bei einem unbekannten Wert ebenfalls die erste. Ansicht, `controller.ablegen`
+und `controller.hochladen` fragen dieselbe Funktion.
+
+**Die Wahl steht einmal, vor beiden Wegen** — sie gehört zum Schritt, nicht zu einem Weg.
+Stünde sie im Hochlade-Block, wählte man sie erst, nachdem das Ergebnis schon im Feld steht.
+
+**Der Grund steht in der Historie (2026-07-22):** dieselbe Zeile
+`vari ? (gewaehlt || vari[0]) : undefined` stand zweimal im Code — und im Weg Chat fehlte sie.
+Dort wurden Zielname und `_final`-Sperre **ohne** Variante berechnet, also gab
+`lieferobjektVon()` `null` zurück: die Fläche blieb bei „Ordner wird gelesen …", *Ablegen*
+scheiterte immer mit „kein versioniertes Ablegen vorgesehen", und *final ist final* griff nur
+beim Hochladen. Gefunden hat es die Konsistenzprüfung, nicht die Testsuite: `varianten.test.js`
+prüfte den echten Kontrakt nur im Upload-Pfad, `ablegen.test.js` den Chat-Pfad nur gegen die
+Fixture — und deren Schritt 4 führt keine Varianten. Beide Lücken sind jetzt zu.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
 mit der Kette, Schrittansicht mit Anleitung und inline aufklappbarem Masterprompt, Nachschlagen
-mit Bloom, Ablegen über den Weg Chat. **208 Tests grün**, keine Konsolenfehler.
+mit Bloom, Ablegen über den Weg Chat. **260 Tests grün**, keine Konsolenfehler.
 
 ## Offen
 
-**Die Anleitungstexte nennen noch die alten Ordner.** `guide-2a` sagt „speichere in
-`03_content-arbeit/`", der Ablage-Kontrakt sagt `04_greenfield/`. Die Werkzeugtexte stammen aus
-v0.2 und kennen die neue Struktur nicht — in der laufenden App stehen beide Angaben
-untereinander und widersprechen sich. Beim nächsten Durchgang durch `werkzeuge.json` nachziehen;
-die Datei liegt in SharePoint, nicht im Repo.
+**`schritte.json` trägt bei Schritt 3 und 4 noch die alten Ordner.** Im angezeigten Feld `abl`
+stehen `02_lernziel-drehbuch/`, `04_freigaben/` und `03_content-arbeit/`; ausserdem fehlt dort
+`hochladen` in `wege`. Die Datei liegt in SharePoint, nicht im Repo — die Wege liest die App
+aus dem Ablage-Kontrakt, `schritte.json` greift nur als Rückfall (`ansichten.js`). Die
+Werkzeugtexte selbst sind seit dem 22.07. sauber (`werkzeuge.json`, „Excel-Contract" und
+`W-Strecke_Aufbau` je 0 Treffer). Schritt 1 und 2 wurden am 22.07. nachgezogen, die Schritte
+5 bis 9 sind ungeprüft — wer dort etwas liest, das nach `00_kursbriefing/` oder „Stammsatz"
+klingt, hat einen Rest davon vor sich; der Stammsatz ist durch `KWKurse` ersetzt.
 
 **Die Nachschlagewerke rendern flach.** Ihr HTML nutzt Komponentenklassen aus v0.2 —
 `principle`, `wugrow`, `bloomcal`, `anchor` — die hier nicht portiert sind. Inhaltlich
@@ -189,11 +211,6 @@ vollständig, optisch ohne Raster.
 
 **Gate-Ablauf und Steckbrief-Auswertung fehlen.** `_final`-Umbenennung, `_gate.md` schreiben,
 Status setzen — wartet bewusst, bis ein Gate einmal von Hand gelaufen ist.
-
-**`schritte.json` trägt teilweise Text aus der Zeit vor dem Ablage-Kontrakt.** Bei Schritt 1
-und 2 am 2026-07-22 nachgezogen; die übrigen Schritte sind ungeprüft. Wer dort etwas liest,
-das nach `00_kursbriefing/`, `03_content-arbeit/` oder „Stammsatz" klingt, hat einen Rest
-davon vor sich — der Stammsatz ist durch die Liste `KWKurse` ersetzt.
 
 **Die Navigation ist nicht abgenommen.** Eine Zoom-Achse über fünf Ebenen wurde als Mockup
 gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →

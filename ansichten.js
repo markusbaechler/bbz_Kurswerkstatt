@@ -350,9 +350,11 @@
     var am = ((inh.schritte && inh.schritte.autoMeta) || {})[s.auto];
     var anleitung = I().anleitungVon(inh, schrittId);
     var hilfsmittel = I().hilfsmittelVon(inh, schrittId);
-    var ablage = I().ablageVon(inh, schrittId, kurs ? kurs.kursId : '<Kurs>',
-                               ablageDaten.variante ||
-                               ((I().varianten(inh, schrittId) || [])[0]));
+    /* Fuehrt der Schritt Varianten (Schritt 4: claude / chatgpt), haengt jeder
+       Dateiname an der gewaehlten. Einmal bestimmt, ueberall benutzt. */
+    var varianten = I().varianten(inh, schrittId);
+    var variante = I().gewaehlteVariante(inh, schrittId, ablageDaten.variante);
+    var ablage = I().ablageVon(inh, schrittId, kurs ? kurs.kursId : '<Kurs>', variante);
     var typMeta = (inh.werkzeuge && inh.werkzeuge.typMeta) || {};
 
     var zielUrl = (ablage && ablageDaten.basisUrl)
@@ -453,15 +455,32 @@
         '</ul></div></div>';
     }
 
+    /* --- Die Variantenwahl: einmal, vor beiden Wegen ---
+           Sie gehoert zum Schritt, nicht zu einem Weg. Stuende sie im
+           Hochlade-Block, waehlte man sie erst, nachdem man das Ergebnis
+           bereits eingefuegt hat — und im Weg Chat gar nicht. */
+    if (kurs && varianten) {
+      h += '<h2 class="tun">Variante' +
+           '<span class="tun-sub">je Werkzeug ein Entwurf, nebeneinander</span></h2>';
+      h += '<div class="ptabs">' + varianten.map(function (v) {
+        return '<button class="ptab' + (v === variante ? ' on' : '') + '" ' +
+               'data-action="variante" data-variante="' + esc(v) + '" ' +
+               'data-schritt="' + esc(schrittId) + '">' + esc(v) + '</button>';
+      }).join('') + '</div>' +
+      '<p class="dim">Dieser Schritt f&uuml;hrt mehrere Entw&uuml;rfe ' +
+      'nebeneinander &mdash; je Werkzeug einen. Sie sind keine Versionen voneinander; ' +
+      'jede Variante z&auml;hlt eigene Nummern.</p>';
+    }
+
     /* --- Ergebnis ablegen: der Weg Chat --- */
     if (kurs && I().darfAblegen(inh, schrittId)) {
       /* Den Zielnamen erst nennen, wenn der Ordner wirklich gelesen ist —
          sonst verspricht die Ansicht _v1, obwohl dort schon _v3 liegt. */
       var ziel = Array.isArray(ablageDaten.dateien)
-        ? I().naechsteDatei(inh, schrittId, kurs.kursId, ablageDaten.dateien)
+        ? I().naechsteDatei(inh, schrittId, kurs.kursId, ablageDaten.dateien, variante)
         : null;
       var zuChat = Array.isArray(ablageDaten.dateien)
-        ? I().abgeschlossen(inh, schrittId, kurs.kursId, ablageDaten.dateien)
+        ? I().abgeschlossen(inh, schrittId, kurs.kursId, ablageDaten.dateien, variante)
         : null;
 
       if (zuChat) {
@@ -494,13 +513,9 @@
            Excel (Schritt 3) und der Moodle-Export (Schritt 7). Der Name wird
            angezeigt, nicht getippt — abgetippte Namen waren die Fehlerquelle. */
     if (kurs && I().darfHochladen(inh, schrittId) && !ablageDaten.ordnerFehlt) {
-      /* Verlangt der Kontrakt eine Variante (Schritt 4: claude / chatgpt), muss
-         sie gewaehlt sein, bevor der Name feststeht. Sonst stuende {variante}
-         woertlich im Dateinamen. */
-      var vari = I().varianten(inh, schrittId);
-      var gewaehlt = vari ? (ablageDaten.variante || vari[0]) : undefined;
+      /* Die Variante steht oben schon fest — hier wird sie nur noch benutzt. */
       var hziel = Array.isArray(ablageDaten.dateien)
-        ? I().hochladeZiel(inh, schrittId, kurs.kursId, ablageDaten.dateien, gewaehlt)
+        ? I().hochladeZiel(inh, schrittId, kurs.kursId, ablageDaten.dateien, variante)
         : null;
       var endung = I().erwarteteEndung(inh, schrittId);
 
@@ -508,19 +523,8 @@
            '<span class="tun-sub">die Kurswerkstatt vergibt Ordner und Namen</span></h2>';
       h += '<div class="ablegen">';
 
-      if (vari) {
-        h += '<div class="ptabs">' + vari.map(function (v) {
-          return '<button class="ptab' + (v === gewaehlt ? ' on' : '') + '" ' +
-                 'data-action="variante" data-variante="' + esc(v) + '" ' +
-                 'data-schritt="' + esc(schrittId) + '">' + esc(v) + '</button>';
-        }).join('') + '</div>' +
-        '<p class="dim" style="margin:8px 0 2px">Dieser Schritt f&uuml;hrt mehrere Entw&uuml;rfe ' +
-        'nebeneinander &mdash; je Werkzeug einen. Sie sind keine Versionen voneinander; ' +
-        'jede Variante z&auml;hlt eigene Nummern.</p>';
-      }
-
       var zu = Array.isArray(ablageDaten.dateien)
-        ? I().abgeschlossen(inh, schrittId, kurs.kursId, ablageDaten.dateien, gewaehlt)
+        ? I().abgeschlossen(inh, schrittId, kurs.kursId, ablageDaten.dateien, variante)
         : null;
 
       if (zu) {
@@ -617,7 +621,8 @@
          Der Platzhalter zwang zum Abtippen, und beim Abtippen entstand aus
          lernziele-drehbuch ein lernziele_drehbuch. */
       var zielD = (Array.isArray(ablageDaten.dateien)
-        ? (I().hochladeZiel(inh, schrittId, kurs ? kurs.kursId : '', ablageDaten.dateien) || {}).datei
+        ? (I().hochladeZiel(inh, schrittId, kurs ? kurs.kursId : '',
+                            ablageDaten.dateien, variante) || {}).datei
         : null) || ablage.datei;
 
       h += '<div class="kblock"><h3>Wohin es kommt</h3>' +

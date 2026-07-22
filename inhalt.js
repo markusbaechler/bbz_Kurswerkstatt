@@ -262,6 +262,17 @@
       return (e && Array.isArray(e.varianten) && e.varianten.length) ? e.varianten : null;
     },
 
+    /* Welche Variante gilt gerade: die getroffene Wahl, sonst die erste des
+       Kontrakts. Fuehrt der Schritt keine Varianten, ist die Antwort undefined.
+       Eine Quelle — Ansicht, Ablegen und Hochladen fragen dieselbe Stelle.
+       Vorher stand dieselbe Zeile dreimal im Code, und an einer der drei
+       fehlte sie: der Weg Chat rechnete ohne Variante und legte deshalb nie ab. */
+    gewaehlteVariante: function (i, schrittId, gewaehlt) {
+      var v = inhalt.varianten(i, schrittId);
+      if (!v) return undefined;
+      return v.indexOf(gewaehlt) >= 0 ? gewaehlt : v[0];
+    },
+
     /* Das Lieferobjekt mit aufgeloester Variante. null, wenn der Kontrakt eine
        Variante verlangt und keine gewaehlt ist — dann darf nichts abgelegt
        werden, sonst stuende {variante} woertlich im Dateinamen. */

@@ -661,7 +661,10 @@
       var text = feld.value.trim();
       if (!text) { feld.focus(); return; }
 
-      var ab = root.inhalt.ablageVon(inh, n, k.kursId);
+      /* Dieselbe Variante, die die Ansicht anzeigt — sonst legt der Knopf unter
+         einem anderen Namen ab als versprochen, oder gar nicht. */
+      var gewaehlt = root.inhalt.gewaehlteVariante(inh, n, state.position.variante);
+      var ab = root.inhalt.ablageVon(inh, n, k.kursId, gewaehlt);
       var schl = k.kursId + '/' + ab.ordner;
       knopf.disabled = true; knopf.textContent = 'wird abgelegt …';
 
@@ -669,13 +672,13 @@
       delete state.data.dateien[schl];
       graph.ordnerInhalt(k.kursId, ab.ordner)
         .then(function (dateien) {
-          var zu = root.inhalt.abgeschlossen(inh, n, k.kursId, dateien);
+          var zu = root.inhalt.abgeschlossen(inh, n, k.kursId, dateien, gewaehlt);
           if (zu) {
             throw new Error('Abgeschlossen: ' + zu + ' ist freigegeben. Setze die ' +
               'Freigabe von Hand zurück, wenn du wirklich nachbessern musst. Dein Text ' +
               'bleibt im Feld stehen.');
           }
-          var ziel = root.inhalt.naechsteDatei(inh, n, k.kursId, dateien);
+          var ziel = root.inhalt.naechsteDatei(inh, n, k.kursId, dateien, gewaehlt);
           if (!ziel) throw new Error('Für diesen Schritt ist kein versioniertes Ablegen vorgesehen.');
           return graph.ablegen(k.kursId, ziel.ordner, ziel.datei, text).then(function () { return ziel; });
         })
@@ -773,7 +776,7 @@
       var ab = root.inhalt.ablageVon(inh, n, k.kursId);
       var schl = k.kursId + '/' + ab.ordner;
       var vari = root.inhalt.varianten(inh, n);
-      var gewaehlt = vari ? (state.position.variante || vari[0]) : undefined;
+      var gewaehlt = root.inhalt.gewaehlteVariante(inh, n, state.position.variante);
       if (meld) meld.hidden = true;
       knopf.disabled = true; knopf.textContent = 'wird hochgeladen …';
 

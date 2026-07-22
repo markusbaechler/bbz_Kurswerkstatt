@@ -106,3 +106,75 @@ test('Schritte ohne Varianten zeigen keine Wahl', () => {
   assert.ok(/data-action="hochladen"/.test(h), 'kein Upload auf Schritt 3');
   assert.ok(!/data-action="variante"/.test(h), 'Variantenwahl ohne Varianten im Kontrakt');
 });
+
+/* ---------- Der Weg Chat ----------
+   Er war auf Schritt 4 funktionslos: Zielname und Sperre wurden ohne Variante
+   berechnet, also gab lieferobjektVon null zurueck. Die Flaeche blieb bei
+   "Ordner wird gelesen", Ablegen scheiterte immer, und "final ist final"
+   griff nur im Weg Hochladen. Gefunden bei der Konsistenzpruefung 2026-07-22. */
+
+/* Die effektive Variante — eine Quelle statt drei Kopien von
+   `vari ? (gewaehlt || vari[0]) : undefined`. */
+test('ohne Varianten im Kontrakt gibt es keine gewaehlte Variante', () => {
+  assert.strictEqual(inhalt.gewaehlteVariante(INHALT, 3), undefined);
+});
+
+test('ohne getroffene Wahl gilt die erste Variante des Kontrakts', () => {
+  assert.strictEqual(inhalt.gewaehlteVariante(mitVarianten(), 4), 'claude');
+  assert.strictEqual(inhalt.gewaehlteVariante(mitVarianten(), 4, null), 'claude');
+});
+
+test('eine getroffene Wahl gilt', () => {
+  assert.strictEqual(inhalt.gewaehlteVariante(mitVarianten(), 4, 'chatgpt'), 'chatgpt');
+});
+
+test('eine erfundene Wahl faellt auf die erste zurueck', () => {
+  assert.strictEqual(inhalt.gewaehlteVariante(mitVarianten(), 4, 'gemini'), 'claude');
+});
+
+function chatFlaeche(h) {
+  const a = h.indexOf('id="ergebnis"');
+  const b = h.indexOf('Datei hochladen');
+  return a < 0 ? '' : h.slice(a, b < 0 ? h.length : b);
+}
+
+test('der Weg Chat nennt den Zielnamen mit Variante', () => {
+  const h = ansichten.einSchritt(mitVarianten(), AFL, 4, null,
+    { ordnerFehlt: false, dateien: [], variante: 'chatgpt' });
+  const c = chatFlaeche(h);
+  assert.ok(c.indexOf('AFL-001_greenfield-chatgpt_v1.html') >= 0, 'Zielname fehlt im Weg Chat');
+  assert.ok(c.indexOf('Ordner wird gelesen') < 0, 'Weg Chat haengt bei "Ordner wird gelesen"');
+});
+
+test('der Zielname im Weg Chat zaehlt je Variante hoch', () => {
+  const da = [{ name: 'AFL-001_greenfield-claude_v1.html' },
+              { name: 'AFL-001_greenfield-claude_v2.html' }];
+  const h = ansichten.einSchritt(mitVarianten(), AFL, 4, null,
+    { ordnerFehlt: false, dateien: da, variante: 'claude' });
+  assert.ok(chatFlaeche(h).indexOf('AFL-001_greenfield-claude_v3.html') >= 0, 'falsche Nummer');
+});
+
+test('final ist final sperrt auch den Weg Chat', () => {
+  const h = ansichten.einSchritt(mitVarianten(), AFL, 4, null,
+    { ordnerFehlt: false, dateien: [{ name: 'AFL-001_greenfield-claude_final.html' }],
+      variante: 'claude' });
+  assert.ok(!/id="ergebnis"/.test(h), 'Textfeld trotz freigegebener Fassung');
+  assert.ok(h.indexOf('<span class="bt">Final ist final</span>') >= 0,
+            'kein Sperrhinweis im Weg Chat');
+});
+
+test('die Sperre gilt je Variante, nicht ueber beide hinweg', () => {
+  const h = ansichten.einSchritt(mitVarianten(), AFL, 4, null,
+    { ordnerFehlt: false, dateien: [{ name: 'AFL-001_greenfield-claude_final.html' }],
+      variante: 'chatgpt' });
+  assert.ok(/id="ergebnis"/.test(h), 'die andere Variante wurde mitgesperrt');
+});
+
+test('die Variantenwahl steht vor der Ablege-Flaeche und genau einmal', () => {
+  const h = ansichten.einSchritt(mitVarianten(), AFL, 4, null,
+    { ordnerFehlt: false, dateien: [] });
+  assert.ok(h.indexOf('data-action="variante"') < h.indexOf('data-action="ablegen"'),
+            'die Wahl steht hinter dem Feld, in das das Ergebnis kommt');
+  assert.strictEqual((h.match(/data-action="variante"/g) || []).length, 2,
+                     'zwei Reihen Variantenreiter sind zwei Quellen fuer dieselbe Wahl');
+});
