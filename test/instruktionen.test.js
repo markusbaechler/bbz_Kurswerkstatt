@@ -156,6 +156,28 @@ test('ohne Varianten bleibt die Schrittliste unveraendert', () => {
   assert.ok(t.indexOf('NEBENEINANDER') < 0, 'Variantenhinweis ohne Varianten');
 });
 
+/* Der Ordnername geht in beide KI-Projekte. Ein Platzhalter wird dort als Pfad
+   gelernt und weitergereicht — derselbe Fehlertyp wie {variante}. */
+test('der echte Ordnername wird genannt, sobald er bekannt ist', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude',
+                                        'AFL-001_anlagefondslizenz');
+  assert.ok(t.indexOf('AFL-001_anlagefondslizenz/') >= 0, 'echter Ordnername fehlt');
+  assert.ok(t.indexOf('<kurzname>') < 0, 'Platzhalter trotz bekanntem Ordner');
+});
+
+test('ohne bekannten Ordner bleibt der Platzhalter — aber sichtbar markiert', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude');
+  assert.ok(t.indexOf('<kurzname>') >= 0);
+  assert.ok(t.indexOf('noch nicht angelegt') >= 0, 'der fehlende Ordner wird verschwiegen');
+});
+
+test('jeder Schritt nennt seine Wege — hochladen zaehlt nicht dazu', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude');
+  const z3 = t.split('\n').find(x => x.indexOf('- Schritt 3') === 0);
+  assert.ok(/\(claude-code, hand\)/.test(z3), 'Wege bei Schritt 3 fehlen: ' + z3);
+  assert.ok(!/hochladen/.test(z3), 'Ablageweg als Arbeitsweg genannt');
+});
+
 test('alle neun Schritte stehen mit ihrem Namen drin', () => {
   const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING);
   INHALT.schritte.schritte.forEach(function (s) {

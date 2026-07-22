@@ -373,7 +373,7 @@
     /* Der Inhalt entsteht EINMAL als Abschnitte. Die beiden Fassungen unterscheiden
        sich nur in der Verpackung — so koennen Claude und ChatGPT nicht auseinander-
        driften, obwohl jede ihre eigene Form bekommt. */
-    projektInstruktionenTeile: function (i, kurs, briefing) {
+    projektInstruktionenTeile: function (i, kurs, briefing, ordnerName) {
       var kontrakt = (i && i['ablage-kontrakt']) || {};
       var schritte = (i && i.schritte && i.schritte.schritte) || [];
       var ordner = inhalt.ordnerliste(i);
@@ -421,7 +421,12 @@
             });
           }
         }
+        /* Der Weg gehoert dazu: ein Projekt-Chat soll wissen, wo er ueberhaupt
+           zustaendig ist. Schritt 3 laeuft nicht ueber den Chat, Schritt 2 gar
+           nicht ueber eine KI. */
+        var wege = (a && a.wege || []).filter(function (x) { return x !== 'hochladen'; });
         z.push('- Schritt ' + s.id + ' — ' + s.nm + (a && a.gate ? '  [' + a.gate + ']' : '') +
+               (wege.length ? '  (' + wege.join(', ') + ')' : '') +
                (ziele.length ? '  →  ' + ziele.join('  ·  ').replace(/\{K\}/g, kurs.kursId) : ''));
       });
       /* Die Doppelung braucht eine Erklaerung, sonst haelt die KI sie fuer einen
@@ -441,7 +446,10 @@
 
       teil('ablage', 'Ablage — verbindlich');
       z.push('Bibliothek: ' + (kontrakt.bibliothek || 'Kursproduktion') + ' (SharePoint).');
-      z.push('Kursordner dieses Kurses: ' + kurs.kursId + '_<kurzname>/');
+      /* Den echten Ordnernamen nennen, sobald er bekannt ist. Ein Platzhalter
+         hier wird von beiden KI-Projekten als Pfad gelernt und weitergereicht. */
+      z.push('Kursordner dieses Kurses: ' + (ordnerName || (kurs.kursId + '_<kurzname>')) + '/' +
+             (ordnerName ? '' : '  [noch nicht angelegt — Schritt 1]'));
       z.push('Unterordner: ' + ordner.join(' · '));
       z.push('Dateiname: ' + abs(kontrakt.benennung && kontrakt.benennung.muster) +
              ' — freigegeben: ' + abs(kontrakt.benennung && kontrakt.benennung.final) + '.');
@@ -496,8 +504,8 @@
     /* Die zwei Fassungen. Gleicher Inhalt, andere Verpackung:
        Claude arbeitet mit XML-Tags, ChatGPT mit Trenn-Ueberschriften — dasselbe
        Tool-Tuning, das die Masterprompts schon benutzen. */
-    projektInstruktionen: function (i, kurs, briefing, fassung) {
-      var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing);
+    projektInstruktionen: function (i, kurs, briefing, fassung, ordnerName) {
+      var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing, ordnerName);
       var kopf = 'Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel +
                  '\nKompetenzfeld: ' + (kurs.kompetenzfeld || 'offen');
       var z = [];

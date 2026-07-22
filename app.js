@@ -561,6 +561,9 @@
           /* undefined = noch nicht nachgesehen, null = nachgesehen und nicht da */
           ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false,
           briefing: k ? state.data.briefing[k.kursId] : undefined,
+          /* Der echte Ordnername, sobald nachgesehen wurde — er geht in die
+             Projekt-Instruktionen ein und darf dort kein Platzhalter sein. */
+          ordnerName: (k && state.data.ordner[k.kursId]) ? state.data.ordner[k.kursId].name : null,
           variante: p.variante,
           weg: p.weg
         }));

@@ -557,7 +557,7 @@
            Erst wenn der Ordner steht — sonst gehoert der Arbeitsplatz Schritt 1. --- */
     if (kurs && +schrittId === 2 && !ablageDaten.ordnerFehlt) {
       h += manifestBlock(inh, kurs);
-      h += instruktionenBlock(inh, kurs, ablageDaten.briefing);
+      h += instruktionenBlock(inh, kurs, ablageDaten.briefing, ablageDaten.ordnerName);
     }
 
     if (anleitung && anleitung.dod) {
@@ -664,14 +664,14 @@
   /* Die Projekt-Instruktionen fuer die beiden KI-Projekte. Fertig erzeugt aus
      Kontrakt + KWKurse + dem eingelesenen Briefing — keine Platzhalter, keine
      Eingabefelder. Genau das war vorher Handarbeit an sechs Feldern. */
-  function instruktionenBlock(inh, kurs, briefing) {
+  function instruktionenBlock(inh, kurs, briefing, ordnerName) {
     /* Zwei Fassungen aus derselben Quelle — dieselben Umschalter wie beim Masterprompt,
        damit sie sich gleich bedienen und die Ereignisbehandlung wiederverwendet wird. */
     var fass = [
       { k: 'claude',  t: 'Claude'  },
       { k: 'chatgpt', t: 'ChatGPT' }
     ].map(function (f) {
-      f.txt = I().projektInstruktionen(inh, kurs, briefing, f.k);
+      f.txt = I().projektInstruktionen(inh, kurs, briefing, f.k, ordnerName);
       return f;
     });
     var quelle = briefing === undefined
