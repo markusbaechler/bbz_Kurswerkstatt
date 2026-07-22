@@ -561,7 +561,7 @@
         '<div class="wkopf">' +
           '<span class="tt">Instruktion</span>' +
           '<div class="wtitel"><h3>Projekt-Instruktionen &middot; ' + esc(kurs.kursId) + '</h3>' +
-            '<p>Ein Satz f&uuml;r beide Projekte &mdash; fertig ausgef&uuml;llt</p></div>' +
+            '<p>Gleicher Inhalt, je Werkzeug zugeschnitten &mdash; fertig ausgef&uuml;llt</p></div>' +
           '<button class="knopf gross" data-action="kopieren-instruktionen">Kopieren</button>' +
         '</div>' +
         '<div class="wbody">' +
