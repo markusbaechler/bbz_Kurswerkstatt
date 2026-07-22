@@ -318,7 +318,7 @@
     var naechster = I().schritt(inh, kurs.schritt);
     return '<div class="laufkarte">' + schriftfeld(inh, kurs, null) +
         kette(inh, kurs, null) + legende(true) + '</div>' +
-      ((lage && lage.ordnerFehlt) ? ohneOrdner(kurs) : '') +
+      ((lage && lage.ordnerFehlt) ? ohneOrdner(inh, kurs) : '') +
       (naechster ? '<div class="card naechst">' +
         '<span class="eyebrow">Als N&auml;chstes dran</span>' +
         '<h3>Schritt ' + esc(naechster.id) + ' &middot; ' + esc(naechster.nm) + '</h3>' +
@@ -438,6 +438,12 @@
       '</div>';
     }
 
+    /* --- Schritt 2 schreibt eine Systemdatei, kein Dokument: Knopf statt Textfeld.
+           Erst wenn der Ordner steht — sonst gehoert der Arbeitsplatz Schritt 1. --- */
+    if (kurs && +schrittId === 2 && !ablageDaten.ordnerFehlt) {
+      h += manifestBlock(inh, kurs);
+    }
+
     if (anleitung && anleitung.dod) {
       h += '<div class="dod"><span class="h">Fertig, wenn</span>' + esc(anleitung.dod) + '</div>';
     }
@@ -493,7 +499,7 @@
           : '<span class="pfad">' + esc(ablage.ordner) + '/<b>' + esc(ablage.datei) + '</b></span>') +
         (ablageDaten.ordnerFehlt ? '' : '<em>Legt die Kurswerkstatt an &mdash; du tippst keinen Pfad.</em>') +
         '</div>';
-      h += ablageDaten.ordnerFehlt ? ohneOrdner(kurs) : dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
+      h += ablageDaten.ordnerFehlt ? ohneOrdner(inh, kurs) : dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
     }
 
     h += '</aside></div>';
@@ -503,15 +509,47 @@
   /* Ein Kurs ohne Ordner in der Bibliothek. Das trifft jeden neu angelegten Kurs,
      und es traf bisher erst beim Klick auf Ablegen — also nachdem die Arbeit
      getan war. Lieber vorher sagen, was fehlt und wer es anlegen muss. */
-  function ohneOrdner(kurs) {
-    var id = kurs ? esc(kurs.kursId) : 'diesen Kurs';
-    return '<div class="fehlt"><h4>Kein Kursordner in SharePoint</h4>' +
+  /* Der Kursordner fehlt — das ist kein Hinweis, sondern der erste Teil von Schritt 1.
+     Deshalb steht hier ein Arbeitsplatz und kein Merkzettel. Vorgeschlagen wird der
+     Name aus dem Kurstitel; bindend ist laut Kontrakt allein das Praefix. */
+  function ohneOrdner(inh, kurs) {
+    if (!kurs) return '';
+    var id = esc(kurs.kursId);
+    var vorschlag = I().kursordnerName(kurs.kursId, kurs.kurstitel);
+    var ordner = I().ordnerliste(inh);
+
+    return '<div class="fehlt"><h4>Ablage anlegen</h4>' +
       '<p>F&uuml;r <b>' + id + '</b> gibt es in der Bibliothek <b>Kursproduktion</b> ' +
-      'noch keinen Ordner. Ablegen schl&auml;gt deshalb fehl &mdash; auch wenn du den ' +
-      'Text schon geschrieben hast.</p>' +
-      '<p>Die Kurswerkstatt kann ihn noch nicht selbst anlegen. Bis dahin: Ordner ' +
-      '<code>' + id + '_&lt;kurzname&gt;</code> von Hand anlegen, darin die ' +
-      'Unterordner nach Ablage-Kontrakt.</p></div>';
+      'noch keinen Ordner. Bevor etwas abgelegt werden kann, muss er stehen &mdash; ' +
+      'das ist der erste Teil von Schritt 1.</p>' +
+      '<div class="arow">' +
+        '<input id="ordnername" type="text" spellcheck="false" value="' + esc(vorschlag) + '" />' +
+        '<button class="knopf gross" data-action="ablage-anlegen">Ablage anlegen</button>' +
+      '</div>' +
+      '<p class="klemmt" id="ordnerfehler" hidden></p>' +
+      '<p class="dim">Bindend ist nur <code>' + id + '_</code> &mdash; danach sind ' +
+      'Kleinbuchstaben, Ziffern und Bindestriche erlaubt. Angelegt werden ' +
+      ordner.length + ' Unterordner: <code>' + ordner.map(esc).join('</code> <code>') +
+      '</code></p></div>';
+  }
+
+  /* Schritt 2 legt kein Dokument ab, sondern schreibt eine Systemdatei.
+     Deshalb ein Knopf statt eines Textfelds. */
+  function manifestBlock(inh, kurs) {
+    var ab = I().ablageVon(inh, 2, kurs.kursId);
+    if (!ab) return '';
+    return '<h2 class="tun">Manifest schreiben' +
+        '<span class="tun-sub">ohne KI &mdash; die Kurswerkstatt erledigt es selbst</span></h2>' +
+      '<div class="ablegen">' +
+        '<div class="arow">' +
+          '<button class="knopf gross" data-action="manifest-schreiben">Manifest schreiben</button>' +
+          '<span class="zielname">wird zu <code>' + esc(ab.ordner) + '/' +
+            esc(ab.datei) + '</code></span>' +
+        '</div>' +
+        '<p class="klemmt" id="manifestfehler" hidden></p>' +
+        '<p class="dim">Inhalt: Kurs-ID, Titel, Kompetenzfeld und Anlagedatum &mdash; ' +
+        'alles aus <b>KWKurse</b>. Keine Version: eine Systemdatei ohne Entwurfsphase.</p>' +
+      '</div>';
   }
 
   /* ---------- Ansicht: Nachschlagen ---------- */

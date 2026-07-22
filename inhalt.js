@@ -166,6 +166,73 @@
       return e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt;
     },
 
+    /* --- Der Kursordner ---
+       Bindend ist laut Kontrakt allein das Praefix {K}_ — nur danach sucht
+       graph.kursOrdner(). Der Kurzname dahinter ist ein Vorschlag fuer Menschen;
+       deshalb darf DBS-001_derivate-strukturierte-produkte stehenbleiben, obwohl
+       er nicht der Ableitung aus dem Kurstitel entspricht. */
+
+    /* Kurstitel zu Kurzname: Umlaute aufgeloest, klein, alles Uebrige zu
+       Bindestrichen, hoechstens 40 Zeichen. */
+    slug: function (titel) {
+      var um = { 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss', 'à': 'a', 'á': 'a',
+                 'â': 'a', 'é': 'e', 'è': 'e', 'ê': 'e', 'í': 'i', 'î': 'i',
+                 'ï': 'i', 'ó': 'o', 'ô': 'o', 'ú': 'u', 'û': 'u', 'ç': 'c' };
+      var s = String(titel || '').toLowerCase()
+        .replace(/[äöüßàáâéèêíîïóôúûç]/g, function (c) { return um[c] || c; })
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      if (s.length > 40) s = s.slice(0, 40).replace(/-+$/, '');
+      return s;
+    },
+
+    /* Der vorgeschlagene Ordnername. Ohne brauchbaren Titel bleibt es beim Praefix. */
+    kursordnerName: function (kursId, titel) {
+      var kurz = inhalt.slug(titel);
+      return kurz ? kursId + '_' + kurz : String(kursId || '');
+    },
+
+    /* Prueft einen von Hand geaenderten Namen. null = in Ordnung, sonst der Grund. */
+    kursordnerPruefe: function (i, kursId, name) {
+      var k = ((i && i['ablage-kontrakt']) || {}).kursordner || {};
+      var muster = (k.kurzname && k.kurzname.erlaubt) || '^[a-z0-9][a-z0-9-]{0,39}$';
+      var praefix = kursId + '_';
+      if (String(name || '').indexOf(praefix) !== 0) {
+        return 'Der Ordner muss mit ' + praefix + ' beginnen.';
+      }
+      if (!new RegExp(muster).test(String(name).slice(praefix.length))) {
+        return 'Nach ' + praefix + ' sind nur Kleinbuchstaben, Ziffern und ' +
+               'Bindestriche erlaubt — hoechstens 40 Zeichen.';
+      }
+      return null;
+    },
+
+    /* Die Unterordner — abgeleitet, nicht aufgelistet. Acht stehen als Ziel in
+       den Schritten (05_content zweimal, Schritt 5 und 6); 00_input gehoert zu
+       keinem Schritt und steht deshalb als einziges im Kontrakt. Eine zweite
+       Liste waere eine zweite Quelle fuer dieselbe Tatsache. */
+    ordnerliste: function (i) {
+      var k = (i && i['ablage-kontrakt']) || {};
+      var l = ((k.kursordner && k.kursordner.zusatzordner) || []).slice();
+      var s = k.schritte || {};
+      Object.keys(s).forEach(function (n) {
+        var o = s[n] && s[n].ordner;
+        if (o && l.indexOf(o) < 0) l.push(o);
+      });
+      return l.sort();
+    },
+
+    /* Das Lieferobjekt von Schritt 2: reine Stammdaten, keine Version.
+       Felder nach Prozess-Spec — Kurs-ID, Titel, Kompetenzfeld, Anlagedatum. */
+    manifest: function (kurs, angelegt) {
+      return {
+        kursId: kurs.kursId,
+        kurstitel: kurs.kurstitel || '',
+        kompetenzfeld: kurs.kompetenzfeld || '',
+        angelegt: angelegt
+      };
+    },
+
     /* --- Netz --- */
     laden: function (graph) {
       return graph.zentralLaden(DATEIEN).then(function (geladen) {

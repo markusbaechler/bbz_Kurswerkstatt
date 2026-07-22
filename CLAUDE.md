@@ -112,11 +112,31 @@ bleiben so testbar; der Transport wird im Browser gegen echte Daten geprüft.
 Green-field-Entwurf (Schritt 4) wird nie freigegeben. Maschinenregel für alle:
 gibt es `_final`, gilt sie; sonst die höchste Versionsnummer.
 
-## Stand 2026-07-21
+## Der Kursordner
+
+Er heisst `{Kurs-ID}_{kurzname}`. **Bindend ist allein das Präfix `{Kurs-ID}_`** — nur danach
+sucht `graph.kursOrdner()`. Der Kurzname dahinter ist für Menschen und darf abweichen:
+`DBS-001_derivate-strukturierte-produkte` ist gültig, obwohl der Kurstitel
+„Derivate und Strukturierte Produkte Basis" lautet. `inhalt.kursordnerName()` **schlägt vor**,
+`inhalt.kursordnerPruefe()` prüft das Präfix und `^[a-z0-9][a-z0-9-]{0,39}$`. Die Regel steht
+als Feld `kursordner` in `ablage-kontrakt.json`.
+
+**Die neun Unterordner werden abgeleitet, nie aufgelistet** (`inhalt.ordnerliste()`):
+alle `schritte[*].ordner` — `05_content` kommt zweimal vor, Schritt 5 und 6 — plus
+`kursordner.zusatzordner`, wo `00_input` steht, weil es zu keinem Schritt gehört. Eine zweite
+Liste wäre eine zweite Quelle für dieselbe Tatsache.
+
+**Der Ordner entsteht in Schritt 1, nicht in Schritt 2.** Schritt 1 heisst „Kursordner anlegen
+und Kursbriefing erstellen" — er muss stehen, bevor `01_briefing/` beschrieben werden kann.
+Schritt 2 schreibt nur noch `02_setup/{K}_manifest.json` und setzt die KI-Projekte auf.
+Beide Knöpfe fassen `Schritt`/`Status` **nicht** an: den Stand rückt das Ablegen
+(`standNachAblage`) oder der Erledigt-Haken.
+
+## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
 mit der Kette, Schrittansicht mit Anleitung und inline aufklappbarem Masterprompt, Nachschlagen
-mit Bloom. **75 Tests grün**, keine Konsolenfehler.
+mit Bloom, Ablegen über den Weg Chat. **168 Tests grün**, keine Konsolenfehler.
 
 ## Offen
 
@@ -130,8 +150,13 @@ die Datei liegt in SharePoint, nicht im Repo.
 `principle`, `wugrow`, `bloomcal`, `anchor` — die hier nicht portiert sind. Inhaltlich
 vollständig, optisch ohne Raster.
 
-**Weg B fehlt noch:** Ergebnis entgegennehmen und nach Ablage-Kontrakt ablegen. Dazu der
-Gate-Ablauf mit `_final`-Umbenennung und die Steckbrief-Auswertung.
+**Gate-Ablauf und Steckbrief-Auswertung fehlen.** `_final`-Umbenennung, `_gate.md` schreiben,
+Status setzen — wartet bewusst, bis ein Gate einmal von Hand gelaufen ist.
+
+**`schritte.json` trägt teilweise Text aus der Zeit vor dem Ablage-Kontrakt.** Bei Schritt 1
+und 2 am 2026-07-22 nachgezogen; die übrigen Schritte sind ungeprüft. Wer dort etwas liest,
+das nach `00_kursbriefing/`, `03_content-arbeit/` oder „Stammsatz" klingt, hat einen Rest
+davon vor sich — der Stammsatz ist durch die Liste `KWKurse` ersetzt.
 
 **Die Navigation ist nicht abgenommen.** Eine Zoom-Achse über fünf Ebenen wurde als Mockup
 gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →

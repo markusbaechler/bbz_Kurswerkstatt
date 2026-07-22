@@ -56,6 +56,11 @@
       if (isNaN(x.getTime())) return '';
       function z(n) { return n < 10 ? '0' + n : String(n); }
       return z(x.getDate()) + '.' + z(x.getMonth() + 1) + '.' + x.getFullYear();
+    },
+
+    /* ISO-Datum ohne Zeit — das Manifest haelt ein Anlagedatum, keine Uhrzeit. */
+    heute: function () {
+      return new Date().toISOString().slice(0, 10);
     }
   };
 
@@ -285,8 +290,8 @@
         var did = r[0], ord = r[1];
         if (!ord) {
           throw new Error('In der Bibliothek Kursproduktion gibt es keinen Ordner für ' +
-            kursId + '. Die Kurswerkstatt kann ihn noch nicht selbst anlegen — leg ihn ' +
-            'als ' + kursId + '_<kurzname> von Hand an. Dein Text bleibt im Feld stehen.');
+            kursId + '. Leg die Ablage in Schritt 1 an — dann noch einmal ablegen. ' +
+            'Dein Text bleibt im Feld stehen.');
         }
         return auth.token().then(function (t) {
           return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
@@ -301,6 +306,51 @@
         delete state.data.dateien[kursId + '/' + ordner];   /* Ordner neu lesen */
         return r.json();
       });
+    },
+
+    /* Einen Ordner anlegen. 409 heisst „gibt es schon" und gilt als Erfolg —
+       nur so bleibt der Knopf beliebig oft drueckbar, ohne Schaden anzurichten. */
+    ordnerAnlegen: function (did, elternPfad, name) {
+      return auth.token().then(function (t) {
+        var basis = 'https://graph.microsoft.com/v1.0/drives/' + did;
+        var url = elternPfad
+          ? basis + '/root:/' + encodeURI(elternPfad) + ':/children'
+          : basis + '/root/children';
+        return fetch(url, {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name, folder: {}, '@microsoft.graph.conflictBehavior': 'fail'
+          })
+        });
+      }).then(function (r) {
+        if (r.ok) return r.json();
+        if (r.status === 409) return null;            /* war schon da */
+        throw new Error('Ordner „' + name + '" nicht angelegt (Graph ' + r.status + ')');
+      });
+    },
+
+    /* Schritt 1, erster Teil: der Kursordner und seine Unterordner.
+       Nacheinander, nicht parallel — so sagt ein Fehler, an welchem Ordner es lag. */
+    ablageAnlegen: function (kursId, name, unterordner) {
+      return graph.driveId().then(function (did) {
+        return graph.ordnerAnlegen(did, null, name).then(function () {
+          return unterordner.reduce(function (kette, u) {
+            return kette.then(function () { return graph.ordnerAnlegen(did, name, u); });
+          }, Promise.resolve());
+        });
+      }).then(function () {
+        delete state.data.ordner[kursId];             /* die Suche war negativ gecacht */
+        return graph.kursOrdner(kursId);
+      });
+    },
+
+    /* Schritt 2: das Manifest. Ordner und Dateiname kommen aus dem Kontrakt. */
+    manifestSchreiben: function (kurs, heute) {
+      var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['2'] || {};
+      var datei = (e.datei || '{K}_manifest.json').replace('{K}', kurs.kursId);
+      var text = JSON.stringify(root.inhalt.manifest(kurs, heute), null, 2);
+      return graph.ablegen(kurs.kursId, e.ordner || '02_setup', datei, text);
     },
 
     kurseLaden: function () {
@@ -528,6 +578,59 @@
         });
     },
 
+    /* Schritt 1, erster Teil: die Ablage anlegen. Setzt den Stand bewusst nicht —
+       Schritt 1 ist fertig, wenn das Briefing liegt, nicht wenn der Ordner steht. */
+    ablageAnlegen: function (knopf) {
+      var k = nav.kurs(), inh = state.data.inhalt;
+      var feld = document.getElementById('ordnername');
+      if (!k || !feld) return;
+      var name = feld.value.trim();
+      var meld = document.getElementById('ordnerfehler');
+
+      function klemmt(text) {
+        knopf.disabled = false; knopf.textContent = 'Ablage anlegen';
+        if (meld) { meld.textContent = text; meld.hidden = false; }
+        else { alert(text); }
+      }
+
+      var wund = root.inhalt.kursordnerPruefe(inh, k.kursId, name);
+      if (wund) { klemmt(wund); feld.focus(); return; }
+
+      if (meld) meld.hidden = true;
+      knopf.disabled = true; knopf.textContent = 'wird angelegt …';
+
+      graph.ablageAnlegen(k.kursId, name, root.inhalt.ordnerliste(inh))
+        .then(function (ord) {
+          if (!ord) throw new Error('Angelegt, aber nicht wiedergefunden. Bitte neu laden.');
+          state.hinweis = 'Ablage ' + name + ' angelegt.';
+          controller.render();
+        })
+        .catch(function (e) { klemmt('Nicht angelegt. ' + (e.message || e)); });
+    },
+
+    /* Schritt 2: das Manifest schreiben. Ebenfalls ohne Stand — dafuer gibt es
+       den Erledigt-Haken, der schon vorher da war. */
+    manifestSchreiben: function (knopf) {
+      var k = nav.kurs();
+      if (!k) return;
+      var meld = document.getElementById('manifestfehler');
+      knopf.disabled = true; knopf.textContent = 'wird geschrieben …';
+
+      graph.manifestSchreiben(k, helpers.heute())
+        .then(function () {
+          return graph.ordnerInhalt(k.kursId, '02_setup');
+        })
+        .then(function () {
+          state.hinweis = 'Manifest geschrieben.';
+          controller.render();
+        })
+        .catch(function (e) {
+          knopf.disabled = false; knopf.textContent = 'Manifest schreiben';
+          if (meld) { meld.textContent = 'Nicht geschrieben. ' + (e.message || e); meld.hidden = false; }
+          else { alert('Nicht geschrieben: ' + (e.message || e)); }
+        });
+    },
+
     erledigt: function (n) {
       var k = nav.kurs();
       if (!k) return;
@@ -584,6 +687,8 @@
       if (a === 'schritt'){ controller.zu({ bereich: 'arbeiten', schrittId: t.dataset.schritt, werkzeugId: null }); return; }
       if (a === 'erledigt') { controller.erledigt(t.dataset.schritt); return; }
       if (a === 'ablegen')  { controller.ablegen(t.dataset.schritt, t); return; }
+      if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
+      if (a === 'manifest-schreiben') { controller.manifestSchreiben(t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {

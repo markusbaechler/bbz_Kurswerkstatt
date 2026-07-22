@@ -441,11 +441,56 @@ test('die Kursliste traegt das Schriftfeld, nicht die alte Vorlage', () => {
 
 /* ---------- Fehlender Kursordner ---------- */
 
-test('die Kursansicht sagt es, wenn der Kursordner fehlt', () => {
+test('fehlt der Kursordner, bietet die Kursansicht das Anlegen an', () => {
   const h = ansichten.einKurs(INHALT, DBS, { ordnerFehlt: true });
   assert.ok(/class="fehlt"/.test(h), 'keine Sperre');
-  assert.ok(/Kein Kursordner in SharePoint/.test(h));
-  assert.ok(/DBS-001_&lt;kurzname&gt;/.test(h), 'sagt nicht, wie der Ordner heissen muss');
+  assert.ok(/data-action="ablage-anlegen"/.test(h), 'kein Knopf zum Anlegen');
+  assert.ok(/id="ordnername"/.test(h), 'kein Feld fuer den Ordnernamen');
+});
+
+test('der vorgeschlagene Name steht im Feld und ist der abgeleitete', () => {
+  const h = ansichten.einKurs(INHALT, AFL, { ordnerFehlt: true });
+  assert.ok(h.indexOf('value="AFL-001_anlagefondslizenz"') >= 0, 'kein Vorschlag im Feld');
+});
+
+test('die Sperre nennt alle neun Unterordner, die entstehen', () => {
+  const h = ansichten.einKurs(INHALT, AFL, { ordnerFehlt: true });
+  ['00_input', '01_briefing', '02_setup', '03_contract', '04_greenfield',
+   '05_content', '06_moodle', '07_abnahme', '08_backbone'].forEach(function (o) {
+    assert.ok(h.indexOf('<code>' + o + '</code>') >= 0, o + ' fehlt');
+  });
+});
+
+test('das alte Versprechen „von Hand anlegen" ist verschwunden', () => {
+  const h = ansichten.einKurs(INHALT, AFL, { ordnerFehlt: true });
+  assert.ok(!/von Hand anlegen/.test(h));
+  assert.ok(!/kann ihn noch nicht selbst anlegen/.test(h));
+});
+
+/* ---------- Schritt 2: Manifest ---------- */
+
+test('Schritt 2 bietet den Manifest-Knopf, sobald der Ordner steht', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 2, null, { ordnerFehlt: false });
+  assert.ok(/data-action="manifest-schreiben"/.test(h), 'kein Knopf');
+  assert.ok(h.indexOf('<code>02_setup/AFL-001_manifest.json</code>') >= 0, 'kein Ziel genannt');
+});
+
+test('ohne Ordner gehoert Schritt 2 der Sperre, nicht dem Manifest', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 2, null, { ordnerFehlt: true });
+  assert.ok(!/data-action="manifest-schreiben"/.test(h), 'Knopf ohne Ordner angeboten');
+  assert.ok(/data-action="ablage-anlegen"/.test(h), 'kein Weg zum Anlegen');
+});
+
+test('kein Textfeld in Schritt 2 — der Weg Chat ist dort nicht vorgesehen', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 2, null, { ordnerFehlt: false });
+  assert.ok(!/id="ergebnis"/.test(h), 'Ablegen-Feld in einem Schritt ohne Weg Chat');
+});
+
+test('andere Schritte bekommen den Manifest-Knopf nicht', () => {
+  [1, 3, 4].forEach(function (n) {
+    const h = ansichten.einSchritt(INHALT, AFL, n, null, { ordnerFehlt: false });
+    assert.ok(!/data-action="manifest-schreiben"/.test(h), 'Schritt ' + n);
+  });
 });
 
 test('solange nichts nachgesehen wurde, wird nichts behauptet', () => {

@@ -605,6 +605,13 @@
               border-radius:3px;padding:1px 5px}
   .klemmt{border-left:3px solid var(--rot);background:var(--rot-t);padding:11px 15px;
           margin-top:12px;font-size:14px;line-height:1.55;color:var(--ink)}
+  /* Der Ordnername ist der einzige Wert, den die Werkstatt tippen laesst —
+     deshalb monospace wie der Pfad, den er wird. */
+  .fehlt input{flex:1 1 260px;font-family:var(--font-mono);font-size:13px;
+               background:var(--surface);color:var(--ink);border:1px solid var(--line);
+               border-radius:8px;padding:11px 13px}
+  .fehlt input:focus{border-color:var(--accent);outline:none}
+  .fehlt .arow{margin-top:14px}
 
   .naechst{border-left:3px solid var(--u);margin-top:18px}
   .naechst h3{font-size:20px;margin:8px 0 9px}

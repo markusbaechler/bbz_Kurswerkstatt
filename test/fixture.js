@@ -23,6 +23,13 @@
       version: 2,
       benennung: { muster: '{K}_{lieferobjekt}_v{N}.{ext}', final: '{K}_{lieferobjekt}_final.{ext}' },
       gate_datei: '_gate.md',
+      kursordner: {
+        muster: '{K}_{kurzname}',
+        bindend: '{K}_',
+        kurzname: { erlaubt: '^[a-z0-9][a-z0-9-]{0,39}$', vorschlag: 'slug({Kurstitel})' },
+        entsteht_in_schritt: 1,
+        zusatzordner: ['00_input']
+      },
       schritte: {
         '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
         '2': { ordner: '02_setup', datei: '{K}_manifest.json', format: 'json', wege: ['kurswerkstatt'], gate: null },
