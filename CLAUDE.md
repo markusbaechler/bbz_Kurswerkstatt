@@ -173,7 +173,7 @@ Der Stand rückt wie beim Weg Chat über `standNachAblage`.
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
 mit der Kette, Schrittansicht mit Anleitung und inline aufklappbarem Masterprompt, Nachschlagen
-mit Bloom, Ablegen über den Weg Chat. **203 Tests grün**, keine Konsolenfehler.
+mit Bloom, Ablegen über den Weg Chat. **208 Tests grün**, keine Konsolenfehler.
 
 ## Offen
 

@@ -93,6 +93,41 @@ test('ohne Kursordner gibt es nichts hochzuladen', () => {
   assert.ok(!/data-action="hochladen"/.test(h), 'Hochladen ohne Ablage angeboten');
 });
 
+/* ---------- „Wohin es kommt" und die Weg-Chips ---------- */
+
+/* Der Platzhalter _v{N} zwang zum Abtippen — und beim Abtippen wurde aus
+   lernziele-drehbuch ein lernziele_drehbuch. */
+test('ist der Ordner gelesen, steht dort der aufgeloeste Name statt _v{N}', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(h.indexOf('AFL-001_lernziele-drehbuch_v1.xlsx') >= 0, 'nicht aufgeloest');
+  assert.ok(h.indexOf('_v{N}') < 0, 'zeigt weiterhin den Platzhalter');
+});
+
+test('solange nichts gelesen ist, bleibt der Platzhalter — nichts wird behauptet', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false });
+  assert.ok(h.indexOf('_v{N}') >= 0, 'behauptet eine Version, ohne nachgesehen zu haben');
+});
+
+test('liegt v1, nennt die Ansicht v2 als Ziel', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null,
+    { ordnerFehlt: false, dateien: [datei('AFL-001_lernziele-drehbuch_v1.xlsx')] });
+  assert.ok(h.indexOf('AFL-001_lernziele-drehbuch_v2.xlsx') >= 0);
+});
+
+/* wege steht in schritte.json UND im Ablage-Kontrakt. In Ablage-Fragen gilt der
+   Kontrakt — sonst fehlt ein dort ergaenzter Weg in der Ansicht. */
+test('die Weg-Chips kommen aus dem Kontrakt, nicht aus schritte.json', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(h.indexOf('Datei hochladen') >= 0, 'der Weg Hochladen fehlt als Chip');
+});
+
+test('ein unbekannter Weg wird roh gezeigt statt verschwiegen', () => {
+  const anders = JSON.parse(JSON.stringify(INHALT));
+  anders['ablage-kontrakt'].schritte['3'].wege = ['brieftaube'];
+  const h = ansichten.einSchritt(anders, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(h.indexOf('brieftaube') >= 0);
+});
+
 test('Schritte ohne den Weg bekommen kein Dateifeld', () => {
   [1, 4, 6].forEach(function (n) {
     const h = ansichten.einSchritt(INHALT, AFL, n, null, { ordnerFehlt: false, dateien: [] });

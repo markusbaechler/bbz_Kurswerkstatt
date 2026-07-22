@@ -510,10 +510,15 @@
                '">Station ' + x.an + ' ansehen</a>' : '') + '</p>';
       }).join('') + '</div>';
 
-    if (s.wege && s.wege.length) {
-      h += '<div class="kblock"><h3>Weg</h3><div class="wege">' + s.wege.map(function (w) {
+    /* Die Wege kommen aus dem Ablage-Kontrakt, nicht aus schritte.json — dort
+       stehen sie ebenfalls und koennen abweichen. In Ablage-Fragen gilt der
+       Kontrakt. Unbekannte Wege werden roh angezeigt statt verschwiegen. */
+    var wege = (ablage && ablage.wege && ablage.wege.length) ? ablage.wege : (s.wege || []);
+    if (wege.length) {
+      h += '<div class="kblock"><h3>Weg</h3><div class="wege">' + wege.map(function (w) {
         var t = { chat: 'Im Chat', 'claude-code': 'Mit Claude Code', hand: 'Von Hand',
-                  kurswerkstatt: 'Macht die Kurswerkstatt' }[w] || w;
+                  kurswerkstatt: 'Macht die Kurswerkstatt',
+                  hochladen: 'Datei hochladen' }[w] || w;
         return '<span class="weg ' + esc(w) + '">' + esc(t) + '</span>';
       }).join('') + '</div></div>';
     }
@@ -521,11 +526,18 @@
     h += '<div class="kblock"><h3>Was entsteht</h3><p>' + s.lief + '</p></div>';
 
     if (ablage) {
+      /* Sobald der Ordner gelesen ist, den AUFGELOESTEN Namen zeigen — nicht _v{N}.
+         Der Platzhalter zwang zum Abtippen, und beim Abtippen entstand aus
+         lernziele-drehbuch ein lernziele_drehbuch. */
+      var zielD = (Array.isArray(ablageDaten.dateien)
+        ? (I().hochladeZiel(inh, schrittId, kurs ? kurs.kursId : '', ablageDaten.dateien) || {}).datei
+        : null) || ablage.datei;
+
       h += '<div class="kblock"><h3>Wohin es kommt</h3>' +
         (zielUrl
           ? '<a class="pfad" href="' + esc(zielUrl) + '" target="_blank" rel="noopener">' +
-            esc(ablage.ordner) + '/<b>' + esc(ablage.datei) + '</b> &#8599;</a>'
-          : '<span class="pfad">' + esc(ablage.ordner) + '/<b>' + esc(ablage.datei) + '</b></span>') +
+            esc(ablage.ordner) + '/<b>' + esc(zielD) + '</b> &#8599;</a>'
+          : '<span class="pfad">' + esc(ablage.ordner) + '/<b>' + esc(zielD) + '</b></span>') +
         (ablageDaten.ordnerFehlt ? '' : '<em>Legt die Kurswerkstatt an &mdash; du tippst keinen Pfad.</em>') +
         '</div>';
       h += ablageDaten.ordnerFehlt ? ohneOrdner(inh, kurs) : dateiliste(ablageDaten.dateien, zielUrl, ablage.ordner);
