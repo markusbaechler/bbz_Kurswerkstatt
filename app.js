@@ -666,6 +666,12 @@
       delete state.data.dateien[schl];
       graph.ordnerInhalt(k.kursId, ab.ordner)
         .then(function (dateien) {
+          var zu = root.inhalt.abgeschlossen(inh, n, k.kursId, dateien);
+          if (zu) {
+            throw new Error('Abgeschlossen: ' + zu + ' ist freigegeben. Setze die ' +
+              'Freigabe von Hand zurück, wenn du wirklich nachbessern musst. Dein Text ' +
+              'bleibt im Feld stehen.');
+          }
           var ziel = root.inhalt.naechsteDatei(inh, n, k.kursId, dateien);
           if (!ziel) throw new Error('Für diesen Schritt ist kein versioniertes Ablegen vorgesehen.');
           return graph.ablegen(k.kursId, ziel.ordner, ziel.datei, text).then(function () { return ziel; });
@@ -772,6 +778,12 @@
       delete state.data.dateien[schl];
       graph.ordnerInhalt(k.kursId, ab.ordner)
         .then(function (dateien) {
+          /* Final ist final — auch wenn jemand den Knopf trotzdem erreicht. */
+          var zu = root.inhalt.abgeschlossen(inh, n, k.kursId, dateien, gewaehlt);
+          if (zu) {
+            throw new Error('Abgeschlossen: ' + zu + ' ist freigegeben. Setze die ' +
+              'Freigabe von Hand zurück, wenn du wirklich nachbessern musst.');
+          }
           var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
           if (!ziel) {
             throw new Error(vari

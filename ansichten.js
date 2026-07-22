@@ -460,6 +460,17 @@
       var ziel = Array.isArray(ablageDaten.dateien)
         ? I().naechsteDatei(inh, schrittId, kurs.kursId, ablageDaten.dateien)
         : null;
+      var zuChat = Array.isArray(ablageDaten.dateien)
+        ? I().abgeschlossen(inh, schrittId, kurs.kursId, ablageDaten.dateien)
+        : null;
+
+      if (zuChat) {
+        h += '<h2 class="tun">Abgeschlossen</h2>';
+        h += '<div class="box achtung"><span class="bt">Final ist final</span>' +
+          'In <code>' + esc(ablage.ordner) + '/</code> liegt <code>' + esc(zuChat) + '</code>. ' +
+          'Dieses Lieferobjekt ist freigegeben; die Kurswerkstatt legt nichts mehr daneben. ' +
+          'Zum Nachbessern die Freigabe zuerst <b>von Hand</b> zur&uuml;cksetzen.</div>';
+      } else {
       h += '<h2 class="tun">Ergebnis ablegen' +
            '<span class="tun-sub">aus Claude oder ChatGPT hierher zur&uuml;ck</span></h2>';
       h += '<div class="ablegen">' +
@@ -476,6 +487,7 @@
         '<p class="dim">Die Kurswerkstatt vergibt Ordner und Dateinamen nach dem ' +
         'Ablage-Kontrakt. Du tippst keinen Pfad.</p>' +
       '</div>';
+      }
     }
 
     /* --- Der Weg Hochladen: fuer Lieferobjekte, die nicht als Text entstehen ---
@@ -507,6 +519,22 @@
         'jede Variante z&auml;hlt eigene Nummern.</p>';
       }
 
+      var zu = Array.isArray(ablageDaten.dateien)
+        ? I().abgeschlossen(inh, schrittId, kurs.kursId, ablageDaten.dateien, gewaehlt)
+        : null;
+
+      if (zu) {
+        h += '<div class="box achtung"><span class="bt">Abgeschlossen &mdash; final ist final</span>' +
+          'In <code>' + esc(ablage.ordner) + '/</code> liegt <code>' + esc(zu) + '</code>. ' +
+          'Damit ist dieses Lieferobjekt freigegeben und wird nicht mehr &uuml;berschrieben.' +
+          '<p style="margin-top:8px">Musst du wirklich nachbessern, setze die Freigabe zuerst ' +
+          '<b>von Hand</b> zur&uuml;ck &mdash; benenne <code>_final</code> in SharePoint auf die ' +
+          'zugeh&ouml;rige <code>_v{N}</code> zur&uuml;ck. Das ist ein bewusster Eingriff und soll ' +
+          'einer bleiben: eine neue Ablage daneben bek&auml;me wieder <code>_v1</code> und w&auml;re ' +
+          'durch die <code>_final</code> verdeckt &mdash; du arbeitetest an einer Datei, die niemand liest.</p>' +
+        '</div></div>';
+      } else {
+
       h += '<input type="file" id="datei"' +
           (endung ? ' accept=".' + esc(endung) + '"' : '') + ' />' +
         '<div class="arow">' +
@@ -522,6 +550,7 @@
         (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
         'Du tippst keinen Pfad und keinen Dateinamen.</p>' +
       '</div>';
+      }
     }
 
     /* --- Schritt 2 schreibt eine Systemdatei, kein Dokument: Knopf statt Textfeld.

@@ -195,6 +195,32 @@
       return ziel;
     },
 
+    /* Final ist final. Liegt eine _final-Fassung, ist das Lieferobjekt
+       abgeschlossen — es wird nichts mehr daneben abgelegt.
+
+       Ohne diese Sperre entstuende ein stiller Schaden: _final zaehlt bei
+       naechsteVersion() bewusst nicht mit, eine neue Ablage bekaeme also wieder
+       _v1 — und die Aufloesungsregel "final vor hoechster Nummer" wuerde sie
+       verdecken. Man arbeitete an einer Datei, die niemand liest.
+
+       Wer nach der Freigabe weiterarbeiten muss, setzt _final von Hand zurueck.
+       Das ist ein bewusster Eingriff und soll einer bleiben. */
+    finalVorhanden: function (dateien, kursId, lieferobjekt) {
+      if (!Array.isArray(dateien)) return null;
+      var re = new RegExp('^' + reEsc(kursId) + '_' + reEsc(lieferobjekt) +
+                          '_final\\.[a-z0-9]+$', 'i');
+      var t = dateien.filter(function (d) { return re.test(d.name || ''); })[0];
+      return t ? t.name : null;
+    },
+
+    /* Ist dieser Schritt fuer diesen Kurs abgeschlossen? Beruecksichtigt die
+       Variante, wo der Kontrakt welche fuehrt. */
+    abgeschlossen: function (i, schrittId, kursId, dateien, variante) {
+      var lief = inhalt.lieferobjektVon(i, schrittId, variante);
+      if (!lief) return null;
+      return inhalt.finalVorhanden(dateien, kursId, lief);
+    },
+
     /* Welche Fassung gilt? Maschinenregel aus dem Kontrakt: gibt es _final, gilt sie;
        sonst die hoechste Nummer. Liefert den Dateinamen oder null. */
     geltendeDatei: function (dateien, kursId, lieferobjekt) {
