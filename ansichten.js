@@ -438,6 +438,34 @@
       '</div>';
     }
 
+    /* --- Der Weg Hochladen: fuer Lieferobjekte, die nicht als Text entstehen ---
+           Excel (Schritt 3) und der Moodle-Export (Schritt 7). Der Name wird
+           angezeigt, nicht getippt — abgetippte Namen waren die Fehlerquelle. */
+    if (kurs && I().darfHochladen(inh, schrittId) && !ablageDaten.ordnerFehlt) {
+      var hziel = Array.isArray(ablageDaten.dateien)
+        ? I().hochladeZiel(inh, schrittId, kurs.kursId, ablageDaten.dateien)
+        : null;
+      var endung = I().erwarteteEndung(inh, schrittId);
+      h += '<h2 class="tun">Datei hochladen' +
+           '<span class="tun-sub">die Kurswerkstatt vergibt Ordner und Namen</span></h2>';
+      h += '<div class="ablegen">' +
+        '<input type="file" id="datei"' +
+          (endung ? ' accept=".' + esc(endung) + '"' : '') + ' />' +
+        '<div class="arow">' +
+          '<button class="knopf gross" data-action="hochladen" data-schritt="' +
+            esc(schrittId) + '">Hochladen</button>' +
+          (hziel ? '<span class="zielname">wird zu <code>' + esc(hziel.ordner) + '/' +
+                   esc(hziel.datei) + '</code></span>'
+                 : '<span class="dim">Ordner wird gelesen &hellip;</span>') +
+        '</div>' +
+        '<p class="klemmt" id="hochladefehler" hidden></p>' +
+        '<p class="dim">Wie die Datei auf deinem Rechner heisst, spielt keine Rolle &mdash; ' +
+        'abgelegt wird sie unter dem Namen aus dem Ablage-Kontrakt. ' +
+        (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
+        'Du tippst keinen Pfad und keinen Dateinamen.</p>' +
+      '</div>';
+    }
+
     /* --- Schritt 2 schreibt eine Systemdatei, kein Dokument: Knopf statt Textfeld.
            Erst wenn der Ordner steht — sonst gehoert der Arbeitsplatz Schritt 1. --- */
     if (kurs && +schrittId === 2 && !ablageDaten.ordnerFehlt) {

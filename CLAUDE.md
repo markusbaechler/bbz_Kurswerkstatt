@@ -149,11 +149,31 @@ Die übrigen Masterprompts in `werkzeuge.json` werden **nicht** ausgefüllt: sie
 `esc(f.txt)` unverändert gerendert, ihre Platzhalter füllt der Mensch. Sie zu vereinheitlichen
 heisst, reviewer-freigegebene Prompt-Texte anzufassen — das gehört durch das Prompt-QA-Gate.
 
+## Der Weg Hochladen (Schritt 3 und 7)
+
+Für Lieferobjekte, die **nicht als Text entstehen**: die Excel aus Schritt 3 und der
+Moodle-Export aus Schritt 7. Deklariert als `wege: [… , "hochladen"]` im Kontrakt —
+`inhalt.darfHochladen()` liest nur das, nichts ist im Code fest verdrahtet.
+
+**Der Mensch tippt keinen Dateinamen.** `inhalt.hochladeZiel()` liefert ihn: fester Name, wo
+der Kontrakt einen nennt (`{K}_export.mbz`), sonst die nächste Version über `naechsteDatei()`.
+Wie die Datei auf dem Rechner heisst, ist gleichgültig. **Der Grund steht in der Historie:**
+eine von Hand als `AFL-001_lernziele_drehbuch_v1.xlsx` benannte Datei (Unterstrich statt
+Bindestrich) war für `geltendeDatei()` und `naechsteVersion()` unsichtbar — sie wäre bei
+Gate 1 und in jeder Auswertung durchgefallen. Ein Test hält den Fall fest.
+
+**Zwei Übertragungswege**, weil Graph bei 4 MB umschaltet: darunter ein einfaches `PUT`,
+darüber eine Ladesitzung in Stücken von 1600 KiB (Vielfaches von 320 KiB, wie Graph verlangt),
+**nacheinander** — Graph nimmt die Stücke nur in Reihenfolge an. Der `.mbz`-Export liegt
+regelmässig über der Grenze; ohne den zweiten Weg wäre Schritt 7 nicht bedienbar.
+
+Der Stand rückt wie beim Weg Chat über `standNachAblage`.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
 mit der Kette, Schrittansicht mit Anleitung und inline aufklappbarem Masterprompt, Nachschlagen
-mit Bloom, Ablegen über den Weg Chat. **191 Tests grün**, keine Konsolenfehler.
+mit Bloom, Ablegen über den Weg Chat. **203 Tests grün**, keine Konsolenfehler.
 
 ## Offen
 

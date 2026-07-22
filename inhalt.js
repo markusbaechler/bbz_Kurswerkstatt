@@ -182,6 +182,36 @@
       return e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt;
     },
 
+    /* Ebenso das Hochladen: nur wo der Kontrakt es nennt. Gedacht fuer die
+       Lieferobjekte, die nicht als Text entstehen — Excel (Schritt 3) und der
+       Moodle-Export (Schritt 7). */
+    darfHochladen: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      return !!(e && Array.isArray(e.wege) && e.wege.indexOf('hochladen') >= 0);
+    },
+
+    /* Wohin die hochgeladene Datei kommt. Zwei Faelle: der Kontrakt nennt einen
+       festen Dateinamen (Schritt 7: {K}_export.mbz) oder ein versioniertes
+       Lieferobjekt (Schritt 3). Der Mensch tippt in keinem Fall einen Namen. */
+    hochladeZiel: function (i, schrittId, kursId, dateien) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      if (!e) return null;
+      if (e.datei) {
+        return { ordner: e.ordner, datei: e.datei.replace('{K}', kursId), version: null };
+      }
+      return inhalt.naechsteDatei(i, schrittId, kursId, dateien);
+    },
+
+    /* Die Endung, die der Kontrakt fuer diesen Schritt erwartet — als Vorauswahl
+       im Dateidialog und fuer die Warnung, wenn etwas anderes gewaehlt wird. */
+    erwarteteEndung: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      if (!e) return null;
+      if (e.ext) return e.ext;
+      var m = /\.([a-z0-9]+)$/i.exec(e.datei || '');
+      return m ? m[1] : null;
+    },
+
     /* --- Der Kursordner ---
        Bindend ist laut Kontrakt allein das Praefix {K}_ — nur danach sucht
        graph.kursOrdner(). Der Kurzname dahinter ist ein Vorschlag fuer Menschen;

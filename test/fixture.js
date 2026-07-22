@@ -33,11 +33,11 @@
       schritte: {
         '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
         '2': { ordner: '02_setup', datei: '{K}_manifest.json', format: 'json', wege: ['kurswerkstatt'], gate: null },
-        '3': { ordner: '03_contract', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand'], gate: 'Gate 1 · 4-Augen' },
+        '3': { ordner: '03_contract', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen' },
         '4': { ordner: '04_greenfield', lieferobjekt: 'greenfield', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
         '5': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
         '6': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: 'Sign-off' },
-        '7': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['claude-code'], gate: null },
+        '7': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['claude-code','hochladen'], gate: null },
         '8': { ordner: '07_abnahme', lieferobjekt: 'abnahme', ext: 'md', format: 'text', wege: ['kurswerkstatt'], gate: 'Gate 2 · Schluss' },
         '9': { ordner: '08_backbone', datei: '{K}_publiziert.md', format: 'text', wege: ['chat','claude-code'], gate: null }
       }

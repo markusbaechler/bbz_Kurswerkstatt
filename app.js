@@ -345,6 +345,74 @@
       });
     },
 
+    /* Eine Datei in den Kursordner legen. Graph nimmt bis 4 MB in einem Zug;
+       darueber verlangt es eine Ladesitzung in Stuecken. Der Moodle-Export
+       (Schritt 7) liegt regelmaessig darueber — deshalb beide Wege. */
+    hochladen: function (kursId, ordner, datei, datenBlob, melde) {
+      var GRENZE = 4 * 1024 * 1024;
+      var STUECK = 5 * 320 * 1024;            /* Vielfaches von 320 KiB, wie Graph verlangt */
+
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId), auth.token()])
+        .then(function (r) {
+          var did = r[0], ord = r[1], t = r[2];
+          if (!ord) {
+            throw new Error('In der Bibliothek Kursproduktion gibt es keinen Ordner für ' +
+              kursId + '. Leg die Ablage in Schritt 1 an.');
+          }
+          var pfad = 'https://graph.microsoft.com/v1.0/drives/' + did + '/items/' + ord.id +
+                     ':/' + encodeURI(ordner + '/' + datei);
+
+          if (datenBlob.size <= GRENZE) {
+            if (melde) melde(1);
+            return fetch(pfad + ':/content', {
+              method: 'PUT',
+              headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/octet-stream' },
+              body: datenBlob
+            }).then(function (x) {
+              if (!x.ok) throw new Error('Nicht hochgeladen (Graph ' + x.status + ')');
+              return x.json();
+            });
+          }
+
+          return fetch(pfad + ':/createUploadSession', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ item: { '@microsoft.graph.conflictBehavior': 'replace' } })
+          }).then(function (x) {
+            if (!x.ok) throw new Error('Ladesitzung abgelehnt (Graph ' + x.status + ')');
+            return x.json();
+          }).then(function (sitzung) {
+            var gesamt = datenBlob.size;
+
+            /* Nacheinander, nicht parallel: Graph verlangt die Stuecke in Reihenfolge. */
+            function stueck(von) {
+              if (von >= gesamt) return Promise.resolve(null);
+              var bis = Math.min(von + STUECK, gesamt);
+              if (melde) melde(bis / gesamt);
+              return fetch(sitzung.uploadUrl, {
+                method: 'PUT',
+                headers: {
+                  'Content-Length': String(bis - von),
+                  'Content-Range': 'bytes ' + von + '-' + (bis - 1) + '/' + gesamt
+                },
+                body: datenBlob.slice(von, bis)
+              }).then(function (x) {
+                if (!x.ok && x.status !== 202) {
+                  throw new Error('Abgebrochen bei ' + Math.round(von / 1048576) +
+                                  ' MB (Graph ' + x.status + ')');
+                }
+                return x.status === 202 ? stueck(bis) : x.json();
+              });
+            }
+            return stueck(0);
+          });
+        })
+        .then(function (erg) {
+          delete state.data.dateien[kursId + '/' + ordner];
+          return erg;
+        });
+    },
+
     /* Eine Textdatei aus dem Kursordner lesen — fuer das Briefing, das in die
        Projekt-Instruktionen eingeht. Nicht gefunden ist kein Fehler, sondern null. */
     dateiLesen: function (kursId, ordner, datei) {
@@ -673,6 +741,53 @@
         });
     },
 
+    /* Der Weg Hochladen — fuer Lieferobjekte, die nicht als Text entstehen.
+       Ordner und Name kommen aus dem Kontrakt, nie aus dem Dateidialog: eine
+       falsch benannte Datei faellt sonst aus Versionszaehlung und Gate-Aufloesung. */
+    hochladen: function (n, knopf) {
+      var k = nav.kurs(), inh = state.data.inhalt;
+      var feld = document.getElementById('datei');
+      if (!k || !feld) return;
+      var datei = feld.files && feld.files[0];
+      var meld = document.getElementById('hochladefehler');
+
+      function klemmt(text) {
+        knopf.disabled = false; knopf.textContent = 'Hochladen';
+        if (meld) { meld.textContent = text; meld.hidden = false; }
+        else { alert(text); }
+      }
+      if (!datei) { feld.click(); return; }
+
+      var ab = root.inhalt.ablageVon(inh, n, k.kursId);
+      var schl = k.kursId + '/' + ab.ordner;
+      if (meld) meld.hidden = true;
+      knopf.disabled = true; knopf.textContent = 'wird hochgeladen …';
+
+      /* Den Ordner frisch lesen — die Versionsnummer darf nicht aus einem alten Stand kommen. */
+      delete state.data.dateien[schl];
+      graph.ordnerInhalt(k.kursId, ab.ordner)
+        .then(function (dateien) {
+          var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien);
+          if (!ziel) throw new Error('Für diesen Schritt ist kein Hochladen vorgesehen.');
+          return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, datei, function (anteil) {
+            knopf.textContent = anteil >= 1 ? 'wird abgeschlossen …'
+                                            : 'lädt … ' + Math.round(anteil * 100) + '%';
+          }).then(function () { return ziel; });
+        })
+        .then(function (ziel) {
+          var neu = graph.standNachAblage(k, +n);
+          var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
+          return weiter.then(function () { return ziel; });
+        })
+        .then(function (ziel) {
+          return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
+            state.hinweis = 'Hochgeladen als ' + ziel.datei;
+            controller.render();
+          });
+        })
+        .catch(function (e) { klemmt('Nicht hochgeladen. ' + (e.message || e)); });
+    },
+
     erledigt: function (n) {
       var k = nav.kurs();
       if (!k) return;
@@ -729,6 +844,7 @@
       if (a === 'schritt'){ controller.zu({ bereich: 'arbeiten', schrittId: t.dataset.schritt, werkzeugId: null }); return; }
       if (a === 'erledigt') { controller.erledigt(t.dataset.schritt); return; }
       if (a === 'ablegen')  { controller.ablegen(t.dataset.schritt, t); return; }
+      if (a === 'hochladen') { controller.hochladen(t.dataset.schritt, t); return; }
       if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
       if (a === 'manifest-schreiben') { controller.manifestSchreiben(t); return; }
 
