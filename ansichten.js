@@ -377,8 +377,32 @@
 
     h += '<p class="zweck">' + s.zweck + '</p>';
 
-    var schritte = anleitung ? (anleitung.steps || []) : (s.taet || []);
-    h += '<h2 class="tun">So gehst du vor</h2>';
+    /* Die Anleitung haengt am Weg. Chat und Claude-Code sind verschiedene
+       Handgriffe — ein gemischter Text ist fuer beide falsch. */
+    var wege = anleitung && anleitung.stepsProWeg ? I().arbeitswege(inh, schrittId) : [];
+    var wegAktiv = wege.length
+      ? (wege.indexOf(ablageDaten.weg) >= 0 ? ablageDaten.weg : wege[0])
+      : null;
+    var wegLabel = (inh['ablage-kontrakt'] || {}).wege_bedeutung || {};
+    var wegName = { chat: 'Im Chat', 'claude-code': 'Mit Claude Code', hand: 'Von Hand' };
+
+    var schritte = anleitung
+      ? I().anleitungSchritte(inh, schrittId, wegAktiv)
+      : (s.taet || []);
+
+    h += '<h2 class="tun">So gehst du vor' +
+         (wege.length > 1 ? '<span class="tun-sub">zwei Wege &mdash; w&auml;hle deinen</span>' : '') +
+         '</h2>';
+
+    if (wege.length > 1) {
+      h += '<div class="ptabs">' + wege.map(function (x) {
+        return '<button class="ptab' + (x === wegAktiv ? ' on' : '') + '" ' +
+               'data-action="weg" data-weg="' + esc(x) + '" ' +
+               'title="' + esc(wegLabel[x] || '') + '">' +
+               esc(wegName[x] || x) + '</button>';
+      }).join('') + '</div>';
+    }
+
     h += '<ol class="rezept">' + schritte.map(function (x) {
       return '<li><span>' + x + '</span></li>';
     }).join('') + '</ol>';
@@ -388,6 +412,20 @@
     if (hilfsmittel.length) {
       var prompts = hilfsmittel.filter(function (w) { return w.type === 'prompt'; });
       var zubehoer = hilfsmittel.filter(function (w) { return w.type !== 'prompt'; });
+
+      /* Ein Masterprompt zum Kopieren gehoert zum Weg Chat. Wer mit Claude Code
+         arbeitet, gibt einen Auftrag und kopiert nichts — dort waere er
+         irrefuehrend. */
+      if (wegAktiv === 'claude-code' && prompts.length) {
+        h += '<h2 class="tun">Dein Auftrag' +
+             '<span class="tun-sub">Claude Code holt sich den Rest selbst</span></h2>';
+        h += '<div class="box bruecke"><span class="bt">Bau-Auftrag</span>' +
+             'Kein Prompt zum Kopieren. In Claude Code ausf&uuml;hren lassen: ' +
+             '<code>_zentral/prompt-bibliothek/greenfield-bauspec.txt</code><br>' +
+             'Der Masterprompt f&uuml;r den Weg Chat ist derselbe Inhalt in anderer Form &mdash; ' +
+             'beide werden aus <code>greenfield-inhaltskontrakt.txt</code> erzeugt.</div>';
+        prompts = [];
+      }
 
       if (prompts.length) {
         h += '<h2 class="tun">' + (prompts.length > 1 ? 'Deine Masterprompts' : 'Dein Masterprompt') +

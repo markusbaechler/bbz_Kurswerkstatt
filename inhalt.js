@@ -103,6 +103,29 @@
       return inhalt.werkzeugeVon(i, schrittId).filter(function (t) { return t.type === 'guide'; })[0] || null;
     },
 
+    /* Welche Wege erzeugen das Lieferobjekt? "hochladen" gehoert nicht dazu —
+       es ist eine Art abzulegen, keine Art zu produzieren. */
+    arbeitswege: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      var w = (e && e.wege) || [];
+      return w.filter(function (x) { return x !== 'hochladen'; });
+    },
+
+    /* Die Anleitungsschritte fuer einen Weg. Ein gemischter Text schickt die
+       Person im Chat zu einem Node-Befehl und die Person in Claude Code zum
+       Kopierknopf — deshalb trennt der Guide sie in stepsProWeg. */
+    anleitungSchritte: function (i, schrittId, weg) {
+      var g = inhalt.anleitungVon(i, schrittId);
+      if (!g) return [];
+      var proWeg = g.stepsProWeg;
+      if (proWeg) {
+        if (weg && proWeg[weg]) return proWeg[weg];
+        var erste = inhalt.arbeitswege(i, schrittId).filter(function (x) { return proWeg[x]; })[0];
+        if (erste) return proWeg[erste];
+      }
+      return g.steps || [];
+    },
+
     /* Werkzeuge ohne die Anleitung — die wird separat und ausgeklappt gezeigt. */
     hilfsmittelVon: function (i, schrittId) {
       return inhalt.werkzeugeVon(i, schrittId).filter(function (t) { return t.type !== 'guide'; });

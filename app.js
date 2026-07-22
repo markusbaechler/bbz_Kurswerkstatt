@@ -32,7 +32,7 @@
     auth:      { account: null },
     data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {} },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
-                 variante: null },
+                 variante: null, weg: null },
     laden:     false,
     fehler:    null,
     hinweis:   null
@@ -561,7 +561,8 @@
           /* undefined = noch nicht nachgesehen, null = nachgesehen und nicht da */
           ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false,
           briefing: k ? state.data.briefing[k.kursId] : undefined,
-          variante: p.variante
+          variante: p.variante,
+          weg: p.weg
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         if (k && String(p.schrittId) === '2' && state.data.ordner[k.kursId]) {
@@ -854,6 +855,7 @@
       if (a === 'ablegen')  { controller.ablegen(t.dataset.schritt, t); return; }
       if (a === 'hochladen') { controller.hochladen(t.dataset.schritt, t); return; }
       if (a === 'variante')  { controller.zu({ variante: t.dataset.variante }); return; }
+      if (a === 'weg')       { controller.zu({ weg: t.dataset.weg }); return; }
       if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
       if (a === 'manifest-schreiben') { controller.manifestSchreiben(t); return; }
 
