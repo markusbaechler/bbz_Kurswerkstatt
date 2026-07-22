@@ -381,10 +381,35 @@
       teil('schritte', 'Die neun Produktionsschritte');
       schritte.forEach(function (s) {
         var a = kontrakt.schritte && kontrakt.schritte[String(s.id)];
-        var ziel = a ? (a.ordner + '/' + (a.datei || ('{K}_' + a.lieferobjekt + '_v{N}.' + a.ext))) : '';
+        var ziele = [];
+        if (a) {
+          if (a.datei) {
+            ziele.push(a.ordner + '/' + a.datei);
+          } else if (a.lieferobjekt) {
+            /* Fuehrt der Schritt Varianten, muss jede genannt werden. Sonst
+               lernen die KI-Projekte einen Dateinamen mit {variante} darin. */
+            var vs = inhalt.varianten(i, s.id);
+            (vs || [null]).forEach(function (v) {
+              var lief = v ? a.lieferobjekt.replace('{variante}', v) : a.lieferobjekt;
+              ziele.push(a.ordner + '/{K}_' + lief + '_v{N}.' + a.ext);
+            });
+          }
+        }
         z.push('- Schritt ' + s.id + ' — ' + s.nm + (a && a.gate ? '  [' + a.gate + ']' : '') +
-               (ziel ? '  →  ' + ziel.replace('{K}', kurs.kursId) : ''));
+               (ziele.length ? '  →  ' + ziele.join('  ·  ').replace(/\{K\}/g, kurs.kursId) : ''));
       });
+      /* Die Doppelung braucht eine Erklaerung, sonst haelt die KI sie fuer einen
+         Fehler oder waehlt eigenmaechtig eine aus. */
+      var mitVar = Object.keys(kontrakt.schritte || {}).filter(function (n) {
+        return inhalt.varianten(i, n);
+      });
+      if (mitVar.length) {
+        z.push('');
+        z.push('Schritt ' + mitVar.join(' und ') + ' fuehrt mehrere Entwuerfe NEBENEINANDER — ' +
+               'je Werkzeug einen. Sie sind keine Versionen voneinander: jede Variante zaehlt ' +
+               'eigene Nummern, und es gibt dort keine geltende Fassung. Zusammengefuehrt und ' +
+               'gegen Quellen validiert wird in Schritt 5.');
+      }
       z.push('Sprint-Scope: Sprint 1 baut und gibt die W-Selbstlernstrecke frei. U- und ' +
              'G-Praesenzartefakte folgen nachgelagert im selben Projekt.');
 

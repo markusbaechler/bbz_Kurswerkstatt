@@ -122,6 +122,40 @@ test('aendert sich der Kontrakt, aendern sich die Instruktionen mit', () => {
   assert.ok(t.indexOf('04_greenfield') < 0, 'traegt den alten Ordner weiter');
 });
 
+/* Die Instruktionen gehen in BEIDE KI-Projekte. Ein Platzhalter darin wird zu
+   einem Dateinamen, den jede KI in allen Folgeschritten weiterverwendet. */
+test('kein Platzhalter im Dateinamen — auch nicht bei Varianten', () => {
+  const v = JSON.parse(JSON.stringify(INHALT));
+  v['ablage-kontrakt'].schritte['4'] = {
+    ordner: '04_greenfield', lieferobjekt: 'greenfield-{variante}',
+    varianten: ['claude', 'chatgpt'], ext: 'html', format: 'html',
+    wege: ['chat', 'claude-code'], gate: null
+  };
+  ['claude', 'chatgpt'].forEach(function (f) {
+    const t = inhalt.projektInstruktionen(v, AFL, BRIEFING, f);
+    assert.ok(t.indexOf('{variante}') < 0, f + ': Platzhalter in den Instruktionen');
+    assert.ok(t.indexOf('AFL-001_greenfield-claude_v{N}.html') >= 0, f + ': Claude-Variante fehlt');
+    assert.ok(t.indexOf('AFL-001_greenfield-chatgpt_v{N}.html') >= 0, f + ': ChatGPT-Variante fehlt');
+  });
+});
+
+test('die Doppelung wird erklaert, nicht nur aufgelistet', () => {
+  const v = JSON.parse(JSON.stringify(INHALT));
+  v['ablage-kontrakt'].schritte['4'] = {
+    ordner: '04_greenfield', lieferobjekt: 'greenfield-{variante}',
+    varianten: ['claude', 'chatgpt'], ext: 'html', wege: ['chat'], gate: null
+  };
+  const t = inhalt.projektInstruktionen(v, AFL, BRIEFING, 'claude');
+  assert.ok(t.indexOf('NEBENEINANDER') >= 0, 'kein Hinweis auf die Parallelitaet');
+  assert.ok(t.indexOf('keine Versionen voneinander') >= 0);
+});
+
+test('ohne Varianten bleibt die Schrittliste unveraendert', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude');
+  assert.ok(t.indexOf('AFL-001_greenfield_v{N}.md') >= 0, 'Zielpfad fehlt');
+  assert.ok(t.indexOf('NEBENEINANDER') < 0, 'Variantenhinweis ohne Varianten');
+});
+
 test('alle neun Schritte stehen mit ihrem Namen drin', () => {
   const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING);
   INHALT.schritte.schritte.forEach(function (s) {
