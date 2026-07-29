@@ -61,3 +61,24 @@ test('banner() wird gerendert, nie getippt: final ist bannerfrei', () => {
   assert.match(dossier.banner('entwurf'), /ENTWURF/);
   assert.match(dossier.banner('validiert'), /VALIDIERT/);
 });
+
+test('quelleNeu() vergibt fortlaufende IDs und verlangt titel, stand, datei', () => {
+  const d = dossier.neu('X');
+  const q = dossier.quelleNeu(d, { titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025', datei: 'sspa-map-2025.pdf' });
+  assert.equal(q.id, 'Q-001');
+  assert.equal(dossier.quelleNeu(d, { titel: 'B', stand: '2026', datei: 'b.pdf' }).id, 'Q-002');
+  assert.throws(() => dossier.quelleNeu(d, { titel: 'ohne Stand', datei: 'x.pdf' }), /stand/);
+});
+
+test('positivliste() ist die Liste der Dateinamen — Eingabe fuer den Auftrag', () => {
+  const d = dossier.neu('X');
+  dossier.quelleNeu(d, { titel: 'A', stand: '2025', datei: 'a.pdf' });
+  assert.deepEqual(dossier.positivliste(d), ['a.pdf']);
+});
+
+test('quellenDateiname() bereinigt wie der Ablage-Kontrakt es verlangt', () => {
+  /* Unterstrich, Umlaute, Leerzeichen — genau die Faelle, an denen Dateien
+     unsichtbar wurden (AFL-001_lernziele_drehbuch_v1.xlsx, 2026-07-22). */
+  assert.equal(dossier.quellenDateiname('AHV Merkblatt_2.01 (gültig).pdf'), 'ahv-merkblatt-2-01-gueltig.pdf');
+  assert.equal(dossier.quellenDateiname('map.PDF'), 'map.pdf');
+});

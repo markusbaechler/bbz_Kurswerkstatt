@@ -91,6 +91,51 @@
       if (status === 'final') return null;
       if (status === 'validiert') return '[VALIDIERT — Freigabe steht aus]';
       return '[ENTWURF — unvalidiert]';
+    },
+
+    naechsteQuellenId: function (d) {
+      var max = 0;
+      ((d && d.quellen) || []).forEach(function (q) {
+        var m = /^Q-(\d+)$/.exec(q.id || '');
+        if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+      });
+      return 'Q-' + ('00' + (max + 1)).slice(-3);
+    },
+
+    /* Datei ablegen + Dossier-Eintrag ist EIN Vorgang (Spec §5.6) — dieser Helfer
+       ist die Dossier-Haelfte davon und weist Unvollstaendiges ab, bevor etwas
+       hochgeladen wird. */
+    quelleNeu: function (d, q) {
+      var fehlt = ['titel', 'stand', 'datei'].filter(function (f) {
+        return !String((q || {})[f] || '').trim();
+      });
+      if (fehlt.length) throw new Error('Quelle unvollständig: ' + fehlt.join(', ') + ' fehlt');
+      var e = {
+        id: dossier.naechsteQuellenId(d),
+        titel: String(q.titel).trim(),
+        herausgeber: String(q.herausgeber || '').trim(),
+        stand: String(q.stand).trim(),
+        datei: String(q.datei).trim()
+      };
+      d.quellen.push(e);
+      return e;
+    },
+
+    /* Die Positivliste: genau diese Dateien liest der Auftrag, keine andere. */
+    positivliste: function (d) {
+      return ((d && d.quellen) || []).map(function (q) { return q.datei; });
+    },
+
+    /* Der Mensch tippt keinen Dateinamen — die Bereinigung uebernimmt die App.
+       Unterstriche, Umlaute und Leerzeichen haben Dateien schon unsichtbar gemacht. */
+    quellenDateiname: function (original) {
+      var m = /^(.*?)(\.[a-z0-9]+)?$/i.exec(String(original || '').trim());
+      var um = { 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'ß': 'ss' };
+      var basis = (m[1] || 'quelle').toLowerCase()
+        .replace(/[äöüß]/g, function (c) { return um[c]; })
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+      return (basis || 'quelle') + (m[2] || '').toLowerCase();
     }
   };
 
