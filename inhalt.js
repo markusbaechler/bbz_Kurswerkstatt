@@ -308,43 +308,43 @@
        EINE Quelle: Formular, Datei und Prompt-Einspeisung lesen alle hier.
        Reihenfolge = Reihenfolge im Formular. */
     BRIEFING_FELDER: [
-      { id: 'zielgruppe', label: 'Zielgruppe', form: 'text', zeilen: 3, pflicht: true,
+      { id: 'zielgruppe', label: 'Zielgruppe', form: 'text', zeilen: 5, pflicht: true,
         hilfe: 'Rolle, Funktion, Erfahrungsstand — wer sitzt im Kurs?',
         beispiel: 'Kunden- und Anlageberatende mit praktischer Erfahrung im Anlagebereich; keine Mindestzahl an Berufsjahren.' },
 
-      { id: 'vorkenntnisse', label: 'Vorkenntnisse', form: 'text', zeilen: 3, pflicht: true,
+      { id: 'vorkenntnisse', label: 'Vorkenntnisse', form: 'text', zeilen: 5, pflicht: true,
         hilfe: 'Was wird vorausgesetzt und deshalb NICHT unterrichtet?',
-        beispiel: 'Saubere Risikoprofilierung, Anlagestrategien bestimmen, Basiswissen zu den gaengigen Anlageklassen.' },
+        beispiel: 'Saubere Risikoprofilierung, Anlagestrategien bestimmen, Basiswissen zu den gängigen Anlageklassen.' },
 
-      { id: 'kurszweck', label: 'Kurszweck', form: 'text', zeilen: 3, pflicht: true,
-        hilfe: 'Wozu befaehigt der Kurs? Das Leistungsversprechen in ein bis drei Saetzen.',
-        beispiel: 'Funktionsweise und Anwendung von Derivaten verstehen, Chancen und Risiken kundengerecht erlaeutern.' },
+      { id: 'kurszweck', label: 'Kurszweck', form: 'text', zeilen: 5, pflicht: true,
+        hilfe: 'Wozu befähigt der Kurs? Das Leistungsversprechen in ein bis drei Sätzen.',
+        beispiel: 'Funktionsweise und Anwendung von Derivaten verstehen, Chancen und Risiken kundengerecht erläutern.' },
 
-      { id: 'praesenz', label: 'Praesenzdauer', form: 'zahl', einheit: 'Tage', schritt: 0.5, pflicht: true,
+      { id: 'praesenz', label: 'Präsenzdauer', form: 'zahl', einheit: 'Tage', schritt: 0.5, pflicht: true,
         hilfe: 'In Tagen. Zwei Halbtage sind 1 Tag.',
         beispiel: '1' },
 
       { id: 'selbstlern', label: 'Umfang Selbstlernphase', form: 'zahl', einheit: 'Stunden', schritt: 0.5, pflicht: true,
-        hilfe: 'In Stunden. Der W-Teil vor der Praesenz.',
+        hilfe: 'In Stunden. Der W-Teil vor der Präsenz.',
         beispiel: '2' },
 
-      { id: 'scope', label: 'Fachlicher Geltungsbereich', form: 'text', zeilen: 4, pflicht: true,
+      { id: 'scope', label: 'Fachlicher Geltungsbereich', form: 'text', zeilen: 6, pflicht: true,
         hilfe: 'Was ist drin? Wenn eine Systematik die Grundlage ist, nenne sie mit Jahrgang.',
         beispiel: 'SSPA Swiss Derivative Map 2025, Kategorien Kapitalschutz, Renditeoptimierung, Partizipation, Hebel.' },
 
-      /* Fester Rahmen, nur Zusaetze werden gefragt — Entscheid Markus 2026-07-29.
+      /* Fester Rahmen, nur Zusätze werden gefragt — Entscheid Markus 2026-07-29.
          Der Rahmen gilt fuer jeden Kurs dieses Hauses; ihn jedes Mal zu erfragen
          erzeugt eine Frage, deren Antwort schon feststeht. */
-      { id: 'reg_zusatz', label: 'Regulatorische Zusaetze', form: 'text', zeilen: 2, pflicht: false,
+      { id: 'reg_zusatz', label: 'Regulatorische Zusätze', form: 'text', zeilen: 4, pflicht: false,
         fest: 'Schweizer Markt- und Beratungskontext. FIDLEG, GWG und VSB gelten als Rahmen.',
-        hilfe: 'Nur Zusaetze oder Abweichungen zum festen Rahmen. Leer lassen, wenn nichts dazukommt.',
-        beispiel: 'Rezertifizierung fuer IK, Affluent, CWMA, KMU, CCoB. Keine FIDLEG-Vertiefung als Kursinhalt.' },
+        hilfe: 'Nur Zusätze oder Abweichungen zum festen Rahmen. Leer lassen, wenn nichts dazukommt.',
+        beispiel: 'Rezertifizierung für IK, Affluent, CWMA, KMU, CCoB. Keine FIDLEG-Vertiefung als Kursinhalt.' },
 
-      { id: 'ausschluesse', label: 'Bewusste Ausschluesse', form: 'text', zeilen: 3, pflicht: true,
-        hilfe: 'Was ausdruecklich NICHT Teil ist. Begrenzt den Content-Umfang staerker als jede Positivliste.',
-        beispiel: 'Theoretische und rechtliche Deep Dives; vertiefte Optionsbewertung; Anlageprodukte mit zusaetzlichem Kreditrisiko.' },
+      { id: 'ausschluesse', label: 'Bewusste Ausschlüsse', form: 'text', zeilen: 5, pflicht: true,
+        hilfe: 'Was ausdrücklich NICHT Teil ist. Begrenzt den Content-Umfang stärker als jede Positivliste.',
+        beispiel: 'Theoretische und rechtliche Deep Dives; vertiefte Optionsbewertung; Anlageprodukte mit zusätzlichem Kreditrisiko.' },
 
-      { id: 'scope_quelle', label: 'Quelle des Scopes', form: 'text', zeilen: 2, pflicht: true,
+      { id: 'scope_quelle', label: 'Quelle des Scopes', form: 'text', zeilen: 4, pflicht: true,
         hilfe: 'Woher stammt der Geltungsbereich? Dokument mit Stand. Ohne Quelle ist er nicht belegt.',
         beispiel: 'Kursausschreibung (verbindlich); SSPA Swiss Derivative Map 2025 als fachliche Referenz.' },
     ],

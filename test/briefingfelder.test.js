@@ -169,3 +169,48 @@ test('die Zaehlung folgt dem, was in den Feldern steht', () => {
 
   delete global.document;
 });
+
+/* ---------- Umlaute im sichtbaren Text ----------
+   Der Fehler ist in diesem Projekt fuenfmal aufgetreten, zuletzt am 2026-07-29
+   in genau diesen Feldbeschriftungen ("Praesenzdauer", "Bewusste Ausschluesse").
+   Geprueft wird der Text, den die Person liest — nicht die Quelle drumherum.
+
+   Keine Buchstabenregel: "Quelle" und "Dauer" enthalten ue bzw. aue voellig zu
+   Recht. Gesucht werden die Ersatzschreibungen, die hier wirklich vorkommen. */
+
+const ERSATZ = [
+  'Praesenz', 'Ausschluess', 'Zusaetz', 'moeglich', 'Moeglich', 'fuer', 'ueber', 'Ueber',
+  'waehl', 'naechst', 'staerker', 'gaengig', 'erlaeuter', 'befaehig', 'Saetze', 'zurueck',
+  'muess', 'koenn', 'Loesung', 'groess', 'Pruefung', 'pruef', 'geoeffnet', 'Uebersicht',
+  'aendert', 'aendern', 'haeng', 'traeg', 'laeuft', 'faell', 'Erklaerung',
+  'Vollstaendig', 'vollstaendig', 'urspruenglich', 'zusaetzlich', 'ausdruecklich'
+];
+
+function ersatzschreibungen(text) {
+  return ERSATZ.filter(function (w) { return String(text).indexOf(w) >= 0; });
+}
+
+test('Beschriftungen und Hilfen tragen echte Umlaute', () => {
+  const schlecht = [];
+  inhalt.BRIEFING_FELDER.forEach(f => {
+    const sicht = [f.label, f.hilfe, f.beispiel, f.fest, f.einheit].filter(Boolean).join(' ');
+    ersatzschreibungen(sicht).forEach(w => schlecht.push(f.id + ': "' + w + '"'));
+  });
+  assert.deepStrictEqual(schlecht, [],
+    'Ersatzschreibung statt Umlaut im sichtbaren Text: ' + schlecht.join(', '));
+});
+
+test('die Pruefung schlaegt bei einer Ersatzschreibung wirklich an', () => {
+  /* Ohne diesen Nachweis waere der Test oben nur Dekoration. */
+  assert.deepStrictEqual(ersatzschreibungen('Praesenzdauer'), ['Praesenz']);
+  assert.deepStrictEqual(ersatzschreibungen('Bewusste Ausschluesse'), ['Ausschluess']);
+  /* Und er darf nicht bei jedem ue anschlagen: */
+  assert.deepStrictEqual(ersatzschreibungen('Quelle des Scopes, Präsenzdauer, Affluent'), []);
+});
+
+test('die Felder bieten genug Platz zum Lesen', () => {
+  inhalt.BRIEFING_FELDER.filter(f => f.form === 'text').forEach(f => {
+    assert.ok(f.zeilen >= 4,
+      f.id + ' hat nur ' + f.zeilen + ' Zeilen — der Text verschwindet hinter dem Rollbalken');
+  });
+});
