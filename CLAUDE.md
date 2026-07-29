@@ -30,6 +30,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 |---|---|
 | `index.html` | App-Shell + **gesamtes CSS** (`:root`-Tokens oben, aus v0.2 übernommen) |
 | `app.js` | `CONFIG` · `state` · `helpers` · `controller` |
+| `dossier.js` | Das Kursdossier — reine Funktionen: Schema, Status, Quellen |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
 | `ansichten.js` | Kette, alle Kurse, ein Kurs, ein Schritt, Nachschlagen — reine String-Builder |
 | `test/fixture.js` | Testdaten in der Struktur der echten Dateien, ohne echte Prompt-Texte |
@@ -200,6 +201,38 @@ beim Hochladen. Gefunden hat es die Konsistenzprüfung, nicht die Testsuite: `va
 prüfte den echten Kontrakt nur im Upload-Pfad, `ablegen.test.js` den Chat-Pfad nur gegen die
 Fixture — und deren Schritt 3 führt keine Varianten. Beide Lücken sind jetzt zu.
 
+## Das Kursdossier (Etappe 1, 2026-07-29)
+
+Seit Etappe 1 der Meta-Architektur (s. Spezifikationstabelle oben) gilt für Schritt 1:
+**das Formular schreibt nicht mehr Freitext, sondern `{K}_dossier.json`** — die eine
+maschinenlesbare Wahrheit je Kurs (`dossier.js`, reine Funktionen). Die Datei liegt **im
+Kursordner selbst**, nicht in einem Schrittordner: `graph.pfadImKursordner(ordner, datei)`
+führt dafür die Konvention **`ordner === ''` heisst Kursordner-Wurzel** — bindend für jeden
+neuen Aufruf von `graph.ablegen`/`graph.dateiLesen`/`graph.umbenennen`.
+
+**Status ist ein Datum, nie ein Satz im Dokument.** Jedes Lieferobjekt trägt im Dossier
+`entwurf → validiert → final` (`dossier.statusVon`/`statusSetzen`). Der Banner dazu wird
+**gerendert, nie getippt** (`dossier.banner`) — steigt der Status, verschwindet der Hinweis
+überall zugleich, statt in einzelnen Dokumenten von Hand nachgezogen zu werden. Das Ablegen
+des Briefings rückt `status.briefing` selbst auf `final`, ohne Gate-Klick — Schritt 1 hat kein
+Gate (s. „Kein `_final` auf Nicht-Gate-Schritten" oben); massgebend ist allein die höchste bzw.
+`_final`-Fassung im Ordner, das Dossier trägt den Stand nur nach.
+
+**Fachquellen entstehen als ein Vorgang, nie als zwei.** Die Erfassung legt die Datei nach
+`03_content/quellen/` **und** schreibt den Dossier-Eintrag (`id`, `titel`, `stand`, `datei`) in
+einem Zug — eine Positivliste (`dossier.positivliste`), die genau die Dateien nennt, die ein
+Auftrag lesen darf. Der Dateiname wird wie beim Weg Hochladen von der App bereinigt
+(`dossier.quellenDateiname`), nie vom Menschen getippt.
+
+Projekt-Instruktionen und der Briefing-Prompt-Kopf werden aus dem Dossier generiert, nicht mehr
+aus Formularfeldern kopiert — Wissenstransfer ohne Handkopie. Die frühere Ablage
+`{K}_briefing-felder.md` wird **nur noch einmalig importiert**, wenn noch kein Dossier existiert
+(`dossierNachladen`); geschrieben wird sie nicht mehr.
+
+**`dossierSpeichern` bricht ab, solange das Dossier nicht geladen ist** — `state.data.dossier[k]`
+ist `undefined` (nie geladen) oder `null` (lädt gerade) nur ein Zwischenzustand; ein Sichern in
+diesem Fenster würde ein leeres Dossier über ein bestehendes schreiben.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
@@ -214,6 +247,13 @@ folgenden Schritte rücken eine Nummer auf, die Gates mit ihnen (2, 4 und 7 stat
 acht Unterordner sind jetzt eigenständig statt neun geteilte — die Ordnernummer entspricht der
 Schrittnummer. `test/fixture.js` bildet die neue Zählung ab, `CLAUDE.md` ist nachgezogen.
 **252 Tests grün.**
+
+## Stand 2026-07-29, abends — Etappe 1 Kursdossier
+
+Modul `dossier.js` mit reinen Funktionen, Schritt-1-Formular schreibt `{K}_dossier.json` statt
+`{K}_briefing-felder.md`, Status- und Banner-Modell, Fachquellen-Erfassung als ein Vorgang,
+Projekt-Instruktionen und Briefing-Prompt-Kopf generiert aus dem Dossier. **325 Tests grün.**
+Live-Probe am echten Kurs steht noch aus (Task 9, Abnahmekriterium Etappe 1).
 
 ## Offen
 
