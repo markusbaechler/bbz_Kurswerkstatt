@@ -3,6 +3,7 @@ const assert = require('node:assert');
 
 require('../app.js');
 require('../inhalt.js');
+require('../dossier.js');
 const { ansichten } = require('../ansichten.js');
 const { INHALT, KURSE } = require('./fixture.js');
 
@@ -105,6 +106,26 @@ test('Schritt 1 hat keinen Vorgaenger und sagt das', () => {
   const h = ansichten.einSchritt(INHALT, AFL, 1, null);
   assert.ok(/ausserhalb der Linie/.test(h));
   assert.ok(!/Station 0/.test(h));
+});
+
+test('Schritt 1 zeigt den Briefing-Status aus dem Dossier', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: { briefing: 'final' }, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /Briefing:\s*final/);
+  assert.ok(!/Briefing:\s*final[^<]*ENTWURF/.test(html), 'final zeigt keinen Banner');
+});
+
+test('ohne Status im Dossier gilt Entwurf, mit Banner', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /Briefing:\s*entwurf/);
+  assert.match(html, /Briefing:\s*entwurf[^<]*ENTWURF/, 'Entwurf-Banner fehlt');
 });
 
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {

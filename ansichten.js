@@ -355,6 +355,11 @@
 
     h += '<div class="box formular" id="briefing-felder">';
 
+    var d = ablageDaten.dossier;
+    var st = root.dossier ? root.dossier.statusVon(d, 'briefing') : 'entwurf';
+    h += '<p class="hinweis-leise">Briefing: ' + esc(st) +
+         (root.dossier && root.dossier.banner(st) ? ' &middot; ' + esc(root.dossier.banner(st)) : '') + '</p>';
+
     if (gelesen === false) {
       h += '<div class="hinweis-leise">Noch nicht nachgesehen &mdash; die Felder werden ' +
            'geladen, sobald der Ordner erreichbar ist.</div>';

@@ -814,7 +814,15 @@
               (ziel.zurueckstufen ? ' · bisherige Fassung ist jetzt ' + ziel.zurueckstufen.nach : '');
             /* Das Briefing steckt in den Projekt-Instruktionen — nach einer neuen
                Fassung muss es dort erneut hinein. */
-            if (String(n) === '1') state.data.briefing[k.kursId] = undefined;
+            if (String(n) === '1') {
+              state.data.briefing[k.kursId] = undefined;
+              var d = state.data.dossier[k.kursId];
+              if (d) {
+                root.dossier.statusSetzen(d, 'briefing', 'final');
+                graph.ablegen(k.kursId, '', root.dossier.DATEI(k.kursId), root.dossier.text(d))
+                  .catch(function () { /* Ablage war erfolgreich; der Status wird beim naechsten Sichern nachgezogen */ });
+              }
+            }
             controller.render();
           });
         })
