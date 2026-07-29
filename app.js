@@ -1019,7 +1019,14 @@
            getippt und noch nicht gesichert wurde. */
         if (String(state.position.schrittId) === '1' && w.type === 'prompt') {
           var kurs2 = nav.kurs();
-          text2 = root.inhalt.briefingPromptKopf(kurs2, controller.briefingFelderAusFormular()) + text2;
+          /* Basis ist der Dossier-Scope (gesichert); nicht-leere Formularwerte
+             ueberschreiben ihn — wer tippt und sofort kopiert, bekommt, was er sieht. */
+          var basis = ((state.data.dossier[kurs2.kursId] || {}).scope) || {};
+          var form = controller.briefingFelderAusFormular();
+          var werte = {};
+          Object.keys(basis).forEach(function (k) { werte[k] = basis[k]; });
+          Object.keys(form).forEach(function (k) { if (String(form[k] || '').trim()) werte[k] = form[k]; });
+          text2 = root.inhalt.briefingPromptKopf(kurs2, werte) + text2;
         }
         kopieren(text2, t);
         return;

@@ -635,7 +635,7 @@
     /* --- Schritt 1 setzt neben dem Kursbriefing auch die beiden KI-Projekte auf.
            Erst wenn der Ordner steht — vorher gehoert die Flaeche dem Anlegen. --- */
     if (kurs && +schrittId === 1 && !ablageDaten.ordnerFehlt) {
-      h += instruktionenBlock(inh, kurs, ablageDaten.briefing, ablageDaten.ordnerName);
+      h += instruktionenBlock(inh, kurs, ablageDaten.briefing, ablageDaten.ordnerName, ablageDaten.dossier);
     }
 
     if (anleitung && anleitung.dod) {
@@ -743,14 +743,14 @@
   /* Die Projekt-Instruktionen fuer die beiden KI-Projekte. Fertig erzeugt aus
      Kontrakt + KWKurse + dem eingelesenen Briefing — keine Platzhalter, keine
      Eingabefelder. Genau das war vorher Handarbeit an sechs Feldern. */
-  function instruktionenBlock(inh, kurs, briefing, ordnerName) {
+  function instruktionenBlock(inh, kurs, briefing, ordnerName, d) {
     /* Zwei Fassungen aus derselben Quelle — dieselben Umschalter wie beim Masterprompt,
        damit sie sich gleich bedienen und die Ereignisbehandlung wiederverwendet wird. */
     var fass = [
       { k: 'claude',  t: 'Claude'  },
       { k: 'chatgpt', t: 'ChatGPT' }
     ].map(function (f) {
-      f.txt = I().projektInstruktionen(inh, kurs, briefing, f.k, ordnerName);
+      f.txt = I().projektInstruktionen(inh, kurs, briefing, f.k, ordnerName, d);
       return f;
     });
     var quelle = briefing === undefined

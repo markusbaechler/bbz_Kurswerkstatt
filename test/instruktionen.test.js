@@ -35,6 +35,31 @@ test('ein leerer oder ungelesener Ordner ergibt null', () => {
 
 /* ---------- Projekt-Instruktionen ---------- */
 
+/* ---------- Das Dossier (Positivliste) ---------- */
+
+test('Instruktionen tragen die Fachquellen aus dem Dossier — mit ID und Stand', () => {
+  const d = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+              quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025', datei: 'sspa-map-2025.pdf' }],
+              status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', d);
+  assert.match(t, /Q-001/);
+  assert.match(t, /SSPA Map/);
+  assert.match(t, /Stand:? 2025/);
+  assert.match(t, /keine anderen Quellen/i);
+});
+
+test('quellenfreier Modus steht ausdruecklich in den Instruktionen', () => {
+  const d = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellenfrei',
+              quellen: [], status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', d);
+  assert.match(t, /quellenfrei/i);
+});
+
+test('ohne Dossier bleiben die Instruktionen wie bisher — kein Quellen-Teil', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x');
+  assert.doesNotMatch(t, /Fachquellen/);
+});
+
 /* ---------- Die zwei Fassungen ---------- */
 
 test('Claude bekommt XML-Tags, ChatGPT Trenn-Ueberschriften', () => {

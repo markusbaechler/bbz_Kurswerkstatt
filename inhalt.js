@@ -599,7 +599,7 @@
        Ersteres gehoert hierher. Je-Schritt-Wahres (genaues Ablageziel, Methodik
        eines Schritts) steht im Masterprompt, der ohnehin je Schritt frisch
        eingefuegt wird, oder in der Anleitung, die der Mensch in der App liest. */
-    projektInstruktionenTeile: function (i, kurs, briefing, ordnerName) {
+    projektInstruktionenTeile: function (i, kurs, briefing, ordnerName, d) {
       var kontrakt = (i && i['ablage-kontrakt']) || {};
       var schritte = (i && i.schritte && i.schritte.schritte) || [];
       var ordner = inhalt.ordnerliste(i);
@@ -660,6 +660,28 @@
       z.push('- Nur ein Mensch gibt frei; die KI vergibt nie „fertig". Fehlt eine Projektdatei, ' +
              'benenne die Lücke — nicht rekonstruieren.');
 
+      /* Die Fachquellen-Positivliste (Dossier, Schritt 1). Ohne Dossier bleibt dieser
+         Teil ganz weg — Verhalten wie vor dem Dossier, kein Bruch fuer bestehende Aufrufer. */
+      if (d) {
+        teil('quellen', 'Fachquellen des Kurses');
+        if (d.content_modus === 'quellenfrei') {
+          z.push('Dieser Kurs läuft im Modus QUELLENFREI: es liegen keine validen Fachquellen ' +
+                 'vor, der Content entsteht als reiner KI-Entwurf und wird in Schritt 4 ' +
+                 'entsprechend strenger validiert. Erfinde keine Quellenangaben.');
+        } else if ((d.quellen || []).length) {
+          z.push('Massgebend sind AUSSCHLIESSLICH diese Quellen (Ablage: 03_content/quellen/). ' +
+                 'Keine anderen Quellen beiziehen, keine erfinden; jede gehört in die Leseliste:');
+          d.quellen.forEach(function (q) {
+            z.push('- ' + q.id + ' · ' + q.titel +
+                   (q.herausgeber ? ' (' + q.herausgeber + ')' : '') +
+                   ' · Stand: ' + q.stand + ' · Datei: ' + q.datei);
+          });
+        } else {
+          z.push('Noch keine Fachquellen erfasst. Vor Schritt 3 in der Kurswerkstatt erfassen ' +
+                 'oder den Modus quellenfrei setzen — nicht selbst welche wählen.');
+        }
+      }
+
       teil('kursbriefing', 'Das freigegebene Kursbriefing');
       if (briefing) {
         z.push('Aus ' + kurs.kursId + '_briefing (Schritt 1). Es ist die Leitplanke für alles ' +
@@ -676,8 +698,8 @@
     /* Die zwei Fassungen. Gleicher Inhalt, andere Verpackung:
        Claude arbeitet mit XML-Tags, ChatGPT mit Trenn-Ueberschriften — dasselbe
        Tool-Tuning, das die Masterprompts schon benutzen. */
-    projektInstruktionen: function (i, kurs, briefing, fassung, ordnerName) {
-      var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing, ordnerName);
+    projektInstruktionen: function (i, kurs, briefing, fassung, ordnerName, d) {
+      var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing, ordnerName, d);
       var kopf = 'Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel +
                  '\nKompetenzfeld: ' + (kurs.kompetenzfeld || 'offen');
       /* Einzige Stelle, an der die Vorrangregel steht (Konvention 9: eine Quelle
