@@ -402,6 +402,8 @@
        Menschenlesbar UND maschinenlesbar: Abschnitte "## <id> · <Label>". Die ID
        traegt die Bedeutung, das Label ist fuer Menschen. Wer das Label aendert,
        zerstoert damit keine bestehende Datei. */
+    /* Nur noch vom Einmal-Import gelesen? Nein: wird gar nicht mehr gerufen —
+       Kandidat fuers Aufraeumen. */
     briefingFelderText: function (kursId, werte) {
       werte = werte || {};
       var z = [];

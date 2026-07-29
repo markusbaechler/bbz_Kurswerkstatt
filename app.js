@@ -456,6 +456,30 @@
         .catch(function () { return null; });
     },
 
+    /* Wie dateiLesen, aber ohne die Fehlerkonflation: dateiLesen liefert null bei
+       404 UND bei jedem anderen Fehler (Token, 5xx, Netz) — fuer Aufrufer, die still
+       ersetzen duerfen, wenn eine Datei fehlt (Briefing). Fuer das Dossier ist das
+       falsch: ein Lesefehler darf nie als "fehlt" gelten, sonst ersetzt ein spaeterer
+       Import ein Dossier, das nur gerade nicht lesbar war. Drei Faelle:
+       {ok:true, text} · {ok:false, fehlt:true} (404 oder kein Kursordner) ·
+       {ok:false, fehlt:false} (jeder andere Fehler). */
+    dateiLesenGenau: function (kursId, ordner, datei) {
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId), auth.token()])
+        .then(function (r) {
+          var did = r[0], ord = r[1], t = r[2];
+          if (!ord) return { ok: false, fehlt: true };
+          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content',
+                { headers: { Authorization: 'Bearer ' + t } })
+            .then(function (x) {
+              if (x.status === 404) return { ok: false, fehlt: true };
+              if (!x.ok) return { ok: false, fehlt: false };
+              return x.text().then(function (text) { return { ok: true, text: text }; });
+            });
+        })
+        .catch(function () { return { ok: false, fehlt: false }; });
+    },
+
     kurseLaden: function () {
       return graph.siteId().then(function (sid) {
         return graph._hole('https://graph.microsoft.com/v1.0/sites/' + sid +
@@ -648,22 +672,49 @@
         .catch(function () {});
     },
 
-    /* Das Dossier aus dem Kursordner. Fehlt es, wird EINMAL aus der Altdatei
-       {K}_briefing-felder.md importiert — geschrieben wird der Import erst beim
-       naechsten Sichern, nicht still beim Lesen. */
+    /* Das Dossier aus dem Kursordner. Drei Faelle, ueber dateiLesenGenau
+       unterschieden (I-1, Final-Review):
+       - fehlt (404 oder kein Kursordner): EINMAL aus der Altdatei
+         {K}_briefing-felder.md importieren — geschrieben wird der Import erst
+         beim naechsten Sichern, nicht still beim Lesen.
+       - jeder andere Lesefehler: state bleibt null, sichtbare Meldung. Ein
+         Import-Fallback hier wuerde ein echtes Dossier unbemerkt ersetzen, sobald
+         spaeter gesichert wird — der Guard in dossierSpeichern greift nur, solange
+         state.data.dossier[kursId] null bleibt.
+       - Datei da, aber unlesbar (dossier.lesen() liefert null): ebenso KEIN Ersatz —
+         dossier.js schliesst ein stilles Reparieren ausdruecklich aus. */
     dossierNachladen: function (kursId) {
       if (state.data.dossier[kursId] !== undefined) return;
       state.data.dossier[kursId] = null;
-      graph.dateiLesen(kursId, '', root.dossier.DATEI(kursId))
-        .then(function (text) {
-          var d = text && root.dossier.lesen(text);
-          if (d) { state.data.dossier[kursId] = d; controller.render(); return; }
-          return graph.dateiLesen(kursId, '01_briefing', kursId + '_briefing-felder.md')
+      return graph.dateiLesenGenau(kursId, '', root.dossier.DATEI(kursId))
+        .then(function (r) {
+          if (r.ok) {
+            var d = root.dossier.lesen(r.text);
+            if (d) { state.data.dossier[kursId] = d; controller.render(); return; }
+            state.data.dossier[kursId] = null;
+            state.hinweis = 'Dossier unlesbar — wird nicht überschrieben.';
+            controller.render();
+            return;
+          }
+          if (!r.fehlt) {
+            state.data.dossier[kursId] = null;
+            state.hinweis = 'Dossier konnte nicht gelesen werden — Seite neu laden.';
+            controller.render();
+            return;
+          }
+          var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['1'] || {};
+          var ordner = e.ordner || '01_briefing';
+          return graph.dateiLesen(kursId, ordner, kursId + '_briefing-felder.md')
             .then(function (alt) {
               var werte = alt ? root.inhalt.briefingFelderLesen(alt) : {};
               state.data.dossier[kursId] = root.dossier.ausWerten(kursId, werte, null, null);
               controller.render();
             });
+        })
+        .catch(function () {
+          state.data.dossier[kursId] = null;
+          state.hinweis = 'Dossier konnte nicht gelesen werden — Seite neu laden.';
+          controller.render();
         });
     },
 
@@ -704,6 +755,13 @@
       var kursId = state.position.kursId;
       if (!kursId) return;
       var melde = typeof document !== 'undefined' && document.getElementById('briefing-felder-melde');
+      /* Fehlt der Kursordner, laeuft dossierNachladen nie an (siehe render()) — ohne
+         diese Unterscheidung meldete der Guard unten dauerhaft "wird noch geladen",
+         obwohl gar nichts laedt (M-3, Final-Review). */
+      if (state.data.ordner[kursId] === null) {
+        if (melde) { melde.hidden = false; melde.textContent = 'Kein Kursordner — zuerst in Schritt 1 die Ablage anlegen.'; }
+        return;
+      }
       /* Ohne geladenes Dossier faellt ausWerten auf dossier.neu() zurueck — ein
          bereits abgelegtes Dossier wuerde seine quellen/status/offen/entschieden
          verlieren. undefined = noch nicht angefordert, null = laedt noch. */
@@ -737,6 +795,9 @@
       var d0 = state.data.dossier[kursId];
       var melde = typeof document !== 'undefined' && document.getElementById('quelle-melde');
       function sag(t) { if (melde) { melde.hidden = false; melde.textContent = t; } }
+      /* Fehlt der Kursordner, laeuft dossierNachladen nie an — "noch nicht geladen"
+         waere dauerhaft falsch (M-3, wie bei dossierSpeichern). */
+      if (state.data.ordner[kursId] === null) { sag('Kein Kursordner — zuerst in Schritt 1 die Ablage anlegen.'); return; }
       if (!d0) { sag('Dossier noch nicht geladen — kurz warten.'); return; }
       var eingabe = document.getElementById('quelle-datei');
       var datei = eingabe && eingabe.files && eingabe.files[0];
@@ -773,7 +834,15 @@
       var d = JSON.parse(JSON.stringify(d0));
       d.content_modus = el.value === 'quellenfrei' ? 'quellenfrei' : 'quellengestuetzt';
       return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d))
-        .then(function () { state.data.dossier[kursId] = d; });
+        .then(function () { state.data.dossier[kursId] = d; })
+        .catch(function (e) {
+          /* PUT fehlgeschlagen: State/SharePoint tragen weiter den alten Modus, das
+             Radio zeigt aber schon den neuen — controller.render() zeichnet aus dem
+             echten State neu, damit es wieder zurueckspringt. */
+          var melde = typeof document !== 'undefined' && document.getElementById('quelle-melde');
+          if (melde) { melde.hidden = false; melde.textContent = 'Nicht gesichert: ' + (e.message || e); }
+          controller.render();
+        });
     },
 
     /* Ordnerinhalt nachladen und danach neu zeichnen — der erste Aufbau wartet nicht darauf. */
@@ -1069,8 +1138,10 @@
         if (String(state.position.schrittId) === '1' && w.type === 'prompt') {
           var kurs2 = nav.kurs();
           /* Basis ist der Dossier-Scope (gesichert); nicht-leere Formularwerte
-             ueberschreiben ihn — wer tippt und sofort kopiert, bekommt, was er sieht. */
-          var basis = ((state.data.dossier[kurs2.kursId] || {}).scope) || {};
+             ueberschreiben ihn — wer tippt und sofort kopiert, bekommt, was er sieht.
+             kurs2 kann null sein (Kurs nicht mehr in KWKurse) — briefingPromptKopf
+             toleriert das mit '?', der Zugriff aufs Dossier davor nicht (M-1). */
+          var basis = (kurs2 && (state.data.dossier[kurs2.kursId] || {}).scope) || {};
           var form = controller.briefingFelderAusFormular();
           var werte = {};
           Object.keys(basis).forEach(function (k) { werte[k] = basis[k]; });

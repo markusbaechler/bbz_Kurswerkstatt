@@ -41,6 +41,24 @@ test('quelleErfassen ohne Dossier bricht ab, statt zu ueberschreiben', () => {
   delete global.document;
 });
 
+test('fehlender Kursordner — eigene Meldung statt "Dossier noch nicht geladen" (M-3)', () => {
+  state.position.kursId = 'DBS-001';
+  state.data.dossier = {};
+  state.data.ordner = { 'DBS-001': null };   /* nachgesehen, kein Ordner da */
+  const melde = els({ titel: 'X', stand: '2026', datei: { name: 'x.pdf' } });
+  let hochgeladen = false;
+  graph.hochladen = function () { hochgeladen = true; return Promise.resolve(); };
+  const knopf = { disabled: false };
+
+  controller.quelleErfassen(knopf);
+
+  assert.strictEqual(hochgeladen, false, 'graph.hochladen wurde trotz fehlendem Kursordner aufgerufen');
+  assert.strictEqual(melde.hidden, false);
+  assert.match(melde.textContent, /Kein Kursordner/);
+  delete global.document;
+  state.data.ordner = {};
+});
+
 test('ohne gewaehlte Datei kommt eine Meldung, kein Upload', () => {
   state.position.kursId = 'DBS-001';
   state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
@@ -141,4 +159,30 @@ test('contentModus legt den gewaehlten Modus ab', async () => {
   const d = JSON.parse(abgelegtMit.text);
   assert.strictEqual(d.content_modus, 'quellenfrei');
   assert.strictEqual(state.data.dossier['DBS-001'].content_modus, 'quellenfrei');
+});
+
+test('contentModus faengt einen Fehler beim PUT ab: Meldung statt unhandled rejection, State bleibt beim alten Modus, Radio wird neu gezeichnet (M-2)', async () => {
+  state.position.kursId = 'DBS-001';
+  state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: [] } };
+  const melde = { hidden: true, textContent: '' };
+  global.document = {
+    getElementById: function (id) { return id === 'quelle-melde' ? melde : null; },
+    querySelectorAll: function () { return []; }
+  };
+  graph.ablegen = function () { return Promise.reject(new Error('Graph 500')); };
+  let gerendert = false;
+  const echtesRender = controller.render;
+  controller.render = function () { gerendert = true; };
+
+  await controller.contentModus({ value: 'quellenfrei' });
+
+  assert.strictEqual(state.data.dossier['DBS-001'].content_modus, 'quellengestuetzt',
+    'der State wurde trotz fehlgeschlagenem PUT auf den neuen Modus gesetzt');
+  assert.strictEqual(melde.hidden, false);
+  assert.match(melde.textContent, /Graph 500/);
+  assert.ok(gerendert, 'controller.render() wurde im catch nicht aufgerufen — das Radio bliebe auf dem falschen Wert stehen');
+
+  controller.render = echtesRender;
+  delete global.document;
 });

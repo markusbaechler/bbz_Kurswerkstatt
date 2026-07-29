@@ -235,6 +235,9 @@ bekommt, was im Feld steht, nicht den zuletzt gesicherten Stand. Beides ersetzt 
 Formularfeldern für den Scope-Teil — Wissenstransfer ohne
 Handkopie. Die frühere Ablage `{K}_briefing-felder.md` wird **nur noch einmalig importiert**,
 wenn noch kein Dossier existiert (`dossierNachladen`); geschrieben wird sie nicht mehr.
+**Der Import läuft nur beim echten „fehlt"** (404 oder kein Kursordner, unterschieden über
+`graph.dateiLesenGenau`) — ein Lesefehler oder eine korrupte Dossier-Datei bleibt `null` mit
+sichtbarer Meldung, damit ein bestehendes Dossier nie still durch ein importiertes ersetzt wird.
 
 **`dossierSpeichern` bricht ab, solange das Dossier nicht geladen ist** — `state.data.dossier[k]`
 ist `undefined` (nie geladen) oder `null` (lädt gerade) nur ein Zwischenzustand; ein Sichern in

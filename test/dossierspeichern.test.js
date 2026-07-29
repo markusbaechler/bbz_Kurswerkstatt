@@ -19,6 +19,25 @@ function melde() {
   return el;
 }
 
+test('fehlender Kursordner — eigene Meldung statt dauerhaftes "wird noch geladen" (M-3)', () => {
+  state.position.kursId = 'DBS-001';
+  state.data.dossier = {};              /* nie geladen worden, weil dossierNachladen nie anlief */
+  state.data.ordner = { 'DBS-001': null };   /* nachgesehen, kein Ordner da */
+  const el = melde();
+  let abgelegt = false;
+  graph.ablegen = function () { abgelegt = true; return Promise.resolve(); };
+  const knopf = { disabled: false };
+
+  controller.dossierSpeichern(knopf);
+
+  assert.strictEqual(abgelegt, false, 'graph.ablegen wurde trotz fehlendem Kursordner aufgerufen');
+  assert.strictEqual(el.hidden, false);
+  assert.match(el.textContent, /Kein Kursordner/);
+  assert.doesNotMatch(el.textContent, /noch geladen/, 'die irrefuehrende Ladeanzeige haette hier ewig gestanden');
+  delete global.document;
+  state.data.ordner = {};
+});
+
 test('kein Dossier angefordert (undefined) — dossierSpeichern bricht ab, statt zu ueberschreiben', () => {
   state.position.kursId = 'DBS-001';
   state.data.dossier = {};   /* frisch, kein Eintrag fuer DBS-001 */
