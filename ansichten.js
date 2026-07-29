@@ -395,6 +395,43 @@
     h += '<span class="hinweis-leise" id="briefing-felder-melde" hidden></span>';
     h += '</div>';
     h += '</div>';
+    h += quellenBlock(ablageDaten);
+    return h;
+  }
+
+  /* ---------- Der Quellen-Block (Schritt 1) ----------
+     Ablegen und Dossier-Eintrag sind EIN Vorgang (Spec §5.6) — hier steht nur die
+     Erfassung dafuer, die Aktion selbst macht controller.quelleErfassen in app.js. */
+  function quellenBlock(ablageDaten) {
+    var d = ablageDaten && ablageDaten.dossier;
+    var h = '<div class="box formular" id="quellen">';
+    h += '<h3>Fachquellen</h3>';
+    h += '<p class="hinweis-leise">Massgebende Quellen &mdash; sie werden nach 03_content/quellen/ ' +
+         'gelegt und im Dossier eingetragen, in einem Zug. Altmaterial geh&ouml;rt nach 00_input, nicht hierher.</p>';
+    var ql = (d && d.quellen) || [];
+    if (ql.length) {
+      h += '<div class="tblwrap"><table class="tbl"><tr><th>ID</th><th>Titel</th><th>Stand</th><th>Datei</th></tr>';
+      ql.forEach(function (q) {
+        h += '<tr><td>' + esc(q.id) + '</td><td>' + esc(q.titel) +
+             (q.herausgeber ? ' (' + esc(q.herausgeber) + ')' : '') + '</td><td>' +
+             esc(q.stand) + '</td><td>' + esc(q.datei) + '</td></tr>';
+      });
+      h += '</table></div>';
+    } else {
+      h += '<p class="hinweis-leise">Noch keine Quellen erfasst.</p>';
+    }
+    h += '<label>Titel <input id="quelle-titel" type="text"></label>';
+    h += '<label>Herausgeber <input id="quelle-herausgeber" type="text"></label>';
+    h += '<label>Stand <input id="quelle-stand" type="text" placeholder="z. B. 2025 oder 2026-01-01"></label>';
+    h += '<label>Datei <input id="quelle-datei" type="file"></label>';
+    h += '<button class="knopf" data-action="quelle-erfassen">Quelle erfassen</button>';
+    h += '<span class="hinweis-leise" id="quelle-melde" hidden></span>';
+    var modus = (d && d.content_modus) || 'quellengestuetzt';
+    h += '<p><label><input type="radio" name="content-modus" value="quellengestuetzt" data-action="content-modus"' +
+         (modus === 'quellengestuetzt' ? ' checked' : '') + '> quellengest&uuml;tzt</label> ' +
+         '<label><input type="radio" name="content-modus" value="quellenfrei" data-action="content-modus"' +
+         (modus === 'quellenfrei' ? ' checked' : '') + '> quellenfrei (reiner KI-Entwurf)</label></p>';
+    h += '</div>';
     return h;
   }
 

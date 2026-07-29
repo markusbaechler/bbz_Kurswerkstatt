@@ -128,6 +128,19 @@ test('ohne Status im Dossier gilt Entwurf, mit Banner', () => {
   assert.match(html, /Briefing:\s*entwurf[^<]*ENTWURF/, 'Entwurf-Banner fehlt');
 });
 
+test('Schritt 1 zeigt die erfassten Quellen und den Erfassen-Knopf', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'SSPA <Map>', herausgeber: '', stand: '2025', datei: 'sspa.pdf' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /Q-001/);
+  assert.match(html, /SSPA &lt;Map&gt;/);            /* esc() ist Pflicht */
+  assert.match(html, /data-action="quelle-erfassen"/);
+  assert.match(html, /name="content-modus"/);
+});
+
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/So gehst du vor/.test(h));

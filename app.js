@@ -729,6 +729,53 @@
         });
     },
 
+    /* Datei ablegen und Dossier-Eintrag sind EIN Vorgang (Spec §5.6) — beides
+       nacheinander, damit nie eine Datei ohne Dossier-Eintrag herumliegt oder
+       umgekehrt. Guard wie dossierSpeichern: undefined/null heisst nicht bereit. */
+    quelleErfassen: function (knopf) {
+      var kursId = state.position.kursId;
+      var d0 = state.data.dossier[kursId];
+      var melde = typeof document !== 'undefined' && document.getElementById('quelle-melde');
+      function sag(t) { if (melde) { melde.hidden = false; melde.textContent = t; } }
+      if (!d0) { sag('Dossier noch nicht geladen — kurz warten.'); return; }
+      var eingabe = document.getElementById('quelle-datei');
+      var datei = eingabe && eingabe.files && eingabe.files[0];
+      if (!datei) { sag('Zuerst eine Datei wählen.'); return; }
+      var name = root.dossier.quellenDateiname(datei.name);
+      var d = JSON.parse(JSON.stringify(d0));
+      var q;
+      try {
+        q = root.dossier.quelleNeu(d, {
+          titel: (document.getElementById('quelle-titel') || {}).value,
+          herausgeber: (document.getElementById('quelle-herausgeber') || {}).value,
+          stand: (document.getElementById('quelle-stand') || {}).value,
+          datei: name
+        });
+      } catch (e) { sag(String(e.message || e)); return; }
+      if (knopf) knopf.disabled = true;
+      sag('Wird hochgeladen …');
+      return graph.hochladen(kursId, '03_content/quellen', name, datei)
+        .then(function () { return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d)); })
+        .then(function () {
+          state.data.dossier[kursId] = d;
+          state.hinweis = q.id + ' erfasst: ' + name;
+          controller.render();
+        })
+        .catch(function (e) { sag(String(e.message || e)); if (knopf) knopf.disabled = false; });
+    },
+
+    /* Die Wahl steht fuer sich, ohne Formular und ohne Knopf — sie wird direkt
+       beim Umschalten des Radios abgelegt. */
+    contentModus: function (el) {
+      var kursId = state.position.kursId;
+      var d0 = state.data.dossier[kursId];
+      if (!d0) return;
+      var d = JSON.parse(JSON.stringify(d0));
+      d.content_modus = el.value === 'quellenfrei' ? 'quellenfrei' : 'quellengestuetzt';
+      return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d))
+        .then(function () { state.data.dossier[kursId] = d; });
+    },
+
     /* Ordnerinhalt nachladen und danach neu zeichnen — der erste Aufbau wartet nicht darauf. */
     ordnerNachladen: function (kursId, ordner) {
       var schl = kursId + '/' + ordner;
@@ -966,6 +1013,7 @@
   if (typeof document !== 'undefined') {
     document.addEventListener('input', function (e) {
       if (e.target && e.target.dataset && e.target.dataset.feld) controller.briefingFelderZaehlen();
+      if (e.target && e.target.name === 'content-modus') controller.contentModus(e.target);
     });
 
     document.addEventListener('click', function (e) {
@@ -996,6 +1044,7 @@
       if (a === 'weg')       { controller.zu({ weg: t.dataset.weg }); return; }
       if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
       if (a === 'briefing-felder-speichern') { controller.dossierSpeichern(t); return; }
+      if (a === 'quelle-erfassen') { controller.quelleErfassen(t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {
