@@ -36,9 +36,9 @@ test('ein fremder Kurs sperrt nicht', () => {
 });
 
 test('abgeschlossen() liest das Lieferobjekt aus dem Kontrakt', () => {
-  assert.ok(inhalt.abgeschlossen(INHALT, 3, 'AFL-001',
+  assert.ok(inhalt.abgeschlossen(INHALT, 2, 'AFL-001',
     d('AFL-001_lernziele-drehbuch_final.xlsx')));
-  assert.strictEqual(inhalt.abgeschlossen(INHALT, 3, 'AFL-001',
+  assert.strictEqual(inhalt.abgeschlossen(INHALT, 2, 'AFL-001',
     d('AFL-001_lernziele-drehbuch_v1.xlsx')), null);
 });
 
@@ -47,7 +47,7 @@ test('genau dieser stille Schaden waere sonst entstanden', () => {
   const nurFinal = d('AFL-001_lernziele-drehbuch_final.xlsx');
   /* naechsteVersion zaehlt _final bewusst nicht mit -> wieder v1 ... */
   assert.strictEqual(
-    inhalt.naechsteDatei(INHALT, 3, 'AFL-001', nurFinal).datei,
+    inhalt.naechsteDatei(INHALT, 2, 'AFL-001', nurFinal).datei,
     'AFL-001_lernziele-drehbuch_v1.xlsx');
   /* ... und die Aufloesungsregel wuerde diese v1 verdecken. */
   assert.strictEqual(
@@ -55,13 +55,13 @@ test('genau dieser stille Schaden waere sonst entstanden', () => {
                          'AFL-001', 'lernziele-drehbuch'),
     'AFL-001_lernziele-drehbuch_final.xlsx');
   /* Deshalb sperrt die App vorher. */
-  assert.ok(inhalt.abgeschlossen(INHALT, 3, 'AFL-001', nurFinal));
+  assert.ok(inhalt.abgeschlossen(INHALT, 2, 'AFL-001', nurFinal));
 });
 
 /* ---------- Ansicht: Weg Hochladen ---------- */
 
 test('bei _final zeigt der Upload die Sperre statt eines Zielnamens', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 3, null,
+  const h = ansichten.einSchritt(INHALT, AFL, 2, null,
     { ordnerFehlt: false, dateien: d('AFL-001_lernziele-drehbuch_final.xlsx') });
   assert.ok(h.indexOf('final ist final') >= 0, 'keine Sperrmeldung');
   assert.ok(!/data-action="hochladen"/.test(h), 'Hochladen trotz Freigabe angeboten');
@@ -69,7 +69,7 @@ test('bei _final zeigt der Upload die Sperre statt eines Zielnamens', () => {
 });
 
 test('ohne _final bleibt der Upload offen', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 3, null,
+  const h = ansichten.einSchritt(INHALT, AFL, 2, null,
     { ordnerFehlt: false, dateien: d('AFL-001_lernziele-drehbuch_v1.xlsx') });
   assert.ok(/data-action="hochladen"/.test(h), 'Upload fehlt');
   assert.ok(h.indexOf('final ist final') < 0, 'sperrt ohne Grund');
@@ -79,14 +79,14 @@ test('ohne _final bleibt der Upload offen', () => {
 /* ---------- Ansicht: Weg Chat ---------- */
 
 test('bei _final zeigt auch der Weg Chat die Sperre', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 4, null,
-    { ordnerFehlt: false, dateien: d('AFL-001_greenfield_final.md') });
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null,
+    { ordnerFehlt: false, dateien: d('AFL-001_skript-claude_final.docx') });
   assert.ok(h.indexOf('Final ist final') >= 0, 'keine Sperrmeldung im Weg Chat');
   assert.ok(!/id="ergebnis"/.test(h), 'Textfeld trotz Freigabe angeboten');
 });
 
 test('ohne _final bleibt der Weg Chat offen', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 4, null, { ordnerFehlt: false, dateien: [] });
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
   assert.ok(/id="ergebnis"/.test(h), 'Ablegen-Feld fehlt');
   assert.ok(h.indexOf('Final ist final') < 0);
 });

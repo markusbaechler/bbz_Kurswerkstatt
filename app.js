@@ -57,11 +57,6 @@
       if (isNaN(x.getTime())) return '';
       function z(n) { return n < 10 ? '0' + n : String(n); }
       return z(x.getDate()) + '.' + z(x.getMonth() + 1) + '.' + x.getFullYear();
-    },
-
-    /* ISO-Datum ohne Zeit — das Manifest haelt ein Anlagedatum, keine Uhrzeit. */
-    heute: function () {
-      return new Date().toISOString().slice(0, 10);
     }
   };
 
@@ -170,7 +165,7 @@
         kursId: f.Title || '',
         kurstitel: f.Kurstitel || '',
         kompetenzfeld: f.Kompetenzfeld || '',
-        schritt: (s >= 1 && s <= 9) ? s : 1,
+        schritt: (s >= 1 && s <= 8) ? s : 1,
         status: STAND.indexOf(f.Status) >= 0 ? f.Status : 'offen',
         prio: (f.Prio === 0 || f.Prio) ? f.Prio : null,
         bemerkung: f.Bemerkung || ''
@@ -199,7 +194,7 @@
     /* Was der Erledigt-Haken auf Schritt n bewirkt. */
     naechsterStand: function (kurs, n) {
       if (graph.standVon(kurs, n) === 'fertig') return { Schritt: n, Status: 'offen' };
-      if (n === 9) return { Schritt: 9, Status: 'fertig' };
+      if (n === 8) return { Schritt: 8, Status: 'fertig' };
       return { Schritt: n + 1, Status: 'offen' };
     },
 
@@ -427,14 +422,6 @@
             .then(function (x) { return x.ok ? x.text() : null; });
         })
         .catch(function () { return null; });
-    },
-
-    /* Schritt 2: das Manifest. Ordner und Dateiname kommen aus dem Kontrakt. */
-    manifestSchreiben: function (kurs, heute) {
-      var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['2'] || {};
-      var datei = (e.datei || '{K}_manifest.json').replace('{K}', kurs.kursId);
-      var text = JSON.stringify(root.inhalt.manifest(kurs, heute), null, 2);
-      return graph.ablegen(kurs.kursId, e.ordner || '02_setup', datei, text);
     },
 
     kurseLaden: function () {
@@ -733,29 +720,6 @@
         .catch(function (e) { klemmt('Nicht angelegt. ' + (e.message || e)); });
     },
 
-    /* Schritt 2: das Manifest schreiben. Ebenfalls ohne Stand — dafuer gibt es
-       den Erledigt-Haken, der schon vorher da war. */
-    manifestSchreiben: function (knopf) {
-      var k = nav.kurs();
-      if (!k) return;
-      var meld = document.getElementById('manifestfehler');
-      knopf.disabled = true; knopf.textContent = 'wird geschrieben …';
-
-      graph.manifestSchreiben(k, helpers.heute())
-        .then(function () {
-          return graph.ordnerInhalt(k.kursId, '02_setup');
-        })
-        .then(function () {
-          state.hinweis = 'Manifest geschrieben.';
-          controller.render();
-        })
-        .catch(function (e) {
-          knopf.disabled = false; knopf.textContent = 'Manifest schreiben';
-          if (meld) { meld.textContent = 'Nicht geschrieben. ' + (e.message || e); meld.hidden = false; }
-          else { alert('Nicht geschrieben: ' + (e.message || e)); }
-        });
-    },
-
     /* Der Weg Hochladen — fuer Lieferobjekte, die nicht als Text entstehen.
        Ordner und Name kommen aus dem Kontrakt, nie aus dem Dateidialog: eine
        falsch benannte Datei faellt sonst aus Versionszaehlung und Gate-Aufloesung. */
@@ -875,7 +839,6 @@
       if (a === 'variante')  { controller.zu({ variante: t.dataset.variante }); return; }
       if (a === 'weg')       { controller.zu({ weg: t.dataset.weg }); return; }
       if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
-      if (a === 'manifest-schreiben') { controller.manifestSchreiben(t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {

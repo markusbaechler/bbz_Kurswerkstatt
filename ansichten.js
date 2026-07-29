@@ -16,7 +16,7 @@
                '<span class="verweis">$1</span>');
   }
 
-  /* ---------- Die Linie: eine Fertigungsstrasse mit neun Stationen ----------
+  /* ---------- Die Linie: eine Fertigungsstrasse mit acht Stationen ----------
      Kein Kachelraster. Eine durchgehende Bahn, bis zur aktuellen Station gefuellt.
      Die Phasen stehen als Abschnitte darueber. */
   function kette(inh, kurs, aktiv) {
@@ -102,11 +102,11 @@
       f.push(['Kurs', esc(kurs.kursId), 'kennung']);
       f.push(['Gegenstand', esc(kurs.kurstitel), '', true]);
       f.push(['Kompetenzfeld', esc(kurs.kompetenzfeld), '']);
-      f.push(['Stand', G().fortschritt(kurs) + '&#8202;/&#8202;9', 'zahl']);
+      f.push(['Stand', G().fortschritt(kurs) + '&#8202;/&#8202;8', 'zahl']);
     }
     if (s) {
       var ph = I().phaseVon(inh, s.id);
-      f.push(['Station', esc(s.id) + '&#8202;/&#8202;9', 'zahl']);
+      f.push(['Station', esc(s.id) + '&#8202;/&#8202;8', 'zahl']);
       if (ph) f.push(['Phase', esc(ph.nm), '']);
     }
     if (!f.length) return '';
@@ -272,10 +272,10 @@
       return karte('Alle Kurse', 'Noch keine Kurse',
         'In der Liste KWKurse steht noch kein Eintrag.');
     }
-    var fertig = kurse.filter(function (k) { return G().fortschritt(k) === 9; }).length;
+    var fertig = kurse.filter(function (k) { return G().fortschritt(k) === 8; }).length;
     var zeilen = kurse.map(function (k) {
       var punkte = '';
-      for (var n = 1; n <= 9; n++) {
+      for (var n = 1; n <= 8; n++) {
         var st = G().standVon(k, n);
         punkte += '<span class="pkt ' + st + '">' + (st === 'fertig' ? '&#10003;' : n) + '</span>';
       }
@@ -284,14 +284,14 @@
         '<td>' + esc(k.kurstitel) + '</td>' +
         '<td class="dim">' + esc(k.kompetenzfeld) + '</td>' +
         '<td><div class="pkte">' + punkte + '</div></td>' +
-        '<td class="mono fort">' + G().fortschritt(k) + '&#8202;/&#8202;9</td></tr>';
+        '<td class="mono fort">' + G().fortschritt(k) + '&#8202;/&#8202;8</td></tr>';
     }).join('');
 
     /* Auftragsbuch statt Eyebrow-Titel-Lead: dieselben Datenfelder wie das
        Schriftfeld der Laufkarte, damit die Liste und der einzelne Kurs
        erkennbar zur selben Werkstatt gehoeren. */
     var inArbeit = kurse.filter(function (k) {
-      var f = G().fortschritt(k); return f > 0 && f < 9;
+      var f = G().fortschritt(k); return f > 0 && f < 8;
     }).length;
 
     return '<div class="laufkarte auftragsbuch">' +
@@ -307,7 +307,7 @@
         '</div>' +
         '<div class="tblwrap"><table class="tbl">' +
           '<thead><tr><th>Kurs</th><th>Titel</th><th>Kompetenzfeld</th>' +
-          '<th>Schritt 1&thinsp;&ndash;&thinsp;9</th><th>Stand</th></tr></thead>' +
+          '<th>Schritt 1&thinsp;&ndash;&thinsp;8</th><th>Stand</th></tr></thead>' +
           '<tbody>' + zeilen + '</tbody></table></div>' +
       '</div>' + legende();
   }
@@ -329,7 +329,7 @@
   }
 
   /* mitGate nur dort, wo die Pruefzeichen auch gezeichnet werden — in der
-     Kursliste stehen neun schlichte Felder ohne Gate-Marke. */
+     Kursliste stehen acht schlichte Felder ohne Gate-Marke. */
   function legende(mitGate) {
     return '<div class="kettenote">' +
       '<span><i class="kdot fertig"></i>erledigt</span>' +
@@ -350,7 +350,7 @@
     var am = ((inh.schritte && inh.schritte.autoMeta) || {})[s.auto];
     var anleitung = I().anleitungVon(inh, schrittId);
     var hilfsmittel = I().hilfsmittelVon(inh, schrittId);
-    /* Fuehrt der Schritt Varianten (Schritt 4: claude / chatgpt), haengt jeder
+    /* Fuehrt der Schritt Varianten (Schritt 3: claude / chatgpt), haengt jeder
        Dateiname an der gewaehlten. Einmal bestimmt, ueberall benutzt. */
     var varianten = I().varianten(inh, schrittId);
     var variante = I().gewaehlteVariante(inh, schrittId, ablageDaten.variante);
@@ -369,7 +369,7 @@
 
     /* --- ARBEIT: was tue ich, womit --- */
     h += '<div class="arbeit">';
-    h += '<header class="sk"><span class="stelle">Station ' + esc(s.id) + ' von 9</span>' +
+    h += '<header class="sk"><span class="stelle">Station ' + esc(s.id) + ' von 8</span>' +
          '<h1>' + esc(s.nm) + '</h1>' +
          '<div class="marken">' +
            (am ? '<span class="marke ' + esc(s.auto) + '">' + esc(am.label) + '</span>' : '') +
@@ -419,13 +419,17 @@
          arbeitet, gibt einen Auftrag und kopiert nichts — dort waere er
          irrefuehrend. */
       if (wegAktiv === 'claude-code' && prompts.length) {
+        var auftrag = I().bauauftrag(inh, schrittId);
         h += '<h2 class="tun">Dein Auftrag' +
              '<span class="tun-sub">Claude Code holt sich den Rest selbst</span></h2>';
         h += '<div class="box bruecke"><span class="bt">Bau-Auftrag</span>' +
-             'Kein Prompt zum Kopieren. In Claude Code ausf&uuml;hren lassen: ' +
-             '<code>_zentral/prompt-bibliothek/greenfield-bauspec.txt</code><br>' +
-             'Der Masterprompt f&uuml;r den Weg Chat ist derselbe Inhalt in anderer Form &mdash; ' +
-             'beide werden aus <code>greenfield-inhaltskontrakt.txt</code> erzeugt.</div>';
+             'Kein Prompt zum Kopieren &mdash; Claude Code bekommt einen Auftrag.' +
+             (auftrag
+               ? ' In Claude Code ausf&uuml;hren lassen: <code>' + esc(auftrag.pfad) + '</code><br>' +
+                 'Der Masterprompt f&uuml;r den Weg Chat ist derselbe Inhalt in anderer Form &mdash; ' +
+                 'beide werden aus <code>' + esc(auftrag.inhaltskontrakt) + '</code> erzeugt.'
+               : '') +
+             '</div>';
         prompts = [];
       }
 
@@ -510,7 +514,7 @@
     }
 
     /* --- Der Weg Hochladen: fuer Lieferobjekte, die nicht als Text entstehen ---
-           Excel (Schritt 3) und der Moodle-Export (Schritt 7). Der Name wird
+           Excel (Schritt 2) und der Moodle-Export (Schritt 6). Der Name wird
            angezeigt, nicht getippt — abgetippte Namen waren die Fehlerquelle. */
     if (kurs && I().darfHochladen(inh, schrittId) && !ablageDaten.ordnerFehlt) {
       /* Die Variante steht oben schon fest — hier wird sie nur noch benutzt. */
@@ -557,10 +561,9 @@
       }
     }
 
-    /* --- Schritt 2 schreibt eine Systemdatei, kein Dokument: Knopf statt Textfeld.
-           Erst wenn der Ordner steht — sonst gehoert der Arbeitsplatz Schritt 1. --- */
-    if (kurs && +schrittId === 2 && !ablageDaten.ordnerFehlt) {
-      h += manifestBlock(inh, kurs);
+    /* --- Schritt 1 setzt neben dem Kursbriefing auch die beiden KI-Projekte auf.
+           Erst wenn der Ordner steht — vorher gehoert die Flaeche dem Anlegen. --- */
+    if (kurs && +schrittId === 1 && !ablageDaten.ordnerFehlt) {
       h += instruktionenBlock(inh, kurs, ablageDaten.briefing, ablageDaten.ordnerName);
     }
 
@@ -572,7 +575,7 @@
       (kurs ? '<button class="haken' + (fertig ? ' an' : '') + '" data-action="erledigt" ' +
               'data-schritt="' + esc(s.id) + '"><span class="box">&#10003;</span>' +
               (fertig ? 'Schritt erledigt' : 'Als erledigt markieren') + '</button>' : '') +
-      (+s.id < 9 ? '<button class="weiter" data-action="schritt" data-schritt="' + (+s.id + 1) + '"' +
+      (+s.id < 8 ? '<button class="weiter" data-action="schritt" data-schritt="' + (+s.id + 1) + '"' +
                    (fertig ? '' : ' disabled') + '>Weiter zu Station ' + (+s.id + 1) + ' &rsaquo;</button>' : '') +
       '<p class="wirkung">' + (fertig
         ? 'Der Stand steht in KWKurse &mdash; alle sehen diesen Kurs jetzt weiter vorn.'
@@ -707,25 +710,6 @@
                    esc(f.txt) + '</pre>';
           }).join('') +
         '</div>' +
-      '</div>';
-  }
-
-  /* Schritt 2 legt kein Dokument ab, sondern schreibt eine Systemdatei.
-     Deshalb ein Knopf statt eines Textfelds. */
-  function manifestBlock(inh, kurs) {
-    var ab = I().ablageVon(inh, 2, kurs.kursId);
-    if (!ab) return '';
-    return '<h2 class="tun">Manifest schreiben' +
-        '<span class="tun-sub">ohne KI &mdash; die Kurswerkstatt erledigt es selbst</span></h2>' +
-      '<div class="ablegen">' +
-        '<div class="arow">' +
-          '<button class="knopf gross" data-action="manifest-schreiben">Manifest schreiben</button>' +
-          '<span class="zielname">wird zu <code>' + esc(ab.ordner) + '/' +
-            esc(ab.datei) + '</code></span>' +
-        '</div>' +
-        '<p class="klemmt" id="manifestfehler" hidden></p>' +
-        '<p class="dim">Inhalt: Kurs-ID, Titel, Kompetenzfeld und Anlagedatum &mdash; ' +
-        'alles aus <b>KWKurse</b>. Keine Version: eine Systemdatei ohne Entwurfsphase.</p>' +
       '</div>';
   }
 

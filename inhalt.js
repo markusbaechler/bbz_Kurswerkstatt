@@ -24,7 +24,7 @@
       var s = i.schritte;
       if (!s || !Array.isArray(s.schritte)) p.push('schritte.json: kein Schritt-Array');
       else {
-        if (s.schritte.length !== 9) p.push('schritte.json: ' + s.schritte.length + ' statt 9 Schritte');
+        if (s.schritte.length !== 8) p.push('schritte.json: ' + s.schritte.length + ' statt 8 Schritte');
         s.schritte.forEach(function (x) {
           ['nm', 'zweck', 'lief'].forEach(function (f) {
             if (!x[f]) p.push('Schritt ' + x.id + ': ' + f + ' fehlt');
@@ -286,8 +286,8 @@
     },
 
     /* Wohin die hochgeladene Datei kommt. Drei Faelle: fester Dateiname aus dem
-       Kontrakt (Schritt 7: {K}_export.mbz), versioniertes Lieferobjekt
-       (Schritt 3) oder versioniertes Lieferobjekt mit Variante (Schritt 4).
+       Kontrakt (Schritt 6: {K}_export.mbz), versioniertes Lieferobjekt
+       (Schritt 2) oder versioniertes Lieferobjekt mit Variante (Schritt 3).
        Der Mensch tippt in keinem Fall einen Namen. */
     hochladeZiel: function (i, schrittId, kursId, dateien, variante) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
@@ -296,6 +296,48 @@
         return { ordner: e.ordner, datei: e.datei.replace('{K}', kursId), version: null };
       }
       return inhalt.naechsteDatei(i, schrittId, kursId, dateien, variante);
+    },
+
+    /* Bricht zu lange Zeilen an Wortgrenzen um. Vorhandene Zeilenenden bleiben
+       stehen; eine Aufzaehlung behaelt ihre Einrueckung, damit die Fortsetzung
+       nicht wie ein neuer Punkt aussieht. Ein einzelnes Wort, das laenger ist
+       als die Breite, wird nicht zerschnitten — lieber eine lange Zeile als ein
+       zerrissener Dateiname. */
+    umbrechen: function (text, breite) {
+      breite = breite || 100;
+      return String(text).split('\n').map(function (zeile) {
+        if (zeile.length <= breite) return zeile;
+        var m = /^(\s*(?:[-*·]\s+|\d+\.\s+)?)/.exec(zeile);
+        var einzug = new Array(m[1].length + 1).join(' ');
+        var worte = zeile.split(' ');
+        var raus = [];
+        var akt = '';
+        worte.forEach(function (w) {
+          var kandidat = akt ? akt + ' ' + w : w;
+          if (akt && kandidat.length > breite) { raus.push(akt); akt = einzug + w; }
+          else { akt = kandidat; }
+        });
+        if (akt) raus.push(akt);
+        return raus.join('\n');
+      }).join('\n');
+    },
+
+    /* Auf dem Weg Claude-Code kopiert niemand einen Prompt — man gibt einen
+       Bauauftrag. Wie die Auftragsdatei heisst, steht nicht hier: sie wird aus
+       dem Inhaltskontrakt des Schritts abgeleitet (qualitaet im Ablage-Kontrakt),
+       weil ein fest eingetragener Name veraltet, sobald ein Schritt umbenannt
+       wird. Genau das ist am 2026-07-29 aufgefallen: die Ansicht nannte fuer
+       JEDEN Schritt "greenfield-bauspec.txt" — eine Datei, die es nicht mehr gibt.
+       Ohne qualitaet-Eintrag wird kein Name genannt, statt einen zu raten. */
+    bauauftrag: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      var q = e && e.qualitaet;
+      if (!q || q.indexOf('-inhaltskontrakt.txt') < 0) return null;
+      return {
+        inhaltskontrakt: q.split('/').pop(),
+        bauspec: q.split('/').pop().replace('-inhaltskontrakt.txt', '-bauspec.txt'),
+        pfad: q.replace('-inhaltskontrakt.txt', '-bauspec.txt'),
+      };
     },
 
     /* Die Endung, die der Kontrakt fuer diesen Schritt erwartet — als Vorauswahl
@@ -364,26 +406,26 @@
       return l.sort();
     },
 
-    /* Das Lieferobjekt von Schritt 2: reine Stammdaten, keine Version.
-       Felder nach Prozess-Spec — Kurs-ID, Titel, Kompetenzfeld, Anlagedatum. */
-    manifest: function (kurs, angelegt) {
-      return {
-        kursId: kurs.kursId,
-        kurstitel: kurs.kurstitel || '',
-        kompetenzfeld: kurs.kompetenzfeld || '',
-        angelegt: angelegt
-      };
-    },
-
-    /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 2) ---
+    /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 1) ---
        Uebernommen aus dem Generator des abgeloesten Cockpits v0.2 — aber die
        Ablage-Angaben werden ABGELEITET statt abgeschrieben. Die alte Fassung trug
        noch die Ordner 01_altunterlagen … 05_moodle-export und brachte damit beiden
        KI-Projekten eine Struktur bei, die es seit dem Ablage-Kontrakt nicht mehr
-       gibt. Was aus dem Kontrakt kommt, kann nicht mehr veralten. */
+       gibt. Was aus dem Kontrakt kommt, kann nicht mehr veralten.
+       Reform 2026-07-29: der fruehere eigene Schritt dafuer ("Kurs-Projekt &
+       Manifest") ist in Schritt 1 aufgegangen. Er versprach mit wege: ['kurswerkstatt']
+       eine Automatisierung, die die App nicht bietet — sie kann Text fuer die
+       KI-Projekte erzeugen, aber kein KI-Projekt selbst anlegen. Das Manifest
+       (02_setup/{K}_manifest.json) war die einzige echte Ablage dieses Schritts
+       und ist mit ihm entfallen; kein Ordner der neuen Acht fuehrt es mehr. */
     /* Der Inhalt entsteht EINMAL als Abschnitte. Die beiden Fassungen unterscheiden
        sich nur in der Verpackung — so koennen Claude und ChatGPT nicht auseinander-
        driften, obwohl jede ihre eigene Form bekommt. */
+    /* Massstab je Zeile: gilt das fuer JEDEN Chat in diesem Projekt, ueber alle
+       Schritte hinweg — oder ist es nur in einem einzelnen Schritt wahr? Nur
+       Ersteres gehoert hierher. Je-Schritt-Wahres (genaues Ablageziel, Methodik
+       eines Schritts) steht im Masterprompt, der ohnehin je Schritt frisch
+       eingefuegt wird, oder in der Anleitung, die der Mensch in der App liest. */
     projektInstruktionenTeile: function (i, kurs, briefing, ordnerName) {
       var kontrakt = (i && i['ablage-kontrakt']) || {};
       var schritte = (i && i.schritte && i.schritte.schritte) || [];
@@ -396,118 +438,64 @@
       function teil(tag, titel) { z = []; teile.push({ tag: tag, titel: titel, zeilen: z }); }
 
       teil('rolle', 'Rolle & Kontext');
-      z.push('Du bist didaktischer Co-Autor im bbz-Produktionsprozess „Lerninhalte umgiessen". ' +
-             'Wir bauen diesen Weiterbildungskurs (Kompetenzfeld: ' + kf + ') nach dem W-U-G-Modell ' +
-             'neu auf. Dieser Kurs ist allgemeine Weiterbildung (oeffentlich), kein bankinternes ' +
-             'oder kundenspezifisches Material. Du lieferst Entwuerfe; final ist nur, was ein ' +
+      z.push('Du bist didaktischer Co-Autor im bbz-Produktionsprozess „Lerninhalte umgiessen" ' +
+             'für diesen Weiterbildungskurs (Kompetenzfeld: ' + kf + '), gebaut nach dem ' +
+             'W-U-G-Modell. Öffentliche Weiterbildung, kein bankinternes oder ' +
+             'kundenspezifisches Material. Du lieferst Entwürfe; final wird nur, was ein ' +
              'Mensch freigibt.');
 
-      teil('modell', 'Didaktisches Modell W-U-G (Kompass, kein starres Klassifikationssystem)');
-      z.push('W-U-G ist der didaktische Kompass fuers Kursdesign, keine 1:1-Bloom-Zuordnung. ' +
-             'Bloom dient als Orientierungsanker; Ueberschneidungen zwischen U und G sind zulaessig.');
-      z.push('- W = Wissen: Selbstlernphase VOR dem Kurs (Moodle/Web), im Fokus Bloom 1–2. ' +
-             'Entspricht den Eingangskompetenzen. Dieser Sprint baut die W-Strecke.');
-      z.push('- U = Urteil: Reflexion, Einordnung, begruendetes Urteil — haeufig Bloom 4–5. Praesenz.');
-      z.push('- G = Gestalten: Anwendung und Gestaltung in der Praesenz — haeufig Bloom 3–6. ' +
-             'Der KI-resistente Wertkern.');
-      z.push('Test–Learn–Test: Eingangsdiagnose, formative Wissenschecks in der W-Strecke, ' +
-             'Abschlusspruefung der angestrebten Kompetenzen.');
-      z.push('Praesenz-Orientierung ~30% Input · 50% Anwendung · 20% Reflexion — Zielbild, ' +
-             'kein Abnahmekriterium.');
-
-      teil('schritte', 'Die neun Produktionsschritte');
+      /* Nur Name, Gate und Weg je Schritt — das gilt fuer jeden Chat im Projekt
+         (Orientierung: bin ich hier ueberhaupt zustaendig?). Wohin genau ein
+         Ergebnis abgelegt wird, ist je Schritt verschieden und steht deshalb im
+         Masterprompt dieses Schritts, nicht hier fuer alle acht auf Vorrat. */
+      teil('schritte', 'Die acht Produktionsschritte');
       schritte.forEach(function (s) {
         var a = kontrakt.schritte && kontrakt.schritte[String(s.id)];
-        var ziele = [];
-        if (a) {
-          if (a.datei) {
-            ziele.push(a.ordner + '/' + a.datei);
-          } else if (a.lieferobjekt) {
-            /* Fuehrt der Schritt Varianten, muss jede genannt werden. Sonst
-               lernen die KI-Projekte einen Dateinamen mit {variante} darin. */
-            var vs = inhalt.varianten(i, s.id);
-            (vs || [null]).forEach(function (v) {
-              var lief = v ? a.lieferobjekt.replace('{variante}', v) : a.lieferobjekt;
-              ziele.push(a.ordner + '/{K}_' + lief + '_v{N}.' + a.ext);
-            });
-          }
-        }
-        /* Der Weg gehoert dazu: ein Projekt-Chat soll wissen, wo er ueberhaupt
-           zustaendig ist. Schritt 3 laeuft nicht ueber den Chat, Schritt 2 gar
-           nicht ueber eine KI. */
         var wege = (a && a.wege || []).filter(function (x) { return x !== 'hochladen'; });
         z.push('- Schritt ' + s.id + ' — ' + s.nm + (a && a.gate ? '  [' + a.gate + ']' : '') +
-               (wege.length ? '  (' + wege.join(', ') + ')' : '') +
-               (ziele.length ? '  →  ' + ziele.join('  ·  ').replace(/\{K\}/g, kurs.kursId) : ''));
+               (wege.length ? '  (' + wege.join(', ') + ')' : ''));
       });
-      /* Die Doppelung braucht eine Erklaerung, sonst haelt die KI sie fuer einen
-         Fehler oder waehlt eigenmaechtig eine aus. */
-      var mitVar = Object.keys(kontrakt.schritte || {}).filter(function (n) {
-        return inhalt.varianten(i, n);
-      });
-      if (mitVar.length) {
-        z.push('');
-        z.push('Schritt ' + mitVar.join(' und ') + ' fuehrt mehrere Entwuerfe NEBENEINANDER — ' +
-               'je Werkzeug einen. Sie sind keine Versionen voneinander: jede Variante zaehlt ' +
-               'eigene Nummern, und es gibt dort keine geltende Fassung. Zusammengefuehrt und ' +
-               'gegen Quellen validiert wird in Schritt 5.');
-      }
-      z.push('Sprint-Scope: Sprint 1 baut und gibt die W-Selbstlernstrecke frei. U- und ' +
-             'G-Praesenzartefakte folgen nachgelagert im selben Projekt.');
+      z.push('Wohin genau (Ordner, Dateiname) ein Ergebnis kommt, sagt der Masterprompt des ' +
+             'jeweiligen Schritts — das allgemeine Muster dazu steht unter „Ablage".');
 
       teil('ablage', 'Ablage — verbindlich');
-      z.push('Bibliothek: ' + (kontrakt.bibliothek || 'Kursproduktion') + ' (SharePoint).');
-      /* Den echten Ordnernamen nennen, sobald er bekannt ist. Ein Platzhalter
-         hier wird von beiden KI-Projekten als Pfad gelernt und weitergereicht. */
-      z.push('Kursordner dieses Kurses: ' + (ordnerName || (kurs.kursId + '_<kurzname>')) + '/' +
-             (ordnerName ? '' : '  [noch nicht angelegt — Schritt 1]'));
-      z.push('Unterordner: ' + ordner.join(' · '));
+      z.push('Bibliothek ' + (kontrakt.bibliothek || 'Kursproduktion') + ' (SharePoint), ' +
+             'Kursordner ' + (ordnerName || (kurs.kursId + '_<kurzname>')) + '/' +
+             (ordnerName ? '' : '  [noch nicht angelegt — Schritt 1]') + '.');
+      /* Den Hinweis "nicht erfunden" ausdruecklich mitgeben: ein Platzhalter oder
+         eine geratene Struktur wird von beiden KI-Projekten als Pfad gelernt und
+         weitergereicht. */
+      z.push('Unterordner: ' + ordner.join(' · ') + '. Diese Struktur kommt aus dem ' +
+             'Ablage-Kontrakt — nicht selbst erfinden oder ergänzen.');
       z.push('Dateiname: ' + abs(kontrakt.benennung && kontrakt.benennung.muster) +
-             ' — freigegeben: ' + abs(kontrakt.benennung && kontrakt.benennung.final) + '.');
-      z.push('Aufloesung: gibt es eine _final, gilt sie; sonst die hoechste Versionsnummer. ' +
-             '_final entsteht durch Umbenennen, nie durch Kopieren.');
-      z.push('Verboten in Dateinamen: ' +
+             ', freigegeben: ' + abs(kontrakt.benennung && kontrakt.benennung.final) +
+             '. Gibt es eine _final, gilt sie (entsteht durch Umbenennen, nie durch ' +
+             'Kopieren); sonst die höchste Versionsnummer. Verboten darin: ' +
              ((kontrakt.benennung && kontrakt.benennung.verboten) || []).join(', ') + '.');
-      z.push('Gate-Protokolle liegen als ' + (kontrakt.gate_datei || '_gate.md') +
-             ' neben der Datei, ueber die sie urteilen.');
-      z.push('Der Ordner sagt nie, ob etwas fertig ist — der Stand steht in der Liste KWKurse ' +
-             '(Felder Schritt 1–9 und Status offen/inArbeit/fertig). Referenzen zeigen auf die ' +
-             'Kurs-ID, nie auf einen Pfad.');
+      z.push('Gate-Protokolle liegen als ' + (kontrakt.gate_datei || '_gate.md') + ' neben der ' +
+             'Datei. Der Stand steht in KWKurse (Schritt, Status), nie im Ordner; Referenzen ' +
+             'zeigen auf die Kurs-ID, nie auf einen Pfad.');
 
       teil('regeln', 'Feste Regeln');
-      z.push('- Arbeite streng entlang der konkreten Lernziele und Eingangskompetenzen ' +
-             '(Halluzinations-Bremse).');
-      z.push('- Evidenzregel: Fachliche Aussagen, Zahlen, Fristen, regulatorische Angaben und ' +
-             'Definitionen nur uebernehmen, wenn durch eine freigegebene Projektquelle belegt. ' +
-             'Fehlt ein Beleg: [ZU PRUEFEN: Quelle fehlt]. Altmaterial ist Pruefgegenstand, ' +
-             'NICHT automatisch Wahrheitsquelle.');
-      z.push('- Fundament-Check (Orientierung, nicht mechanisch): in der Regel mindestens eine ' +
-             'stuetzende Eingangskompetenz je Ausgangskompetenz; Abweichung im Contract begruendet.');
-      z.push('- Vorrang bei Konflikt: Diese Projekt-Instruktionen gehen einzelnen Masterprompts ' +
-             'vor. Ein Masterprompt darf konkretisieren, nicht aushebeln. Arbeite nur am ' +
-             'angeforderten Schritt.');
-      z.push('- Stabile IDs: Lernziel-ID ' + kurs.kursId + '-LZ-###, Eingangskompetenz-ID ' +
-             kurs.kursId + '-EK-###, Baustein-ID ' + kurs.kursId + '-BS-###. IDs bleiben bei ' +
-             'Textaenderung bestehen und werden nie wiederverwendet. EK zu LZ ist n:m.');
-      z.push('- Die KI vergibt NIE einen Freigabestatus. „fertig" erst nach menschlicher Freigabe.');
-      z.push('- Standard-Kennzeichnungen woertlich: [ENTWURF — unvalidiert] · [ZU PRUEFEN: …] · ' +
-             '[NEU — Sign-off noetig] · [FREIGEGEBEN DURCH: … / DATUM: …].');
-      z.push('- Fehlende Angaben werden NICHT geraten → „offen".');
-
-      teil('freigabe', 'Menschliche Freigabe (nicht verhandelbar)');
-      z.push('Fachliche Freigabe durch den Menschen an den Gates. Nichts gilt ohne menschliche ' +
-             'Freigabe als final. Ist eine benoetigte Projektdatei nicht auffindbar, benenne die ' +
-             'fehlende Grundlage — rekonstruiere ihren Inhalt NICHT aus Vermutungen.');
+      z.push('- Belegregel: Fachliche Aussagen, Zahlen, Fristen und Definitionen nur aus einer ' +
+             'freigegebenen Projektquelle. Fehlt der Beleg: [ZU PRÜFEN: <was> — Quelle fehlt], ' +
+             'nie raten. Kennzeichnungen wörtlich: [ENTWURF — unvalidiert] · ' +
+             '[NEU — Sign-off nötig] · [FREIGEGEBEN DURCH: … / DATUM: …].');
+      z.push('- Sprache: Deutsch (Schweiz) — „ss" statt „ß", echte Umlaute im Fliesstext.');
+      z.push('- IDs bleiben bei Textänderung bestehen und werden nie wiederverwendet: ' +
+             'Lernziel ' + kurs.kursId + '-LZ-###, Eingangskompetenz ' + kurs.kursId + '-EK-###.');
+      z.push('- Nur ein Mensch gibt frei; die KI vergibt nie „fertig". Fehlt eine Projektdatei, ' +
+             'benenne die Lücke — nicht rekonstruieren.');
 
       teil('kursbriefing', 'Das freigegebene Kursbriefing');
       if (briefing) {
-        z.push('Aus ' + kurs.kursId + '_briefing (Schritt 1). Es ist die Leitplanke fuer alles ' +
+        z.push('Aus ' + kurs.kursId + '_briefing (Schritt 1). Es ist die Leitplanke für alles ' +
                'Weitere — bei Widerspruch zu einer Annahme gilt das Briefing.');
         z.push('');
         z.push(briefing);
       } else {
         z.push('[FEHLT — in Schritt 1 noch nicht abgelegt. Ohne freigegebenes Kursbriefing ' +
-               'nicht mit Schritt 3 beginnen.]');
+               'nicht mit Schritt 2 beginnen.]');
       }
       return teile;
     },
@@ -519,6 +507,12 @@
       var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing, ordnerName);
       var kopf = 'Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel +
                  '\nKompetenzfeld: ' + (kurs.kompetenzfeld || 'offen');
+      /* Einzige Stelle, an der die Vorrangregel steht (Konvention 9: eine Quelle
+         pro Begriff) — nicht zusaetzlich noch einmal unter "Feste Regeln". */
+      var arbeitsweise = 'Halte dich in jedem Chat an den jeweiligen Masterprompt UND an diese ' +
+             'Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den Konflikt, ' +
+             'statt ihn still aufzulösen. Bearbeite nur den angeforderten Schritt, nicht ' +
+             'vorauseilend den nächsten.';
       var z = [];
 
       if (fassung === 'chatgpt') {
@@ -531,10 +525,10 @@
         });
         z.push('');
         z.push('=== ARBEITSWEISE ===');
-        z.push('Halte dich in jedem Chat an den jeweiligen Masterprompt UND an diese ' +
-               'Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den ' +
-               'Konflikt, statt ihn still aufzuloesen.');
-        return z.join('\n');
+        z.push(arbeitsweise);
+        /* Das Eingabefeld der ChatGPT-Projekteinstellungen bricht nicht um;
+           Zeilen von 300 Zeichen sind dort unlesbar. Markus am 2026-07-29. */
+        return inhalt.umbrechen(z.join('\n'), 100);
       }
 
       /* Claude */
@@ -548,9 +542,7 @@
       });
       z.push('');
       z.push('<arbeitsweise>');
-      z.push('Halte dich in jedem Chat an den jeweiligen Masterprompt UND an diese ' +
-             'Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den ' +
-             'Konflikt, statt ihn still aufzuloesen.');
+      z.push(arbeitsweise);
       z.push('</arbeitsweise>');
       return z.join('\n');
     },

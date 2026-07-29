@@ -55,40 +55,37 @@ test('Beistehendes wie _gate.md oder _verlauf stoert nicht', () => {
 /* ---------- Der konkrete Dateiname ---------- */
 
 test('naechsteDatei baut Ordner und Namen aus dem Kontrakt', () => {
-  const d = [datei('DBS-001_greenfield_v1.md')];
-  const z = inhalt.naechsteDatei(INHALT, 4, 'DBS-001', d);
-  assert.strictEqual(z.ordner, '04_greenfield');
-  assert.strictEqual(z.datei, 'DBS-001_greenfield_v2.md');
+  /* Schritt 3 fuehrt Varianten — ohne Variante gibt es keinen Dateinamen. */
+  const d = [datei('DBS-001_skript-claude_v1.docx')];
+  const z = inhalt.naechsteDatei(INHALT, 3, 'DBS-001', d, 'claude');
+  assert.strictEqual(z.ordner, '03_content');
+  assert.strictEqual(z.datei, 'DBS-001_skript-claude_v2.docx');
   assert.strictEqual(z.version, 2);
 });
 
-test('naechsteDatei fuer Schritt 5 und 6 zielt auf dieselbe Datei', () => {
-  const z5 = inhalt.naechsteDatei(INHALT, 5, 'DBS-001', []);
-  const z6 = inhalt.naechsteDatei(INHALT, 6, 'DBS-001', []);
-  assert.strictEqual(z5.datei, z6.datei);
-  assert.strictEqual(z5.ordner, '05_content');
-});
+/* Bis zur Reform (Auftrag 1) zielten Schritt 5 und 6 auf dieselbe Datei — sie
+   teilten den Ordner 05_content. Mit acht eigenstaendigen Ordnern gibt es das
+   nicht mehr, der Test entfaellt ersatzlos. */
 
 test('naechsteDatei verweigert Schritte mit festem Dateinamen', () => {
-  assert.strictEqual(inhalt.naechsteDatei(INHALT, 2, 'DBS-001', []), null);
-  assert.strictEqual(inhalt.naechsteDatei(INHALT, 7, 'DBS-001', []), null);
+  assert.strictEqual(inhalt.naechsteDatei(INHALT, 6, 'DBS-001', []), null);
+  assert.strictEqual(inhalt.naechsteDatei(INHALT, 8, 'DBS-001', []), null);
 });
 
 /* ---------- Darf hier ueberhaupt abgelegt werden? ---------- */
 
 test('Ablegen ist erlaubt, wo der Weg Chat vorgesehen ist', () => {
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 4), true);
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 6), true);
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 3), true);
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 5), true);
 });
 
 test('Ablegen ist gesperrt, wo nur Claude Code oder Handarbeit vorgesehen ist', () => {
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 3), false, 'Schritt 3 ist Excel');
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 7), false, 'Schritt 7 nur Claude Code');
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 2), false, 'Schritt 2 ist Excel');
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 6), false, 'Schritt 6 nur Claude Code');
 });
 
 test('Ablegen ist gesperrt, wo die Kurswerkstatt selbst schreibt', () => {
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 2), false);
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 8), false);
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 7), false);
 });
 
 /* ---------- Was das Ablegen am Stand aendert ---------- */
@@ -117,32 +114,32 @@ test('ein bereits fertiger aktueller Schritt wird durch Ablegen wieder inArbeit'
 
 const { ansichten } = require('../ansichten.js');
 
-test('Schritt 4 bietet die Ablege-Flaeche an', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, { dateien: [] });
+test('Schritt 3 bietet die Ablege-Flaeche an', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, { dateien: [] });
   assert.ok(/id="ergebnis"/.test(h), 'kein Eingabefeld');
   assert.ok(/data-action="ablegen"/.test(h), 'kein Ablegen-Knopf');
 });
 
 test('die Ablege-Flaeche nennt den Zieldateinamen vorab', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null,
-    { dateien: [{ name: 'DBS-001_greenfield_v1.md' }] });
-  assert.ok(/04_greenfield\/DBS-001_greenfield_v2\.md/.test(h), 'Zielname fehlt oder falsch');
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null,
+    { dateien: [{ name: 'DBS-001_skript-claude_v1.docx' }] });
+  assert.ok(/03_content\/DBS-001_skript-claude_v2\.docx/.test(h), 'Zielname fehlt oder falsch');
 });
 
-test('Schritt 3 bietet keine Ablege-Flaeche — Excel', () => {
-  assert.ok(!/data-action="ablegen"/.test(ansichten.einSchritt(INHALT, DBS, 3, null, { dateien: [] })));
+test('Schritt 2 bietet keine Ablege-Flaeche — Excel', () => {
+  assert.ok(!/data-action="ablegen"/.test(ansichten.einSchritt(INHALT, DBS, 2, null, { dateien: [] })));
 });
 
-test('Schritt 7 bietet keine Ablege-Flaeche — nur Claude Code', () => {
-  assert.ok(!/data-action="ablegen"/.test(ansichten.einSchritt(INHALT, DBS, 7, null, { dateien: [] })));
+test('Schritt 6 bietet keine Ablege-Flaeche — nur Claude Code', () => {
+  assert.ok(!/data-action="ablegen"/.test(ansichten.einSchritt(INHALT, DBS, 6, null, { dateien: [] })));
 });
 
 test('ohne Kurs gibt es keine Ablege-Flaeche', () => {
-  assert.ok(!/data-action="ablegen"/.test(ansichten.einSchritt(INHALT, null, 4, null, {})));
+  assert.ok(!/data-action="ablegen"/.test(ansichten.einSchritt(INHALT, null, 3, null, {})));
 });
 
 test('solange der Ordner nicht gelesen ist, steht kein Zielname da', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});
   assert.ok(/Ordner wird gelesen/.test(h));
 });
 
@@ -155,8 +152,8 @@ const { controller, state } = require('../app.js');
 
 function mitVarianten() {
   const i = JSON.parse(JSON.stringify(INHALT));
-  i['ablage-kontrakt'].schritte['4'] = {
-    ordner: '04_greenfield', lieferobjekt: 'greenfield-{variante}',
+  i['ablage-kontrakt'].schritte['3'] = {
+    ordner: '03_content', lieferobjekt: 'greenfield-{variante}',
     varianten: ['claude', 'chatgpt'], ext: 'html', format: 'html',
     wege: ['chat', 'claude-code', 'hochladen'], gate: null
   };
@@ -171,9 +168,9 @@ async function ablegenLauf(variante, dateien) {
 
   state.data.inhalt = mitVarianten();
   state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
-                        schritt: 4, status: 'inArbeit' }];
+                        schritt: 3, status: 'inArbeit' }];
   state.data.dateien = {};
-  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '4',
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '3',
                      werkzeugId: null, werk: null, variante: variante, weg: null };
 
   global.document = {
@@ -192,7 +189,7 @@ async function ablegenLauf(variante, dateien) {
   graph.standSetzenRoh = function () { return Promise.resolve(); };
   controller.render = function () {};
 
-  controller.ablegen('4', { disabled: false, textContent: 'Ablegen' });
+  controller.ablegen('3', { disabled: false, textContent: 'Ablegen' });
   await new Promise(function (r) { setTimeout(r, 20); });
   return { abgelegt: abgelegt, meldung: meldung.textContent };
 }
@@ -200,7 +197,7 @@ async function ablegenLauf(variante, dateien) {
 test('der Weg Chat legt unter der gewaehlten Variante ab', async () => {
   const l = await ablegenLauf('chatgpt', []);
   assert.strictEqual(l.meldung, '', 'Ablegen ist gescheitert: ' + l.meldung);
-  assert.strictEqual(l.abgelegt.ordner, '04_greenfield');
+  assert.strictEqual(l.abgelegt.ordner, '03_content');
   assert.strictEqual(l.abgelegt.datei, 'AFL-001_greenfield-chatgpt_v1.html');
 });
 

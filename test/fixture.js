@@ -1,5 +1,11 @@
 /* Testdaten. Bildet die Struktur der echten Dateien aus Kursproduktion/_zentral ab,
-   enthaelt aber KEINE echten Masterprompt-Texte — die bleiben hinter der Anmeldung. */
+   enthaelt aber KEINE echten Masterprompt-Texte — die bleiben hinter der Anmeldung.
+
+   Acht Schritte (Reform 2026-07-29): der bisherige Schritt 2 ("Kurs-Projekt & Manifest")
+   ist in Schritt 1 aufgegangen, alle folgenden Schritte ruecken eine Nummer auf. Die
+   Ordner 05_content (frueher von Schritt 5 und 6 geteilt) sind entflochten — jeder
+   Schritt fuehrt jetzt seinen eigenen Ordner, die Ordnernummer entspricht der
+   Schrittnummer. */
 (function (root) {
   'use strict';
 
@@ -13,7 +19,7 @@
       abl: 'Ablage-Hinweis ' + id,
       auto: 'ki',
       her: [{ was: 'Vorgaenger-Ergebnis', von: id > 1 ? id - 1 : null }],
-      hin: [{ was: 'Nachfolger-Eingang', an: id < 9 ? id + 1 : null }],
+      hin: [{ was: 'Nachfolger-Eingang', an: id < 8 ? id + 1 : null }],
       wege: ['chat', 'claude-code']
     }, extra || {});
   }
@@ -32,14 +38,18 @@
       },
       schritte: {
         '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
-        '2': { ordner: '02_setup', datei: '{K}_manifest.json', format: 'json', wege: ['kurswerkstatt'], gate: null },
-        '3': { ordner: '03_contract', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen' },
-        '4': { ordner: '04_greenfield', lieferobjekt: 'greenfield', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
-        '5': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
-        '6': { ordner: '05_content', lieferobjekt: 'content', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: 'Sign-off' },
-        '7': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['claude-code','hochladen'], gate: null },
-        '8': { ordner: '07_abnahme', lieferobjekt: 'abnahme', ext: 'md', format: 'text', wege: ['kurswerkstatt'], gate: 'Gate 2 · Schluss' },
-        '9': { ordner: '08_backbone', datei: '{K}_publiziert.md', format: 'text', wege: ['chat','claude-code'], gate: null }
+        '2': { ordner: '02_lernziele', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen' },
+        /* Schritt 3 und 4 spiegeln den echten Kontrakt einschliesslich qualitaet —
+           daraus leitet die Ansicht den Bauauftrag fuer den Weg Claude-Code ab. */
+        '3': { ordner: '03_content', lieferobjekt: 'skript-{variante}', varianten: ['claude','chatgpt'],
+               ext: 'docx', format: 'word', wege: ['chat','claude-code','hochladen'], gate: null,
+               qualitaet: '_zentral/prompt-bibliothek/skript-inhaltskontrakt.txt' },
+        '4': { ordner: '04_validierung', lieferobjekt: 'content', ext: 'html', format: 'html', wege: ['chat','claude-code'], gate: 'Sign-off',
+               qualitaet: '_zentral/prompt-bibliothek/content-inhaltskontrakt.txt' },
+        '5': { ordner: '05_didaktik', lieferobjekt: 'umsetzung', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
+        '6': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['claude-code','hochladen'], gate: null },
+        '7': { ordner: '07_abnahme', lieferobjekt: 'abnahme', ext: 'md', format: 'text', wege: ['kurswerkstatt'], gate: 'Gate 2 · Schluss' },
+        '8': { ordner: '08_backbone', datei: '{K}_publiziert.md', format: 'text', wege: ['chat','claude-code'], gate: null }
       }
     },
 
@@ -51,22 +61,21 @@
         auto:     { label: 'Automatisiert', who: 'Skript baut, Mensch prueft technisch.' }
       },
       phasen: [
-        { nm: 'Vorbereiten',        ids: ['1','2'] },
-        { nm: 'Festlegen',          ids: ['3'] },
-        { nm: 'Inhalt entwerfen',   ids: ['4','5','6'] },
-        { nm: 'Strecke bauen',      ids: ['7'] },
-        { nm: 'Abnehmen & sichern', ids: ['8','9'] }
+        { nm: 'Vorbereiten',        ids: ['1'] },
+        { nm: 'Festlegen',          ids: ['2'] },
+        { nm: 'Inhalt entwerfen',   ids: ['3','4','5'] },
+        { nm: 'Strecke bauen',      ids: ['6'] },
+        { nm: 'Abnehmen & sichern', ids: ['7','8'] }
       ],
       schritte: [
         schritt(1, 'Kursbriefing', { auto: 'kimensch', tool: 'claude' }),
-        schritt(2, 'Kurs-Projekt & Ablage anlegen', { auto: 'kimensch' }),
-        schritt(3, 'Lernzielkatalog + Eingangskompetenzen', { auto: 'mensch', tool: 'claude', gate: 'Gate 1 · 4-Augen' }),
-        schritt(4, 'Green-field W-Content', { auto: 'ki', tool: 'claude' }),
-        schritt(5, 'Screening & Gap-Analyse', { auto: 'ki', tool: 'chatgpt' }),
-        schritt(6, 'Verdichtung & Umsetzung', { auto: 'kimensch', tool: 'claude', gate: 'Sign-off' }),
-        schritt(7, 'Moodle-Selbstlernstrecke', { auto: 'auto', wege: ['claude-code'] }),
-        schritt(8, 'Fach-Review & Freigabe', { auto: 'mensch', gate: 'Gate 2 · Schluss' }),
-        schritt(9, 'Kuratierung & Backbone', { auto: 'auto' })
+        schritt(2, 'Lernziele', { auto: 'mensch', tool: 'claude', gate: 'Gate 1 · 4-Augen' }),
+        schritt(3, 'Content', { auto: 'ki', tool: 'claude' }),
+        schritt(4, 'Validierung', { auto: 'ki', tool: 'chatgpt', gate: 'Sign-off' }),
+        schritt(5, 'Didaktik', { auto: 'kimensch', tool: 'claude' }),
+        schritt(6, 'Moodle-Bau', { auto: 'auto', wege: ['claude-code'] }),
+        schritt(7, 'Fach-Review', { auto: 'mensch', gate: 'Gate 2 · Schluss' }),
+        schritt(8, 'Kuratierung', { auto: 'auto' })
       ]
     },
 
@@ -77,29 +86,29 @@
         template: { short: 'Vorlage',   label: 'Muster-Template',                pl: 'Muster-Templates' }
       },
       schrittWerkzeuge: {
-        '1': ['guide-1'], '2': ['guide-2'], '3': ['guide-3', 'tpl-contract'],
-        '4': ['guide-4', 'prompt-greenfield'], '5': ['guide-5'], '6': ['guide-6'],
-        '7': ['guide-7'], '8': ['guide-8'], '9': ['guide-9']
+        '1': ['guide-1'], '2': ['guide-2', 'tpl-contract'],
+        '3': ['guide-3', 'prompt-greenfield'], '4': ['guide-4'], '5': ['guide-5'],
+        '6': ['guide-6'], '7': ['guide-7'], '8': ['guide-8']
       },
       liste: [
-        { id: 'guide-4', type: 'guide', stage: '4', title: 'Anleitung Schritt 4',
+        { id: 'guide-3', type: 'guide', stage: '3', title: 'Anleitung Schritt 3',
           sub: 'Green-field-Entwurf erstellen',
           steps: ['Prompt kopieren', 'Eingangskompetenzen einsetzen', 'An die KI senden'],
           dos: ['Bei den Lernzielen bleiben'], donts: ['Kein Altmaterial mitgeben'],
           dod: 'Je Eingangskompetenz ein Entwurf, als unvalidiert markiert.' },
-        { id: 'prompt-greenfield', type: 'prompt', stage: '4', title: 'Masterprompt Green-field',
+        { id: 'prompt-greenfield', type: 'prompt', stage: '3', title: 'Masterprompt Green-field',
           sub: 'Idealen W-Content je EK entwerfen',
           when: '<b>Wann:</b> nach Gate 1.',
           claude: '<rolle>PLATZHALTER — der echte Prompt liegt in SharePoint</rolle>',
           chatgpt: '=== ROLLE ===\nPLATZHALTER' },
-        { id: 'tpl-contract', type: 'template', stage: '3', title: 'Vorlage Lernziele & Drehbuch',
+        { id: 'tpl-contract', type: 'template', stage: '2', title: 'Vorlage Lernziele & Drehbuch',
           sub: 'Drei Blaetter',
           tables: [{ cols: ['Lernziel-ID', 'Thema', 'Bloom-Stufe'] }] },
         { id: 'guide-1', type: 'guide', stage: '1', title: 'Anleitung Schritt 1', sub: '-',
           steps: ['a'], dos: ['b'], donts: ['c'], dod: 'd' },
         { id: 'guide-2', type: 'guide', stage: '2', title: 'Anleitung Schritt 2', sub: '-',
           steps: ['a'], dos: ['b'], donts: ['c'], dod: 'd' },
-        { id: 'guide-3', type: 'guide', stage: '3', title: 'Anleitung Schritt 3', sub: '-',
+        { id: 'guide-4', type: 'guide', stage: '4', title: 'Anleitung Schritt 4', sub: '-',
           steps: ['a'], dos: ['b'], donts: ['c'], dod: 'd' },
         { id: 'guide-5', type: 'guide', stage: '5', title: 'Anleitung Schritt 5', sub: '-',
           steps: ['a'], dos: ['b'], donts: ['c'], dod: 'd' },
@@ -108,8 +117,6 @@
         { id: 'guide-7', type: 'guide', stage: '7', title: 'Anleitung Schritt 7', sub: '-',
           steps: ['a'], dos: ['b'], donts: ['c'], dod: 'd' },
         { id: 'guide-8', type: 'guide', stage: '8', title: 'Anleitung Schritt 8', sub: '-',
-          steps: ['a'], dos: ['b'], donts: ['c'], dod: 'd' },
-        { id: 'guide-9', type: 'guide', stage: '9', title: 'Anleitung Schritt 9', sub: '-',
           steps: ['a'], dos: ['b'], donts: ['c'], dod: 'd' }
       ]
     },
@@ -130,8 +137,8 @@
         { h: 'Datenklassen & Tool-Zulassung', html: '<table><tr><td>oeffentlich</td></tr></table>' }
       ]},
       schubladeKontext: {
-        '1': ['didaktik'], '3': ['didaktik'], '4': ['didaktik','promptcraft'],
-        '5': ['promptcraft'], '6': ['didaktik','promptcraft'], '8': ['didaktik']
+        '1': ['didaktik'], '2': ['didaktik'], '3': ['didaktik','promptcraft'],
+        '4': ['promptcraft'], '5': ['didaktik','promptcraft'], '7': ['didaktik']
       }
     },
 
@@ -139,14 +146,14 @@
       '1': { prim: ['HF8'], ber: ['HF9'] }, '2': { prim: ['HF8'], ber: [] },
       '3': { prim: ['HF8'], ber: [] }, '4': { prim: ['HF8'], ber: [] },
       '5': { prim: ['HF8'], ber: [] }, '6': { prim: ['HF8'], ber: [] },
-      '7': { prim: ['HF8'], ber: [] }, '8': { prim: ['HF8'], ber: [] },
-      '9': { prim: ['HF3'], ber: ['HF8'] }, __vorlaeufig: true
+      '7': { prim: ['HF8'], ber: [] },
+      '8': { prim: ['HF3'], ber: ['HF8'] }, __vorlaeufig: true
     }
   };
 
   var KURSE = [
     { id: '1', kursId: 'DBS-001', kurstitel: 'Derivate & Strukturierte Produkte Basis',
-      kompetenzfeld: 'Vermögen & Vorsorge', schritt: 4, status: 'inArbeit', prio: null, bemerkung: '' },
+      kompetenzfeld: 'Vermögen & Vorsorge', schritt: 3, status: 'inArbeit', prio: null, bemerkung: '' },
     { id: '2', kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
       kompetenzfeld: 'Vermögen & Vorsorge', schritt: 1, status: 'offen', prio: null, bemerkung: '' }
   ];

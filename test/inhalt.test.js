@@ -14,10 +14,10 @@ test('fehlende Inhalte werden beanstandet', () => {
   assert.ok(inhalt.pruefe(null).length > 0);
 });
 
-test('weniger als 9 Schritte faellt auf', () => {
+test('weniger als 8 Schritte faellt auf', () => {
   const i = kopie();
   i.schritte.schritte.pop();
-  assert.ok(inhalt.pruefe(i).some(x => /8 statt 9/.test(x)));
+  assert.ok(inhalt.pruefe(i).some(x => /7 statt 8/.test(x)));
 });
 
 test('ein Schritt ohne Zweck faellt auf', () => {
@@ -53,8 +53,8 @@ test('ein fehlendes Referenzwerk faellt auf', () => {
 /* --- Zugriffshelfer --- */
 
 test('schritt() findet ueber Zahl und Zeichenkette', () => {
-  assert.strictEqual(inhalt.schritt(INHALT, 4).nm, 'Green-field W-Content');
-  assert.strictEqual(inhalt.schritt(INHALT, '4').nm, 'Green-field W-Content');
+  assert.strictEqual(inhalt.schritt(INHALT, 3).nm, 'Content');
+  assert.strictEqual(inhalt.schritt(INHALT, '3').nm, 'Content');
 });
 
 test('schritt() liefert null statt einer Ausnahme', () => {
@@ -62,56 +62,57 @@ test('schritt() liefert null statt einer Ausnahme', () => {
 });
 
 test('werkzeugeVon liefert die Werkzeuge des Schritts', () => {
-  const w = inhalt.werkzeugeVon(INHALT, 4).map(x => x.id);
-  assert.deepStrictEqual(w, ['guide-4', 'prompt-greenfield']);
+  const w = inhalt.werkzeugeVon(INHALT, 3).map(x => x.id);
+  assert.deepStrictEqual(w, ['guide-3', 'prompt-greenfield']);
 });
 
 test('anleitungVon liefert genau die Anleitung', () => {
-  assert.strictEqual(inhalt.anleitungVon(INHALT, 4).id, 'guide-4');
+  assert.strictEqual(inhalt.anleitungVon(INHALT, 3).id, 'guide-3');
 });
 
 test('hilfsmittelVon laesst die Anleitung weg', () => {
-  const h = inhalt.hilfsmittelVon(INHALT, 4).map(x => x.id);
+  const h = inhalt.hilfsmittelVon(INHALT, 3).map(x => x.id);
   assert.deepStrictEqual(h, ['prompt-greenfield']);
 });
 
 test('phaseVon ordnet den Schritt seiner Phase zu', () => {
   assert.strictEqual(inhalt.phaseVon(INHALT, 4).nm, 'Inhalt entwerfen');
   assert.strictEqual(inhalt.phaseVon(INHALT, 1).nm, 'Vorbereiten');
-  assert.strictEqual(inhalt.phaseVon(INHALT, 9).nm, 'Abnehmen & sichern');
+  assert.strictEqual(inhalt.phaseVon(INHALT, 8).nm, 'Abnehmen & sichern');
 });
 
 /* --- Ablage-Kontrakt --- */
 
 test('ablageVon baut Ordner und Dateiname aus dem Kontrakt', () => {
-  const a = inhalt.ablageVon(INHALT, 4, 'DBS-001');
-  assert.strictEqual(a.ordner, '04_greenfield');
-  assert.strictEqual(a.datei, 'DBS-001_greenfield_v{N}.md');
-  assert.strictEqual(a.format, 'text');
+  const a = inhalt.ablageVon(INHALT, 3, 'DBS-001');
+  assert.strictEqual(a.ordner, '03_content');
+  assert.strictEqual(a.format, 'word');
   assert.strictEqual(a.gate, null);
+  /* Ohne gewaehlte Variante bleibt der Platzhalter stehen — der Name ist dann
+     eine Schablone, keine Zusage. Mit Variante loest er sich auf. */
+  assert.strictEqual(a.datei, 'DBS-001_skript-{variante}_v{N}.docx');
+  const b = inhalt.ablageVon(INHALT, 3, 'DBS-001', 'chatgpt');
+  assert.strictEqual(b.datei, 'DBS-001_skript-chatgpt_v{N}.docx');
 });
 
 test('ablageVon kennt feste Dateinamen ohne Version', () => {
-  const a = inhalt.ablageVon(INHALT, 2, 'DBS-001');
-  assert.strictEqual(a.datei, 'DBS-001_manifest.json');
+  const a = inhalt.ablageVon(INHALT, 6, 'DBS-001');
+  assert.strictEqual(a.datei, 'DBS-001_export.mbz');
 });
 
 test('ablageVon gibt das Gate mit aus', () => {
-  assert.strictEqual(inhalt.ablageVon(INHALT, 3, 'DBS-001').gate, 'Gate 1 · 4-Augen');
-  assert.strictEqual(inhalt.ablageVon(INHALT, 6, 'DBS-001').gate, 'Sign-off');
+  assert.strictEqual(inhalt.ablageVon(INHALT, 2, 'DBS-001').gate, 'Gate 1 · 4-Augen');
+  assert.strictEqual(inhalt.ablageVon(INHALT, 4, 'DBS-001').gate, 'Sign-off');
 });
 
-test('Schritt 5 und 6 schreiben in dieselbe Datei', () => {
-  const a5 = inhalt.ablageVon(INHALT, 5, 'DBS-001');
-  const a6 = inhalt.ablageVon(INHALT, 6, 'DBS-001');
-  assert.strictEqual(a5.ordner, a6.ordner);
-  assert.strictEqual(a5.datei, a6.datei);
-});
+/* Bis zur Reform teilten sich Schritt 5 und 6 den Ordner 05_content — mit den
+   acht eigenstaendigen Ordnern (Auftrag 1) gibt es diese Teilung nicht mehr,
+   jeder Schritt fuehrt seinen eigenen Ordner. Der Test entfaellt ersatzlos. */
 
 test('ablageVon liefert die zulaessigen Wege', () => {
-  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 7, 'DBS-001').wege,
+  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 6, 'DBS-001').wege,
                          ['claude-code', 'hochladen']);
-  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 3, 'DBS-001').wege,
+  assert.deepStrictEqual(inhalt.ablageVon(INHALT, 2, 'DBS-001').wege,
                          ['claude-code', 'hand', 'hochladen']);
 });
 
@@ -128,7 +129,7 @@ test('laden verzeiht ein fehlendes hf.json — es ist abkoppelbar', async () => 
   const graphMock = { zentralLaden: () => Promise.resolve(ohneHf) };
   const r = await inhalt.laden(graphMock);
   assert.strictEqual(r.hf, undefined);
-  assert.strictEqual(r.schritte.schritte.length, 9);
+  assert.strictEqual(r.schritte.schritte.length, 8);
 });
 
 test('laden bricht bei inhaltlich kaputten Dateien ab', async () => {
@@ -162,4 +163,26 @@ test('pruefe meldet unsaubere Referenz-Verschachtelung', () => {
   const p = inhalt.pruefe(k);
   assert.ok(p.some(x => /didaktik Abschnitt 2/.test(x) && /Verschachtelung/.test(x)),
             'Fehler nicht gemeldet: ' + p.join(' | '));
+});
+
+/* ---------- Bauauftrag fuer den Weg Claude-Code ----------
+   Am 2026-07-29 nannte die Schrittansicht fuer JEDEN Schritt
+   "greenfield-bauspec.txt" — ein fest eingetragener Name, den es nach der
+   Umbenennung nicht mehr gab. Der Name muss aus dem Schritt folgen. */
+
+test('der Bauauftrag folgt dem Schritt, nicht einem festen Namen', () => {
+  const a = inhalt.bauauftrag(INHALT, 3);
+  const b = inhalt.bauauftrag(INHALT, 4);
+  assert.strictEqual(a.bauspec, 'skript-bauspec.txt');
+  assert.strictEqual(b.bauspec, 'content-bauspec.txt');
+  assert.notStrictEqual(a.bauspec, b.bauspec,
+    'beide Schritte nennen dieselbe Datei — der Name haengt nicht am Schritt');
+  assert.strictEqual(a.inhaltskontrakt, 'skript-inhaltskontrakt.txt');
+  assert.ok(a.pfad.indexOf('_zentral/prompt-bibliothek/') === 0, 'Pfad unvollstaendig: ' + a.pfad);
+});
+
+test('ohne Inhaltskontrakt wird kein Dateiname geraten', () => {
+  assert.strictEqual(inhalt.bauauftrag(INHALT, 1), null, 'Schritt 1 hat keinen Inhaltskontrakt');
+  assert.strictEqual(inhalt.bauauftrag(INHALT, 6), null, 'Schritt 6 hat keinen Inhaltskontrakt');
+  assert.strictEqual(inhalt.bauauftrag(INHALT, 99), null, 'unbekannter Schritt');
 });

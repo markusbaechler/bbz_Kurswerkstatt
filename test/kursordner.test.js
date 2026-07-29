@@ -86,17 +86,16 @@ test('der bestehende DBS-Ordner bleibt gueltig, obwohl er vom Vorschlag abweicht
 
 /* ---------- Die Unterordner: abgeleitet, nicht aufgelistet ---------- */
 
-test('neun Unterordner, in Reihenfolge', () => {
+test('acht Unterordner, in Reihenfolge', () => {
   assert.deepStrictEqual(inhalt.ordnerliste(INHALT), [
-    '00_input', '01_briefing', '02_setup', '03_contract', '04_greenfield',
-    '05_content', '06_moodle', '07_abnahme', '08_backbone'
+    '00_input', '01_briefing', '02_lernziele', '03_content', '04_validierung',
+    '05_didaktik', '06_moodle', '07_abnahme', '08_backbone'
   ]);
 });
 
-test('05_content steht einmal, obwohl Schritt 5 und 6 hineinschreiben', () => {
-  const l = inhalt.ordnerliste(INHALT);
-  assert.strictEqual(l.filter(function (o) { return o === '05_content'; }).length, 1);
-});
+/* Bis zur Reform (Auftrag 1) teilten sich Schritt 5 und 6 den Ordner 05_content.
+   Mit acht eigenstaendigen Ordnern — die Ordnernummer entspricht jetzt der
+   Schrittnummer — gibt es keine Teilung mehr; der Test dazu entfaellt ersatzlos. */
 
 test('00_input kommt aus zusatzordner — kein Schritt liefert es', () => {
   const ohne = JSON.parse(JSON.stringify(INHALT));
@@ -106,19 +105,8 @@ test('00_input kommt aus zusatzordner — kein Schritt liefert es', () => {
   assert.strictEqual(inhalt.ordnerliste(ohne).length, 8);
 });
 
-/* ---------- Das Manifest von Schritt 2 ---------- */
-
-test('das Manifest traegt Kurs-ID, Titel, Kompetenzfeld und Anlagedatum', () => {
-  const m = inhalt.manifest(AFL, '2026-07-22');
-  assert.deepStrictEqual(m, {
-    kursId: 'AFL-001',
-    kurstitel: 'Anlagefondslizenz',
-    kompetenzfeld: 'Vermögen & Vorsorge',
-    angelegt: '2026-07-22'
-  });
-});
-
-test('das Manifest traegt keine Version — es ist eine Systemdatei', () => {
-  const m = inhalt.manifest(AFL, '2026-07-22');
-  assert.ok(!('version' in m) && !('v' in m));
-});
+/* Das Manifest von Schritt 2 ist mit der Reform (Auftrag 1) entfallen: der
+   bisherige eigene Schritt dafuer ist in Schritt 1 aufgegangen, sein einziges
+   echtes Lieferobjekt (02_setup/{K}_manifest.json) hat keinen Ordner der neuen
+   Acht mehr. inhalt.manifest() ist mit ihm entfernt worden, die beiden Tests
+   dafuer entfallen ersatzlos. */

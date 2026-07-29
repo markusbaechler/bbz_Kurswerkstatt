@@ -73,14 +73,14 @@ test('fortschritt zaehlt den aktuellen Schritt mit, wenn er fertig ist', () => {
   assert.strictEqual(graph.fortschritt(k), 4);
 });
 
-test('ein Kurs am Anfang steht auf 0 von 9', () => {
+test('ein Kurs am Anfang steht auf 0 von 8', () => {
   const k = graph.mapKurs({ id: '2', fields: { Title: 'AFL-001', Schritt: 1, Status: 'offen' } });
   assert.strictEqual(graph.fortschritt(k), 0);
 });
 
-test('ein abgeschlossener Kurs steht auf 9 von 9', () => {
-  const k = graph.mapKurs({ id: '2', fields: { Title: 'X', Schritt: 9, Status: 'fertig' } });
-  assert.strictEqual(graph.fortschritt(k), 9);
+test('ein abgeschlossener Kurs steht auf 8 von 8', () => {
+  const k = graph.mapKurs({ id: '2', fields: { Title: 'X', Schritt: 8, Status: 'fertig' } });
+  assert.strictEqual(graph.fortschritt(k), 8);
 });
 
 /* --- Schreibpfad: reine Funktionen --- */
@@ -96,8 +96,8 @@ test('naechsterStand: erneutes Klicken nimmt die Erledigung zurueck', () => {
 });
 
 test('naechsterStand: der letzte Schritt schliesst den Kurs ab', () => {
-  const k = graph.mapKurs({ id: '2', fields: { Title: 'X', Schritt: 9, Status: 'inArbeit' } });
-  assert.deepStrictEqual(graph.naechsterStand(k, 9), { Schritt: 9, Status: 'fertig' });
+  const k = graph.mapKurs({ id: '2', fields: { Title: 'X', Schritt: 8, Status: 'inArbeit' } });
+  assert.deepStrictEqual(graph.naechsterStand(k, 8), { Schritt: 8, Status: 'fertig' });
 });
 
 test('graph.siteUrl baut den Graph-Pfad aus der CONFIG', () => {

@@ -6,14 +6,14 @@ require('../inhalt.js');
 const { ansichten } = require('../ansichten.js');
 const { INHALT, KURSE } = require('./fixture.js');
 
-const DBS = KURSE[0];   // Schritt 4, inArbeit
+const DBS = KURSE[0];   // Schritt 3, inArbeit
 const AFL = KURSE[1];   // Schritt 1, offen
 
 /* ---------- Kette ---------- */
 
-test('die Kette zeigt alle 9 Schritte in 5 Phasen', () => {
+test('die Kette zeigt alle 8 Schritte in 5 Phasen', () => {
   const h = ansichten.kette(INHALT, DBS, null);
-  assert.strictEqual((h.match(/data-action="schritt"/g) || []).length, 9);
+  assert.strictEqual((h.match(/data-action="schritt"/g) || []).length, 8);
   assert.strictEqual((h.match(/class="spanne/g) || []).length, 5);
 });
 
@@ -25,7 +25,7 @@ test('die Kette faerbt nach dem echten Stand', () => {
 });
 
 test('die Kette markiert den aktiven Schritt', () => {
-  var hh = ansichten.kette(INHALT, DBS, 4);
+  var hh = ansichten.kette(INHALT, DBS, 3);
   assert.ok(/station inArbeit hier/.test(hh), 'aktive Station nicht markiert');
   assert.ok(/stbez inArbeit hier/.test(hh), 'Beschriftung der aktiven Station nicht markiert');
 });
@@ -36,16 +36,16 @@ test('die Kette markiert die drei Gates', () => {
 
 /* ---------- Alle Kurse ---------- */
 
-test('jeder Kurs bekommt eine Zeile mit neun Punkten', () => {
+test('jeder Kurs bekommt eine Zeile mit acht Punkten', () => {
   const h = ansichten.alleKurse(KURSE);
   assert.strictEqual((h.match(/data-action="kurs"/g) || []).length, 2);
-  assert.strictEqual((h.match(/class="pkt /g) || []).length, 18);
+  assert.strictEqual((h.match(/class="pkt /g) || []).length, 16);
 });
 
 test('der Fortschritt wird ausgewiesen', () => {
   const h = ansichten.alleKurse(KURSE);
-  assert.ok(/3&#8202;\/&#8202;9/.test(h), 'DBS-001 muesste 3/9 stehen');
-  assert.ok(/0&#8202;\/&#8202;9/.test(h), 'AFL-001 muesste 0/9 stehen');
+  assert.ok(/2&#8202;\/&#8202;8/.test(h), 'DBS-001 muesste 2/8 stehen');
+  assert.ok(/0&#8202;\/&#8202;8/.test(h), 'AFL-001 muesste 0/8 stehen');
 });
 
 test('eine leere Liste erzeugt eine Meldung statt einer leeren Tabelle', () => {
@@ -64,13 +64,13 @@ test('die Kursansicht nennt Kurs, Titel und Fortschritt', () => {
   assert.ok(/class="schriftfeld"/.test(h), 'kein Schriftfeld');
   assert.ok(/DBS-001/.test(h));
   assert.ok(/Derivate/.test(h));
-  assert.ok(/3&#8202;\/&#8202;9/.test(h), 'Stand fehlt im Schriftfeld');
+  assert.ok(/2&#8202;\/&#8202;8/.test(h), 'Stand fehlt im Schriftfeld');
 });
 
 test('die Kursansicht zeigt, was als Naechstes dran ist', () => {
   const h = ansichten.einKurs(INHALT, DBS);
   assert.ok(/Als N&auml;chstes dran/.test(h));
-  assert.ok(/Schritt 4/.test(h));
+  assert.ok(/Schritt 3/.test(h));
   assert.ok(/Hier weiterarbeiten/.test(h));
 });
 
@@ -81,24 +81,24 @@ test('ein unbekannter Kurs erzeugt eine Meldung statt einer Ausnahme', () => {
 /* ---------- Ein Schritt ---------- */
 
 test('der Kopf nennt Nummer und Namen', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
-  assert.ok(/Station 4 von 9/.test(h));
-  assert.ok(/Green-field W-Content/.test(h));
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
+  assert.ok(/Station 3 von 8/.test(h));
+  assert.ok(/>Content</.test(h));
 });
 
 test('die Schrittansicht traegt die Fertigungsstrasse mit', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.strictEqual((h.match(/class="spanne/g) || []).length, 5);
   assert.ok(/class="gleis"/.test(h), 'kein durchgehendes Gleis');
   assert.ok(/class="schriftfeld"/.test(h), 'kein Schriftfeld');
 });
 
 test('Woher und Wohin sind da und verlinkt', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/Kommt herein/.test(h));
   assert.ok(/Geht weiter/.test(h));
-  assert.ok(/Station 3 ansehen/.test(h));
-  assert.ok(/Station 5 ansehen/.test(h));
+  assert.ok(/Station 2 ansehen/.test(h));
+  assert.ok(/Station 4 ansehen/.test(h));
 });
 
 test('Schritt 1 hat keinen Vorgaenger und sagt das', () => {
@@ -108,7 +108,7 @@ test('Schritt 1 hat keinen Vorgaenger und sagt das', () => {
 });
 
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/So gehst du vor/.test(h));
   assert.ok(/Prompt kopieren<\/span>/.test(h), 'erster Anleitungsschritt fehlt');
   assert.ok(/class="ddc do"/.test(h), 'Do fehlt');
@@ -116,61 +116,61 @@ test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {
 });
 
 test('der Masterprompt liegt inline, mit Kopier-Knopf', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/data-action="werkzeug" data-werkzeug="prompt-greenfield"/.test(h));
   assert.ok(/data-action="kopieren"/.test(h));
 });
 
 test('die Anleitung erscheint NICHT nochmals als Klappe', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
-  assert.ok(!/data-werkzeug="guide-4"/.test(h), 'Anleitung doppelt gezeigt');
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
+  assert.ok(!/data-werkzeug="guide-3"/.test(h), 'Anleitung doppelt gezeigt');
 });
 
 test('das aufgeklappte Werkzeug ist markiert', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, 'prompt-greenfield');
+  const h = ansichten.einSchritt(INHALT, DBS, 3, 'prompt-greenfield');
   assert.ok(/class="wtool instrument auf"/.test(h), 'Masterprompt nicht als aufgeklappt markiert');
   assert.ok(/zuklappen/.test(h), 'Knopf sagt nicht zuklappen');
 });
 
 test('die Ablage nach Kontrakt wird angezeigt', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
-  assert.ok(/04_greenfield\/<b>DBS-001_greenfield_v\{N\}\.md<\/b>/.test(h));
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
+  assert.ok(/03_content\/<b>DBS-001_skript-claude_v\{N\}\.docx<\/b>/.test(h));
 });
 
 test('das Uebergabekriterium steht da', () => {
-  assert.ok(/Fertig, wenn/.test(ansichten.einSchritt(INHALT, DBS, 4, null)));
+  assert.ok(/Fertig, wenn/.test(ansichten.einSchritt(INHALT, DBS, 3, null)));
 });
 
 test('ein Gate-Schritt zeigt sein Gate, ein gate-loser nicht', () => {
-  assert.ok(/Gate 1/.test(ansichten.einSchritt(INHALT, DBS, 3, null)));
-  assert.ok(!/gatetag/.test(ansichten.einSchritt(INHALT, DBS, 4, null)));
+  assert.ok(/Gate 1/.test(ansichten.einSchritt(INHALT, DBS, 2, null)));
+  assert.ok(!/gatetag/.test(ansichten.einSchritt(INHALT, DBS, 3, null)));
 });
 
 test('Weiter ist gesperrt, solange der Schritt nicht erledigt ist', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);   // Schritt 4 inArbeit
-  assert.ok(/class="weiter" data-action="schritt" data-schritt="5" disabled/.test(h));
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);   // Schritt 3 inArbeit
+  assert.ok(/class="weiter" data-action="schritt" data-schritt="4" disabled/.test(h));
 });
 
 test('Weiter ist frei, wenn der Schritt erledigt ist', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 3, null);   // 3 < 4, also fertig
-  assert.ok(/data-schritt="4">Weiter/.test(h));
-  assert.ok(!/data-schritt="4" disabled/.test(h));
+  const h = ansichten.einSchritt(INHALT, DBS, 2, null);   // 2 < 3, also fertig
+  assert.ok(/data-schritt="3">Weiter/.test(h));
+  assert.ok(!/data-schritt="3" disabled/.test(h));
 });
 
-test('Schritt 9 bietet kein Weiter an', () => {
-  assert.ok(!/Weiter zu Schritt 10/.test(ansichten.einSchritt(INHALT, DBS, 9, null)));
+test('Schritt 8 bietet kein Weiter an', () => {
+  assert.ok(!/Weiter zu Schritt 9/.test(ansichten.einSchritt(INHALT, DBS, 8, null)));
 });
 
 test('ohne Kurs gibt es keinen Erledigt-Haken', () => {
-  assert.ok(!/data-action="erledigt"/.test(ansichten.einSchritt(INHALT, null, 4, null)));
+  assert.ok(!/data-action="erledigt"/.test(ansichten.einSchritt(INHALT, null, 3, null)));
 });
 
 test('die zulaessigen Wege werden angezeigt', () => {
-  assert.ok(/Im Chat/.test(ansichten.einSchritt(INHALT, DBS, 4, null)));
-  assert.ok(/Mit Claude Code/.test(ansichten.einSchritt(INHALT, DBS, 4, null)));
-  const s7 = ansichten.einSchritt(INHALT, DBS, 7, null);
-  assert.ok(/Mit Claude Code/.test(s7));
-  assert.ok(!/Im Chat/.test(s7), 'Schritt 7 laeuft nur ueber Claude Code');
+  assert.ok(/Im Chat/.test(ansichten.einSchritt(INHALT, DBS, 3, null)));
+  assert.ok(/Mit Claude Code/.test(ansichten.einSchritt(INHALT, DBS, 3, null)));
+  const s6 = ansichten.einSchritt(INHALT, DBS, 6, null);
+  assert.ok(/Mit Claude Code/.test(s6));
+  assert.ok(!/Im Chat/.test(s6), 'Schritt 6 laeuft nur ueber Claude Code');
 });
 
 test('ein unbekannter Schritt erzeugt eine Meldung statt einer Ausnahme', () => {
@@ -234,7 +234,7 @@ test('jedes Kapitel ist ankerbar und steht im Verzeichnis', () => {
 /* ---------- Standort und Ordner-Verknuepfung ---------- */
 
 test('die Kette sagt im Klartext, wo man ist', () => {
-  const h = ansichten.kette(INHALT, DBS, 4);
+  const h = ansichten.kette(INHALT, DBS, 3);
   assert.ok(/station inArbeit hier/.test(h), 'aktive Station fehlt');
   assert.ok(/spanne an/.test(h), 'aktive Phase nicht markiert');
   assert.ok(/Inhalt entwerfen/.test(h), 'Phase fehlt');
@@ -269,51 +269,51 @@ test('die Dateiliste verlinkt jede Datei nach SharePoint', () => {
 });
 
 test('der Zielordner ist aus der Schrittansicht heraus zu oeffnen', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null,
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null,
     { basisUrl: 'https://sp/Kursproduktion/DBS-001_x', dateien: [] });
-  assert.ok(/href="https:\/\/sp\/Kursproduktion\/DBS-001_x\/04_greenfield"/.test(h));
+  assert.ok(/href="https:\/\/sp\/Kursproduktion\/DBS-001_x\/03_content"/.test(h));
 });
 
 test('der Vorgaenger-Ordner ist aus Kommt-herein heraus zu oeffnen', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null,
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null,
     { basisUrl: 'https://sp/Kursproduktion/DBS-001_x', dateien: [] });
-  assert.ok(/href="https:\/\/sp\/Kursproduktion\/DBS-001_x\/03_contract"/.test(h),
-    'Link auf den Contract-Ordner aus Schritt 3 fehlt');
+  assert.ok(/href="https:\/\/sp\/Kursproduktion\/DBS-001_x\/02_lernziele"/.test(h),
+    'Link auf den Lernziele-Ordner aus Schritt 2 fehlt');
 });
 
 test('ohne Basis-URL bleiben die Pfade lesbar, aber ohne Link', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
-  assert.ok(/04_greenfield\/<b>DBS-001_greenfield_v\{N\}\.md<\/b>/.test(h));
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});
+  assert.ok(/03_content\/<b>DBS-001_skript-claude_v\{N\}\.docx<\/b>/.test(h));
   assert.ok(!/href="undefined/.test(h));
 });
 
 /* ---------- Der Masterprompt ist das Instrument ---------- */
 
 test('der Masterprompt traegt eigenes Gewicht, nicht die Zeilendarstellung', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});
   assert.ok(/class="wtool instrument/.test(h), 'Masterprompt nicht als Instrument ausgezeichnet');
   assert.ok(/class="wtitel"><h3>/.test(h), 'Titel nicht als Ueberschrift');
 });
 
 test('der Prompt ist kopierbar OHNE ihn aufzuklappen', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});   // nichts aufgeklappt
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});   // nichts aufgeklappt
   const kopf = h.slice(h.indexOf('class="wkopf"'), h.indexOf('class="wbody"'));
   assert.ok(/data-action="kopieren"/.test(kopf), 'Kopier-Knopf steckt im aufklappbaren Teil');
 });
 
 test('der Masterprompt steht VOR den Leitplanken', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});
   assert.ok(h.indexOf('Dein Masterprompt') < h.indexOf('Leitplanken'),
     'Do/Dont steht vor dem Werkzeug');
 });
 
 test('der Masterprompt steht NACH der Anleitung, die ihn erwaehnt', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, {});
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});
   assert.ok(h.indexOf('So gehst du vor') < h.indexOf('Dein Masterprompt'));
 });
 
 test('Vorlagen bleiben ruhig — kein Instrument', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 3, null, {});
+  const h = ansichten.einSchritt(INHALT, DBS, 2, null, {});
   assert.ok(/data-werkzeug="tpl-contract"/.test(h), 'Vorlage fehlt');
   const karte = h.slice(h.indexOf('wt-tpl-contract'));
   assert.ok(!/instrument/.test(karte.slice(0, 200)), 'Vorlage faelschlich als Instrument');
@@ -347,11 +347,11 @@ test('ohne Kurs und ohne Schritt bleibt das Schriftfeld leer', () => {
 });
 
 test('das Gleis ist gefuellt bis zum letzten erledigten Punkt', () => {
-  const h = ansichten.kette(INHALT, DBS, null);   // 3 von 9 erledigt
+  const h = ansichten.kette(INHALT, DBS, null);   // 2 von 8 erledigt
   const m = /<i style="width:([\d.]+)%"/.exec(h);
   assert.ok(m, 'keine Fuellung im Gleis');
-  const soll = ((3 - 0.5) / 9 * 100).toFixed(2);
-  assert.strictEqual(m[1], soll, 'Fuellung endet nicht auf dem dritten Punkt');
+  const soll = ((2 - 0.5) / 8 * 100).toFixed(2);
+  assert.strictEqual(m[1], soll, 'Fuellung endet nicht auf dem zweiten Punkt');
 });
 
 test('ohne Kurs ist das Gleis leer', () => {
@@ -361,7 +361,7 @@ test('ohne Kurs ist das Gleis leer', () => {
 
 test('jede Station steht in ihrer eigenen Rasterspalte', () => {
   const h = ansichten.kette(INHALT, DBS, null);
-  for (let i = 1; i <= 9; i++) {
+  for (let i = 1; i <= 8; i++) {
     assert.ok(h.indexOf('grid-column:' + i + '"') >= 0, 'Spalte ' + i + ' fehlt');
   }
 });
@@ -384,10 +384,10 @@ test('Standort zeigt den Weg schon auf der obersten Ebene', () => {
 });
 
 test('Standort fuehrt vom Schritt ueber den Kurs zurueck zur Liste', () => {
-  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '4' });
+  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '3' });
   assert.ok(/data-action="kurse"/.test(h), 'kein Rueckweg zur Liste');
   assert.ok(/data-action="kurs" data-kurs="DBS-001"/.test(h), 'kein Rueckweg zum Kurs');
-  assert.ok(/class="hier">.*Green-field W-Content/.test(h),
+  assert.ok(/class="hier">.*Content/.test(h),
             'aktuelle Station nicht als Standort markiert');
 });
 
@@ -398,19 +398,19 @@ test('im Kurs ist der Kurs selbst der Standort, nicht mehr anklickbar', () => {
 });
 
 test('Stationswahl springt zu Nachbarschritten', () => {
-  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '4' });
-  assert.ok(/data-action="schritt" data-schritt="3"/.test(h), 'kein Weg zurueck');
-  assert.ok(/data-action="schritt" data-schritt="5"/.test(h), 'kein Weg vorwaerts');
-  assert.ok(/4&#8202;\/&#8202;9/.test(h), 'Zaehler fehlt');
+  const h = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '3' });
+  assert.ok(/data-action="schritt" data-schritt="2"/.test(h), 'kein Weg zurueck');
+  assert.ok(/data-action="schritt" data-schritt="4"/.test(h), 'kein Weg vorwaerts');
+  assert.ok(/3&#8202;\/&#8202;8/.test(h), 'Zaehler fehlt');
 });
 
 test('an den Enden der Strasse zeigt die Stationswahl ins Leere', () => {
   const erst = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '1' });
   assert.ok(/class="wechsel aus"/.test(erst), 'vor Schritt 1 muesste tot sein');
   assert.ok(/data-schritt="2"/.test(erst));
-  const letzt = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '9' });
-  assert.ok(/class="wechsel aus"/.test(letzt), 'nach Schritt 9 muesste tot sein');
-  assert.ok(/data-schritt="8"/.test(letzt));
+  const letzt = ansichten.standort(INHALT, DBS, { bereich: 'arbeiten', schrittId: '8' });
+  assert.ok(/class="wechsel aus"/.test(letzt), 'nach Schritt 8 muesste tot sein');
+  assert.ok(/data-schritt="7"/.test(letzt));
 });
 
 test('ohne Schritt gibt es keine Stationswahl', () => {
@@ -453,10 +453,10 @@ test('der vorgeschlagene Name steht im Feld und ist der abgeleitete', () => {
   assert.ok(h.indexOf('value="AFL-001_anlagefondslizenz"') >= 0, 'kein Vorschlag im Feld');
 });
 
-test('die Sperre nennt alle neun Unterordner, die entstehen', () => {
+test('die Sperre nennt alle acht Unterordner, die entstehen', () => {
   const h = ansichten.einKurs(INHALT, AFL, { ordnerFehlt: true });
-  ['00_input', '01_briefing', '02_setup', '03_contract', '04_greenfield',
-   '05_content', '06_moodle', '07_abnahme', '08_backbone'].forEach(function (o) {
+  ['00_input', '01_briefing', '02_lernziele', '03_content', '04_validierung',
+   '05_didaktik', '06_moodle', '07_abnahme', '08_backbone'].forEach(function (o) {
     assert.ok(h.indexOf('<code>' + o + '</code>') >= 0, o + ' fehlt');
   });
 });
@@ -467,31 +467,13 @@ test('das alte Versprechen „von Hand anlegen" ist verschwunden', () => {
   assert.ok(!/kann ihn noch nicht selbst anlegen/.test(h));
 });
 
-/* ---------- Schritt 2: Manifest ---------- */
-
-test('Schritt 2 bietet den Manifest-Knopf, sobald der Ordner steht', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 2, null, { ordnerFehlt: false });
-  assert.ok(/data-action="manifest-schreiben"/.test(h), 'kein Knopf');
-  assert.ok(h.indexOf('<code>02_setup/AFL-001_manifest.json</code>') >= 0, 'kein Ziel genannt');
-});
-
-test('ohne Ordner gehoert Schritt 2 der Sperre, nicht dem Manifest', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 2, null, { ordnerFehlt: true });
-  assert.ok(!/data-action="manifest-schreiben"/.test(h), 'Knopf ohne Ordner angeboten');
-  assert.ok(/data-action="ablage-anlegen"/.test(h), 'kein Weg zum Anlegen');
-});
-
-test('kein Textfeld in Schritt 2 — der Weg Chat ist dort nicht vorgesehen', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 2, null, { ordnerFehlt: false });
-  assert.ok(!/id="ergebnis"/.test(h), 'Ablegen-Feld in einem Schritt ohne Weg Chat');
-});
-
-test('andere Schritte bekommen den Manifest-Knopf nicht', () => {
-  [1, 3, 4].forEach(function (n) {
-    const h = ansichten.einSchritt(INHALT, AFL, n, null, { ordnerFehlt: false });
-    assert.ok(!/data-action="manifest-schreiben"/.test(h), 'Schritt ' + n);
-  });
-});
+/* Der Manifest-Knopf von Schritt 2 ist mit der Reform (Auftrag 1) entfallen:
+   der bisherige eigene Schritt dafuer ist in Schritt 1 aufgegangen, sein
+   einziges echtes Lieferobjekt (02_setup/{K}_manifest.json) hat keinen Ordner
+   der neuen Acht mehr. data-action="manifest-schreiben" gibt es nicht mehr,
+   die vier Tests dazu entfallen ersatzlos. Was blieb — die Projekt-Instruktionen
+   — steht jetzt in Schritt 1 und ist dort in test/instruktionen.test.js
+   abgedeckt ("Der Block in Schritt 1"). */
 
 test('solange nichts nachgesehen wurde, wird nichts behauptet', () => {
   /* undefined heisst „noch nicht nachgesehen" — daraus darf keine Warnung werden. */
@@ -501,20 +483,20 @@ test('solange nichts nachgesehen wurde, wird nichts behauptet', () => {
 });
 
 test('die Schrittansicht warnt statt ein Versprechen zu geben', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, { ordnerFehlt: true });
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, { ordnerFehlt: true });
   assert.ok(/class="fehlt"/.test(h), 'keine Sperre in der Schrittansicht');
   assert.ok(!/Legt die Kurswerkstatt an/.test(h),
             'verspricht Ablage, obwohl der Ordner fehlt');
 });
 
 test('mit Ordner bleibt das Versprechen stehen', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null, { ordnerFehlt: false });
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, { ordnerFehlt: false });
   assert.ok(/Legt die Kurswerkstatt an/.test(h));
   assert.ok(!/class="fehlt"/.test(h));
 });
 
 test('die Schrittansicht haelt einen Platz fuer die Fehlermeldung bereit', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 4, null);
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/id="ablegefehler"/.test(h), 'kein Platz fuer die Meldung');
   assert.ok(/id="ablegefehler" hidden/.test(h), 'Meldung ist nicht von Anfang an versteckt');
 });
