@@ -418,6 +418,31 @@
                     background:var(--surface);color:var(--ink);border:1px solid var(--line);
                     border-radius:8px;padding:13px 15px;resize:vertical}
   .ablegen textarea:focus{border-color:var(--accent);outline:none}
+  /* Briefing-Formular (Schritt 1) — die acht Leitplanken werden hier gefragt,
+     nicht im Chat. Zweispaltig ab Tablet, damit die neun Felder ohne endloses
+     Scrollen ueberblickbar bleiben. */
+  .formular{display:grid;grid-template-columns:1fr;gap:18px;padding:20px 22px}
+  @media(min-width:820px){.formular{grid-template-columns:1fr 1fr;gap:18px 26px}}
+  .formular .feld{display:flex;flex-direction:column;gap:5px;min-width:0}
+  .formular .feld label{font-size:13.5px;color:var(--ink)}
+  .formular .feld .einheit{color:var(--muted);font-weight:400;font-size:12px}
+  .formular .feld .hilfe{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .formular .feld .fest{font-size:12.5px;color:var(--ink-soft);background:var(--surface-2);
+                        border-left:3px solid var(--accent);padding:7px 10px;border-radius:0 6px 6px 0}
+  .formular textarea,.formular input[type=number]{width:100%;font:inherit;font-size:13.5px;
+        line-height:1.55;background:var(--surface);color:var(--ink);border:1px solid var(--line);
+        border-radius:8px;padding:10px 12px;resize:vertical}
+  .formular input[type=number]{max-width:140px}
+  .formular textarea:focus,.formular input:focus{border-color:var(--accent);outline:none}
+  .formular textarea::placeholder,.formular input::placeholder{color:var(--muted);opacity:.75}
+  .formular .feld.offen textarea,.formular .feld.offen input{border-color:var(--muted);
+        border-style:dashed}
+  .formular-fuss{grid-column:1/-1;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+                 border-top:1px solid var(--line);padding-top:16px}
+  .offen-zahl{font-size:13px;color:var(--muted)}
+  .offen-zahl.gut{color:var(--g)}
+  .hinweis-leise{font-size:12.5px;color:var(--muted)}
+
   .arow{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:13px}
   .zielname{font-size:13px;color:var(--muted)}
   .zielname code{font-size:12.5px;background:var(--surface-2);color:var(--ink-soft)}

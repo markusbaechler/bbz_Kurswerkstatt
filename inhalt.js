@@ -298,6 +298,140 @@
       return inhalt.naechsteDatei(i, schrittId, kursId, dateien, variante);
     },
 
+    /* --- Die Briefing-Felder (Schritt 1) ---
+       Acht generische Angaben, die kein Urteil brauchen, sondern nur gewusst werden
+       muessen. Sie werden in der Kurswerkstatt gefragt, nicht im Chat: ein Prompt,
+       der sie erfragt, erzeugt Rueckfragen ohne Erkenntnis — Markus am 2026-07-29
+       ("das ist mir zu schwabbelig"). Was danach im Chat passiert, ist Formulieren
+       und Widersprueche finden, nicht Abfragen.
+
+       EINE Quelle: Formular, Datei und Prompt-Einspeisung lesen alle hier.
+       Reihenfolge = Reihenfolge im Formular. */
+    BRIEFING_FELDER: [
+      { id: 'zielgruppe', label: 'Zielgruppe', form: 'text', zeilen: 3, pflicht: true,
+        hilfe: 'Rolle, Funktion, Erfahrungsstand — wer sitzt im Kurs?',
+        beispiel: 'Kunden- und Anlageberatende mit praktischer Erfahrung im Anlagebereich; keine Mindestzahl an Berufsjahren.' },
+
+      { id: 'vorkenntnisse', label: 'Vorkenntnisse', form: 'text', zeilen: 3, pflicht: true,
+        hilfe: 'Was wird vorausgesetzt und deshalb NICHT unterrichtet?',
+        beispiel: 'Saubere Risikoprofilierung, Anlagestrategien bestimmen, Basiswissen zu den gaengigen Anlageklassen.' },
+
+      { id: 'kurszweck', label: 'Kurszweck', form: 'text', zeilen: 3, pflicht: true,
+        hilfe: 'Wozu befaehigt der Kurs? Das Leistungsversprechen in ein bis drei Saetzen.',
+        beispiel: 'Funktionsweise und Anwendung von Derivaten verstehen, Chancen und Risiken kundengerecht erlaeutern.' },
+
+      { id: 'praesenz', label: 'Praesenzdauer', form: 'zahl', einheit: 'Tage', schritt: 0.5, pflicht: true,
+        hilfe: 'In Tagen. Zwei Halbtage sind 1 Tag.',
+        beispiel: '1' },
+
+      { id: 'selbstlern', label: 'Umfang Selbstlernphase', form: 'zahl', einheit: 'Stunden', schritt: 0.5, pflicht: true,
+        hilfe: 'In Stunden. Der W-Teil vor der Praesenz.',
+        beispiel: '2' },
+
+      { id: 'scope', label: 'Fachlicher Geltungsbereich', form: 'text', zeilen: 4, pflicht: true,
+        hilfe: 'Was ist drin? Wenn eine Systematik die Grundlage ist, nenne sie mit Jahrgang.',
+        beispiel: 'SSPA Swiss Derivative Map 2025, Kategorien Kapitalschutz, Renditeoptimierung, Partizipation, Hebel.' },
+
+      /* Fester Rahmen, nur Zusaetze werden gefragt — Entscheid Markus 2026-07-29.
+         Der Rahmen gilt fuer jeden Kurs dieses Hauses; ihn jedes Mal zu erfragen
+         erzeugt eine Frage, deren Antwort schon feststeht. */
+      { id: 'reg_zusatz', label: 'Regulatorische Zusaetze', form: 'text', zeilen: 2, pflicht: false,
+        fest: 'Schweizer Markt- und Beratungskontext. FIDLEG, GWG und VSB gelten als Rahmen.',
+        hilfe: 'Nur Zusaetze oder Abweichungen zum festen Rahmen. Leer lassen, wenn nichts dazukommt.',
+        beispiel: 'Rezertifizierung fuer IK, Affluent, CWMA, KMU, CCoB. Keine FIDLEG-Vertiefung als Kursinhalt.' },
+
+      { id: 'ausschluesse', label: 'Bewusste Ausschluesse', form: 'text', zeilen: 3, pflicht: true,
+        hilfe: 'Was ausdruecklich NICHT Teil ist. Begrenzt den Content-Umfang staerker als jede Positivliste.',
+        beispiel: 'Theoretische und rechtliche Deep Dives; vertiefte Optionsbewertung; Anlageprodukte mit zusaetzlichem Kreditrisiko.' },
+
+      { id: 'scope_quelle', label: 'Quelle des Scopes', form: 'text', zeilen: 2, pflicht: true,
+        hilfe: 'Woher stammt der Geltungsbereich? Dokument mit Stand. Ohne Quelle ist er nicht belegt.',
+        beispiel: 'Kursausschreibung (verbindlich); SSPA Swiss Derivative Map 2025 als fachliche Referenz.' },
+    ],
+
+    briefingFeld: function (id) {
+      return inhalt.BRIEFING_FELDER.filter(function (f) { return f.id === id; })[0] || null;
+    },
+
+    /* Welche Pflichtfelder noch leer sind. Leere Liste heisst: das Formular traegt. */
+    briefingFehlend: function (werte) {
+      werte = werte || {};
+      return inhalt.BRIEFING_FELDER
+        .filter(function (f) { return f.pflicht && !String(werte[f.id] || '').trim(); })
+        .map(function (f) { return f.label; });
+    },
+
+    /* --- Datei 01_briefing/{K}_briefing-felder.md ---
+       Menschenlesbar UND maschinenlesbar: Abschnitte "## <id> · <Label>". Die ID
+       traegt die Bedeutung, das Label ist fuer Menschen. Wer das Label aendert,
+       zerstoert damit keine bestehende Datei. */
+    briefingFelderText: function (kursId, werte) {
+      werte = werte || {};
+      var z = [];
+      z.push('# Briefing-Felder ' + kursId);
+      z.push('');
+      z.push('<!-- Erzeugt von der Kurswerkstatt (Schritt 1). In der App bearbeiten, nicht hier. -->');
+      z.push('<!-- Diese Datei traegt keine Version: sie ist der aktuelle Stand der Angaben, -->');
+      z.push('<!-- nicht ein Entwurf. Das Briefing selbst ist versioniert. -->');
+      inhalt.BRIEFING_FELDER.forEach(function (f) {
+        z.push('');
+        z.push('## ' + f.id + ' · ' + f.label + (f.einheit ? ' (' + f.einheit + ')' : ''));
+        if (f.fest) z.push(f.fest);
+        var v = String(werte[f.id] || '').trim();
+        z.push(v || '[OFFEN]');
+      });
+      z.push('');
+      return z.join('\n');
+    },
+
+    briefingFelderLesen: function (text) {
+      var werte = {};
+      if (!text) return werte;
+      var stuecke = String(text).split(/^## ([a-z_]+)[^\n]*$/m);
+      for (var i = 1; i < stuecke.length; i += 2) {
+        var id = stuecke[i].trim();
+        var f = inhalt.briefingFeld(id);
+        if (!f) continue;                       /* unbekanntes Feld still uebergehen */
+        var roh = String(stuecke[i + 1] || '').trim();
+        if (f.fest && roh.indexOf(f.fest) === 0) roh = roh.slice(f.fest.length).trim();
+        werte[id] = roh === '[OFFEN]' ? '' : roh;
+      }
+      return werte;
+    },
+
+    /* --- Der Prompt bekommt die Felder mit ---
+       Das ist der Zweck der ganzen Uebung: was hier steht, fragt der Chat nicht
+       mehr. Leere Felder werden ausdruecklich als offen benannt, damit sie in der
+       Entscheidliste landen statt erfunden zu werden. */
+    briefingPromptKopf: function (kurs, werte) {
+      werte = werte || {};
+      var z = [];
+      z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
+      z.push('Diese Werte sind gesetzt. Frage sie NICHT erneut ab und formuliere sie nicht um,');
+      z.push('ausser du findest einen Widerspruch — den benenne.');
+      z.push('');
+      z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
+      z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
+      var offen = [];
+      inhalt.BRIEFING_FELDER.forEach(function (f) {
+        var v = String(werte[f.id] || '').trim();
+        var fest = f.fest ? f.fest + (v ? ' ' + v : '') : v;
+        if (!v && !f.fest) { offen.push(f.label); return; }
+        z.push(f.label + (f.einheit ? ' (' + f.einheit + ')' : '') + ': ' + fest);
+      });
+      z.push('');
+      if (offen.length) {
+        z.push('NOCH OFFEN — diese gehoeren in die Entscheidliste: ' + offen.join(', ') + '.');
+      } else {
+        z.push('Alle Felder sind ausgefuellt. Deine Entscheidliste enthaelt nur noch, was dir');
+        z.push('beim Lesen als Widerspruch, Luecke oder unbelegte Angabe auffaellt — im Zweifel');
+        z.push('ist sie kurz oder leer. Eine leere Entscheidliste ist ein gutes Ergebnis, kein Mangel.');
+      }
+      z.push('=== ENDE DER ANGABEN ===');
+      z.push('');
+      return z.join('\n');
+    },
+
     /* Bricht zu lange Zeilen an Wortgrenzen um. Vorhandene Zeilenenden bleiben
        stehen; eine Aufzaehlung behaelt ihre Einrueckung, damit die Fortsetzung
        nicht wie ein neuer Punkt aussieht. Ein einzelnes Wort, das laenger ist

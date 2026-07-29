@@ -339,6 +339,60 @@
       '</div>';
   }
 
+  /* ---------- Das Briefing-Formular (Schritt 1) ----------
+     Acht generische Angaben plus die Scope-Quelle. Sie werden hier gefragt, weil
+     sie kein Urteil brauchen — und weil ein Chat, der sie erfragt, Rueckfragen
+     ohne Erkenntnis erzeugt (Markus, 2026-07-29). */
+  function briefingFormular(kurs, ablageDaten) {
+    var I2 = I();
+    var werte = (ablageDaten && ablageDaten.briefingFelder) || {};
+    var gelesen = ablageDaten && ablageDaten.briefingFelderGelesen;
+    var fehlend = I2.briefingFehlend(werte);
+
+    var h = '<h2 class="tun">Die Leitplanken' +
+            '<span class="tun-sub">was der Kurs voraussetzt und was er abdeckt &mdash; ' +
+            'einmal ausgef&uuml;llt, danach fragt der Chat nicht mehr danach</span></h2>';
+
+    h += '<div class="box formular" id="briefing-felder">';
+
+    if (gelesen === false) {
+      h += '<div class="hinweis-leise">Noch nicht nachgesehen &mdash; die Felder werden ' +
+           'geladen, sobald der Ordner erreichbar ist.</div>';
+    }
+
+    I2.BRIEFING_FELDER.forEach(function (f) {
+      var wert = String(werte[f.id] || '');
+      var leer = !wert.trim();
+      h += '<div class="feld' + (f.pflicht && leer ? ' offen' : '') + '">';
+      h += '<label for="bf-' + f.id + '"><b>' + esc(f.label) + '</b>' +
+           (f.einheit ? ' <span class="einheit">in ' + esc(f.einheit) + '</span>' : '') +
+           (f.pflicht ? '' : ' <span class="einheit">optional</span>') + '</label>';
+      h += '<div class="hilfe">' + esc(f.hilfe) + '</div>';
+      if (f.fest) {
+        h += '<div class="fest">Gilt fest: ' + esc(f.fest) + '</div>';
+      }
+      if (f.form === 'zahl') {
+        h += '<input type="number" step="' + f.schritt + '" min="0" id="bf-' + f.id +
+             '" data-feld="' + f.id + '" value="' + esc(wert) + '" placeholder="' +
+             esc(f.beispiel) + '">';
+      } else {
+        h += '<textarea id="bf-' + f.id + '" data-feld="' + f.id + '" rows="' + (f.zeilen || 3) +
+             '" placeholder="' + esc(f.beispiel) + '">' + esc(wert) + '</textarea>';
+      }
+      h += '</div>';
+    });
+
+    h += '<div class="formular-fuss">';
+    h += '<button class="knopf" data-action="briefing-felder-speichern">Angaben sichern</button>';
+    h += fehlend.length
+      ? '<span class="offen-zahl">' + fehlend.length + ' offen: ' + esc(fehlend.join(', ')) + '</span>'
+      : '<span class="offen-zahl gut">&#10003; vollst&auml;ndig &mdash; der Chat muss nichts mehr abfragen</span>';
+    h += '<span class="hinweis-leise" id="briefing-felder-melde" hidden></span>';
+    h += '</div>';
+    h += '</div>';
+    return h;
+  }
+
   /* ---------- Ansicht: ein Schritt ---------- */
   function einSchritt(inh, kurs, schrittId, offenesWerkzeug, ablageDaten) {
     ablageDaten = ablageDaten || {};
@@ -408,6 +462,12 @@
     h += '<ol class="rezept">' + schritte.map(function (x) {
       return '<li><span>' + x + '</span></li>';
     }).join('') + '</ol>';
+
+    /* Die acht generischen Briefing-Angaben werden hier gefragt, nicht im Chat.
+       Sie brauchen kein Urteil, nur Wissen — ein Prompt, der sie erfragt, erzeugt
+       Rueckfragen ohne Erkenntnis. Was ausgefuellt ist, geht mit dem Masterprompt
+       mit; was leer bleibt, landet dort als offener Entscheid. */
+    if (String(schrittId) === '1') h += briefingFormular(kurs, ablageDaten);
 
     /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
        nicht hinter den Leitplanken. Der Masterprompt zuerst. */

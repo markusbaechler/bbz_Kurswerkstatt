@@ -30,7 +30,7 @@
   /* ---------- state ---------- */
   var state = {
     auth:      { account: null },
-    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {} },
+    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {}, briefingFelder: {} },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
                  variante: null, weg: null },
     laden:     false,
@@ -548,6 +548,8 @@
           /* undefined = noch nicht nachgesehen, null = nachgesehen und nicht da */
           ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false,
           briefing: k ? state.data.briefing[k.kursId] : undefined,
+          briefingFelder: k ? (state.data.briefingFelder[k.kursId] || {}) : {},
+          briefingFelderGelesen: k ? state.data.briefingFelder[k.kursId] !== undefined : false,
           /* Der echte Ordnername, sobald nachgesehen wurde — er geht in die
              Projekt-Instruktionen ein und darf dort kein Platzhalter sein. */
           ordnerName: (k && state.data.ordner[k.kursId]) ? state.data.ordner[k.kursId].name : null,
@@ -557,6 +559,9 @@
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         if (k && String(p.schrittId) === '2' && state.data.ordner[k.kursId]) {
           controller.briefingNachladen(k.kursId);
+        }
+        if (k && String(p.schrittId) === '1' && state.data.ordner[k.kursId]) {
+          controller.briefingFelderNachladen(k.kursId);
         }
       } else if (p.kursId) {
         var kk = nav.kurs();
@@ -601,6 +606,68 @@
           }
         })
         .catch(function () {});
+    },
+
+    /* Die Briefing-Felder aus 01_briefing/{K}_briefing-felder.md.
+       Gleiches Muster wie briefingNachladen: undefined = noch nicht nachgesehen,
+       null = nachgesehen und nicht da. Ohne diese Unterscheidung sieht ein leeres
+       Formular wie "nichts erfasst" aus, obwohl nur noch nicht gelesen wurde. */
+    briefingFelderNachladen: function (kursId) {
+      if (state.data.briefingFelder[kursId] !== undefined) return;
+      var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['1'] || {};
+      var ordner = e.ordner || '01_briefing';
+      state.data.briefingFelder[kursId] = null;
+      graph.ordnerInhalt(kursId, ordner)
+        .then(function (dateien) {
+          var name = kursId + '_briefing-felder.md';
+          var da = (dateien || []).some(function (d) { return d.name === name; });
+          if (!da) return null;
+          return graph.dateiLesen(kursId, ordner, name);
+        })
+        .then(function (text) {
+          state.data.briefingFelder[kursId] = text ? root.inhalt.briefingFelderLesen(text) : {};
+          if (state.position.kursId === kursId && String(state.position.schrittId) === '1') {
+            controller.render();
+          }
+        })
+        .catch(function () {});
+    },
+
+    /* Was gerade in den Feldern steht — aus dem Formular, nicht aus dem Zustand.
+       Der Zustand hinkt dem Tippen hinterher; beim Kopieren und beim Sichern zaehlt,
+       was die Person sieht. */
+    briefingFelderAusFormular: function () {
+      var werte = {};
+      if (typeof document === 'undefined') return werte;
+      Array.prototype.forEach.call(document.querySelectorAll('[data-feld]'), function (el) {
+        werte[el.dataset.feld] = String(el.value || '').trim();
+      });
+      return werte;
+    },
+
+    briefingFelderSpeichern: function (knopf) {
+      var kursId = state.position.kursId;
+      if (!kursId) return;
+      var werte = controller.briefingFelderAusFormular();
+      var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['1'] || {};
+      var ordner = e.ordner || '01_briefing';
+      var text = root.inhalt.briefingFelderText(kursId, werte);
+      var melde = typeof document !== 'undefined' && document.getElementById('briefing-felder-melde');
+      var alt = knopf && knopf.textContent;
+      if (knopf) { knopf.disabled = true; knopf.textContent = 'sichert …'; }
+
+      graph.ablegen(kursId, ordner, kursId + '_briefing-felder.md', text)
+        .then(function () {
+          state.data.briefingFelder[kursId] = werte;
+          state.data.dateien[kursId + '/' + ordner] = undefined;   /* Ordner neu lesen lassen */
+          if (knopf) { knopf.disabled = false; knopf.textContent = alt; }
+          state.hinweis = 'Angaben gesichert in ' + ordner + '/' + kursId + '_briefing-felder.md';
+          controller.render();
+        })
+        .catch(function (err) {
+          if (knopf) { knopf.disabled = false; knopf.textContent = alt; }
+          if (melde) { melde.hidden = false; melde.textContent = 'Nicht gesichert: ' + (err && err.message || err); }
+        });
     },
 
     /* Ordnerinhalt nachladen und danach neu zeichnen — der erste Aufbau wartet nicht darauf. */
@@ -839,6 +906,7 @@
       if (a === 'variante')  { controller.zu({ variante: t.dataset.variante }); return; }
       if (a === 'weg')       { controller.zu({ weg: t.dataset.weg }); return; }
       if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
+      if (a === 'briefing-felder-speichern') { controller.briefingFelderSpeichern(t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {
@@ -855,7 +923,16 @@
         if (!w) return;
         var karte2 = t.closest('.wtool');
         var aktiv = karte2 && karte2.querySelector('.prompt.on');
-        kopieren(aktiv ? aktiv.textContent : (w.claude || w.chatgpt || ''), t);
+        var text2 = aktiv ? aktiv.textContent : (w.claude || w.chatgpt || '');
+        /* In Schritt 1 gehen die ausgefuellten Leitplanken mit. Genau dafuer ist das
+           Formular da: was hier mitkommt, muss der Chat nicht mehr erfragen. Gelesen
+           wird aus dem Formular, nicht aus dem Zustand — sonst fehlt, was gerade
+           getippt und noch nicht gesichert wurde. */
+        if (String(state.position.schrittId) === '1' && w.type === 'prompt') {
+          var kurs2 = nav.kurs();
+          text2 = root.inhalt.briefingPromptKopf(kurs2, controller.briefingFelderAusFormular()) + text2;
+        }
+        kopieren(text2, t);
         return;
       }
       if (a === 'kopieren-instruktionen') {
