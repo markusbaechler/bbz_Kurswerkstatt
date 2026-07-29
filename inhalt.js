@@ -183,12 +183,18 @@
       var lief = inhalt.lieferobjektVon(i, schrittId, variante);
       if (!lief) return null;
       var v = inhalt.naechsteVersion(dateien, kursId, lief);
+      /* Wo die zuletzt abgelegte Fassung gilt, heisst die neue direkt _final —
+         und die bisherige _final wird vorher zurueckgestuft. */
+      var letzteGilt = inhalt.letzteGiltAlsFinal(i, schrittId);
       var ziel = {
         ordner: e.ordner,
-        datei: kursId + '_' + lief + '_v' + v + '.' + e.ext,
-        version: v,
+        datei: letzteGilt
+          ? inhalt.finalName(kursId, lief, e.ext)
+          : kursId + '_' + lief + '_v' + v + '.' + e.ext,
+        version: letzteGilt ? null : v,
         format: e.format
       };
+      if (letzteGilt) ziel.zurueckstufen = inhalt.finalZurueckstufen(dateien, kursId, lief);
       /* Nur setzen, wo es eine gibt — sonst aendert sich die Form fuer alle
          Schritte ohne Varianten. */
       if (variante) ziel.variante = variante;
@@ -216,9 +222,40 @@
     /* Ist dieser Schritt fuer diesen Kurs abgeschlossen? Beruecksichtigt die
        Variante, wo der Kontrakt welche fuehrt. */
     abgeschlossen: function (i, schrittId, kursId, dateien, variante) {
+      /* Schritte ohne Gate kennen keinen Abschluss: dort gilt immer die zuletzt
+         abgelegte Fassung. Die Sperre wuerde die Arbeit blockieren, statt eine
+         Freigabe zu schuetzen, die es nicht gibt. */
+      if (inhalt.letzteGiltAlsFinal(i, schrittId)) return null;
       var lief = inhalt.lieferobjektVon(i, schrittId, variante);
       if (!lief) return null;
       return inhalt.finalVorhanden(dateien, kursId, lief);
+    },
+
+    /* --- Schritte, in denen die zuletzt abgelegte Fassung die geltende ist ---
+       Das Briefing hat kein Gate. Es wird im Lauf des Kurses nachgezogen, und was
+       zuletzt hochgeladen wurde, gilt — es traegt deshalb IMMER _final. Damit die
+       Aufloesungsregel "final vor hoechster Nummer" nicht zwei geltende Fassungen
+       kennt, wandert die bisherige _final vorher auf ihre Versionsnummer zurueck.
+       Markus am 2026-07-29: "Da das Briefing kein Gate ist, ist immer die letzte
+       Upload-Version die _final." */
+    letzteGiltAlsFinal: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      return !!(e && e.letzteGiltAlsFinal);
+    },
+
+    /* Was vor dem Ablegen umbenannt werden muss, damit die neue Fassung _final
+       heissen kann. Gibt {von, nach} oder null. */
+    finalZurueckstufen: function (dateien, kursId, lieferobjekt) {
+      var alt = inhalt.finalVorhanden(dateien, kursId, lieferobjekt);
+      if (!alt) return null;
+      var endung = (/\.([a-z0-9]+)$/i.exec(alt) || [])[1] || 'md';
+      var n = inhalt.naechsteVersion(dateien, kursId, lieferobjekt);
+      return { von: alt, nach: kursId + '_' + lieferobjekt + '_v' + n + '.' + endung };
+    },
+
+    /* Der Zielname beim Ablegen: in solchen Schritten direkt _final. */
+    finalName: function (kursId, lieferobjekt, endung) {
+      return kursId + '_' + lieferobjekt + '_final.' + (endung || 'md');
     },
 
     /* Welche Fassung gilt? Maschinenregel aus dem Kontrakt: gibt es _final, gilt sie;

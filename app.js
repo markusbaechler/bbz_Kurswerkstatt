@@ -281,6 +281,32 @@
 
     /* Ergebnis ablegen — der Weg Chat. Ordner und Name kommen aus dem
        Ablage-Kontrakt, nicht von der Person. */
+    /* Eine Datei im selben Ordner umbenennen. Gebraucht, um eine bisherige
+       _final auf ihre Versionsnummer zurueckzustufen, bevor die neue Fassung
+       _final heisst — nur so gibt es nie zwei geltende Fassungen nebeneinander. */
+    umbenennen: function (kursId, ordner, alt, neu) {
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
+        var did = r[0], ord = r[1];
+        if (!ord) throw new Error('Kein Kursordner für ' + kursId + '.');
+        return auth.token().then(function (t) {
+          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                '/items/' + ord.id + ':/' + encodeURI(ordner + '/' + alt), {
+            method: 'PATCH',
+            headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: neu })
+          });
+        });
+      }).then(function (r) {
+        if (!r.ok) {
+          return r.text().then(function (b) {
+            throw new Error('Umbenennen von ' + alt + ' nach ' + neu + ' fehlgeschlagen (' +
+                            r.status + '): ' + b.slice(0, 200));
+          });
+        }
+        return neu;
+      });
+    },
+
     ablegen: function (kursId, ordner, datei, text) {
       return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
         var did = r[0], ord = r[1];
@@ -755,7 +781,15 @@
           }
           var ziel = root.inhalt.naechsteDatei(inh, n, k.kursId, dateien, gewaehlt);
           if (!ziel) throw new Error('Für diesen Schritt ist kein versioniertes Ablegen vorgesehen.');
-          return graph.ablegen(k.kursId, ziel.ordner, ziel.datei, text).then(function () { return ziel; });
+          /* Erst zurueckstufen, dann schreiben. In dieser Reihenfolge gibt es nie
+             zwei _final; in der umgekehrten waere die neue Fassung fuer einen
+             Moment von der alten verdeckt. */
+          var vorher = ziel.zurueckstufen
+            ? graph.umbenennen(k.kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
+            : Promise.resolve(null);
+          return vorher
+            .then(function () { return graph.ablegen(k.kursId, ziel.ordner, ziel.datei, text); })
+            .then(function () { return ziel; });
         })
         .then(function (ziel) {
           var neu = graph.standNachAblage(k, +n);
@@ -764,7 +798,11 @@
         })
         .then(function (ziel) {
           return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
-            state.hinweis = 'Abgelegt als ' + ziel.datei;
+            state.hinweis = 'Abgelegt als ' + ziel.datei +
+              (ziel.zurueckstufen ? ' · bisherige Fassung ist jetzt ' + ziel.zurueckstufen.nach : '');
+            /* Das Briefing steckt in den Projekt-Instruktionen — nach einer neuen
+               Fassung muss es dort erneut hinein. */
+            if (String(n) === '1') state.data.briefing[k.kursId] = undefined;
             controller.render();
           });
         })
@@ -848,9 +886,15 @@
               ? 'Wähle zuerst die Variante — der Dateiname hängt davon ab.'
               : 'Für diesen Schritt ist kein Hochladen vorgesehen.');
           }
-          return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, datei, function (anteil) {
-            knopf.textContent = anteil >= 1 ? 'wird abgeschlossen …'
-                                            : 'lädt … ' + Math.round(anteil * 100) + '%';
+          /* Erst zurueckstufen, dann hochladen — sonst gaebe es kurz zwei _final. */
+          var vorher = ziel.zurueckstufen
+            ? graph.umbenennen(k.kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
+            : Promise.resolve(null);
+          return vorher.then(function () {
+            return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, datei, function (anteil) {
+              knopf.textContent = anteil >= 1 ? 'wird abgeschlossen …'
+                                              : 'lädt … ' + Math.round(anteil * 100) + '%';
+            });
           }).then(function () { return ziel; });
         })
         .then(function (ziel) {

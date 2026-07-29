@@ -37,7 +37,8 @@
         zusatzordner: ['00_input']
       },
       schritte: {
-        '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
+        /* Kein Gate: die zuletzt abgelegte Fassung gilt und heisst _final. */
+        '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null, letzteGiltAlsFinal: true },
         '2': { ordner: '02_lernziele', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen' },
         /* Schritt 3 und 4 spiegeln den echten Kontrakt einschliesslich qualitaet —
            daraus leitet die Ansicht den Bauauftrag fuer den Weg Claude-Code ab. */

@@ -567,6 +567,12 @@
                 : '<span class="dim">Ordner wird gelesen &hellip;</span>') +
         '</div>' +
         '<p class="klemmt" id="ablegefehler" hidden></p>' +
+        (ziel && ziel.zurueckstufen
+          ? '<p class="dim">Dieser Schritt hat kein Gate: die neue Fassung gilt und heisst ' +
+            '<code>_final</code>. Die bisherige <code>' + esc(ziel.zurueckstufen.von) +
+            '</code> wird dabei zu <code>' + esc(ziel.zurueckstufen.nach) + '</code> &mdash; ' +
+            'sie bleibt erhalten, gilt aber nicht mehr.</p>'
+          : '') +
         '<p class="dim">Die Kurswerkstatt vergibt Ordner und Dateinamen nach dem ' +
         'Ablage-Kontrakt. Du tippst keinen Pfad.</p>' +
       '</div>';
