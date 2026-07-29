@@ -226,10 +226,13 @@ einem Zug — eine Positivliste (`dossier.positivliste`), die genau die Dateien 
 Auftrag lesen darf. Der Dateiname wird wie beim Weg Hochladen von der App bereinigt
 (`dossier.quellenDateiname`), nie vom Menschen getippt.
 
-Projekt-Instruktionen werden **rein aus dem Dossier** generiert. Der Briefing-Prompt-Kopf nimmt
-den Dossier-Scope als Basis und lässt **aktuell sichtbare, noch ungesicherte Formularwerte**
-darüberschreiben — wer tippt und sofort kopiert, bekommt, was im Feld steht, nicht den zuletzt
-gesicherten Stand. Beides ersetzt das Kopieren aus Formularfeldern — Wissenstransfer ohne
+Projekt-Instruktionen bleiben aus Ablage-Kontrakt/`schritte.json` (Struktur), `KWKurse`
+(Kurs-ID/Titel/Kompetenzfeld) und dem eingelesenen Kursbriefing aus `01_briefing/` aufgebaut wie
+bisher — **neu kommt nur der Teil „Fachquellen des Kurses" aus dem Dossier** (`quellen`,
+`content_modus`). Der Briefing-Prompt-Kopf nimmt den Dossier-Scope als Basis und lässt **aktuell
+sichtbare, noch ungesicherte Formularwerte** darüberschreiben — wer tippt und sofort kopiert,
+bekommt, was im Feld steht, nicht den zuletzt gesicherten Stand. Beides ersetzt das Kopieren aus
+Formularfeldern für den Scope-Teil — Wissenstransfer ohne
 Handkopie. Die frühere Ablage `{K}_briefing-felder.md` wird **nur noch einmalig importiert**,
 wenn noch kein Dossier existiert (`dossierNachladen`); geschrieben wird sie nicht mehr.
 
