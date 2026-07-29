@@ -212,11 +212,13 @@ neuen Aufruf von `graph.ablegen`/`graph.dateiLesen`/`graph.umbenennen`.
 
 **Status ist ein Datum, nie ein Satz im Dokument.** Jedes Lieferobjekt trägt im Dossier
 `entwurf → validiert → final` (`dossier.statusVon`/`statusSetzen`). Der Banner dazu wird
-**gerendert, nie getippt** (`dossier.banner`) — steigt der Status, verschwindet der Hinweis
-überall zugleich, statt in einzelnen Dokumenten von Hand nachgezogen zu werden. Das Ablegen
-des Briefings rückt `status.briefing` selbst auf `final`, ohne Gate-Klick — Schritt 1 hat kein
-Gate (s. „Kein `_final` auf Nicht-Gate-Schritten" oben); massgebend ist allein die höchste bzw.
-`_final`-Fassung im Ordner, das Dossier trägt den Stand nur nach.
+**gerendert, nie getippt** (`dossier.banner`) — das Prinzip der Meta-Architektur: steigt der
+Status, soll der Hinweis überall zugleich verschwinden, statt in einzelnen Dokumenten von Hand
+nachgezogen zu werden. **Ist-Stand Etappe 1:** `dossier.banner()` wird an genau einer Stelle
+gerendert, der Status-Zeile der Schritt-1-Ansicht; weitere Ansichten ziehen mit späteren Etappen
+nach. Das Ablegen des Briefings rückt `status.briefing` selbst auf `final`, ohne Gate-Klick —
+Schritt 1 hat kein Gate (s. „Kein `_final` auf Nicht-Gate-Schritten" oben); massgebend ist allein
+die höchste bzw. `_final`-Fassung im Ordner, das Dossier trägt den Stand nur nach.
 
 **Fachquellen entstehen als ein Vorgang, nie als zwei.** Die Erfassung legt die Datei nach
 `03_content/quellen/` **und** schreibt den Dossier-Eintrag (`id`, `titel`, `stand`, `datei`) in
@@ -224,10 +226,12 @@ einem Zug — eine Positivliste (`dossier.positivliste`), die genau die Dateien 
 Auftrag lesen darf. Der Dateiname wird wie beim Weg Hochladen von der App bereinigt
 (`dossier.quellenDateiname`), nie vom Menschen getippt.
 
-Projekt-Instruktionen und der Briefing-Prompt-Kopf werden aus dem Dossier generiert, nicht mehr
-aus Formularfeldern kopiert — Wissenstransfer ohne Handkopie. Die frühere Ablage
-`{K}_briefing-felder.md` wird **nur noch einmalig importiert**, wenn noch kein Dossier existiert
-(`dossierNachladen`); geschrieben wird sie nicht mehr.
+Projekt-Instruktionen werden **rein aus dem Dossier** generiert. Der Briefing-Prompt-Kopf nimmt
+den Dossier-Scope als Basis und lässt **aktuell sichtbare, noch ungesicherte Formularwerte**
+darüberschreiben — wer tippt und sofort kopiert, bekommt, was im Feld steht, nicht den zuletzt
+gesicherten Stand. Beides ersetzt das Kopieren aus Formularfeldern — Wissenstransfer ohne
+Handkopie. Die frühere Ablage `{K}_briefing-felder.md` wird **nur noch einmalig importiert**,
+wenn noch kein Dossier existiert (`dossierNachladen`); geschrieben wird sie nicht mehr.
 
 **`dossierSpeichern` bricht ab, solange das Dossier nicht geladen ist** — `state.data.dossier[k]`
 ist `undefined` (nie geladen) oder `null` (lädt gerade) nur ein Zwischenzustand; ein Sichern in
