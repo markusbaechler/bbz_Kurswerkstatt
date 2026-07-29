@@ -3,6 +3,7 @@ const assert = require('node:assert');
 
 const { graph } = require('../app.js');
 const { inhalt } = require('../inhalt.js');
+const { dossier } = require('../dossier.js');
 const { INHALT, KURSE } = require('./fixture.js');
 
 const DBS = KURSE[0];   // Schritt 4, inArbeit
@@ -216,4 +217,76 @@ test('der Controller legt nichts neben eine freigegebene Fassung', async () => {
   const l = await ablegenLauf('claude', [{ name: 'AFL-001_greenfield-claude_final.html' }]);
   assert.strictEqual(l.abgelegt.datei, null, 'trotz _final abgelegt');
   assert.ok(/Abgeschlossen/.test(l.meldung), 'kein Sperrhinweis: ' + l.meldung);
+});
+
+/* ---------- Schritt 1: Ablegen des Briefings rueckt den Dossier-Status ----------
+   Fix-Runde 1 (Review-Finding): der Status-Block im Erfolgszweig von
+   controller.ablegen hatte keine Testdeckung — probehalber entfernt, blieben
+   alle 312 Tests gruen. Diese beiden Faelle schliessen die Luecke. */
+
+async function ablegenLauf1(dossierVorher) {
+  const rufe = [];
+  const meldung = { textContent: '', hidden: true };
+
+  state.data.inhalt = INHALT;
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
+                        schritt: 1, status: 'offen' }];
+  state.data.dateien = {};
+  state.data.briefing = { 'AFL-001': { irgendwas: true } };
+  state.data.dossier = { 'AFL-001': dossierVorher };
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '1',
+                     werkzeugId: null, werk: null, variante: null, weg: null };
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'ergebnis') return { value: 'Briefing-Text aus dem Chat', focus: function () {} };
+      if (id === 'ablegefehler') return meldung;
+      return null;
+    }
+  };
+
+  graph.ordnerInhalt = function () { return Promise.resolve([]); };
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    rufe.push({ kursId: kursId, ordner: ordner, datei: datei, text: text });
+    return Promise.resolve();
+  };
+  graph.standSetzenRoh = function () { return Promise.resolve(); };
+  controller.render = function () {};
+
+  controller.ablegen('1', { disabled: false, textContent: 'Ablegen' });
+  await new Promise(function (r) { setTimeout(r, 20); });
+  return { rufe: rufe, meldung: meldung.textContent, briefing: state.data.briefing['AFL-001'],
+           dossier: state.data.dossier['AFL-001'] };
+}
+
+test('bei geladenem Dossier rueckt das Ablegen des Briefings den Status auf final und speichert nach', async () => {
+  const vorher = dossier.neu('AFL-001');
+  const l = await ablegenLauf1(vorher);
+
+  assert.strictEqual(l.meldung, '', 'Ablegen ist gescheitert: ' + l.meldung);
+  assert.strictEqual(l.briefing, undefined, 'die Projekt-Instruktionen wurden nicht zum Neulesen freigegeben');
+  assert.ok(l.dossier, 'kein Dossier im State');
+  assert.strictEqual(l.dossier.status.briefing, 'final', 'Status wurde nicht auf final gesetzt');
+
+  assert.strictEqual(l.rufe.length, 2, 'erwartet: Briefing- und Dossier-Ablage');
+  const briefingRuf = l.rufe[0];
+  assert.strictEqual(briefingRuf.datei, 'AFL-001_briefing_final.md');
+
+  const dossierRuf = l.rufe[1];
+  assert.strictEqual(dossierRuf.ordner, '', 'das Dossier liegt in der Kursordner-Wurzel');
+  assert.strictEqual(dossierRuf.datei, dossier.DATEI('AFL-001'));
+  assert.strictEqual(JSON.parse(dossierRuf.text).status.briefing, 'final',
+    'der gesicherte Dossier-Text traegt den neuen Status nicht');
+});
+
+[undefined, null].forEach(function (zustand) {
+  test('ohne geladenes Dossier (' + zustand + ') gibt es keinen Crash und keinen Dossier-Schreibaufruf', async () => {
+    const l = await ablegenLauf1(zustand);
+
+    assert.strictEqual(l.meldung, '', 'Ablegen ist gescheitert: ' + l.meldung);
+    assert.strictEqual(l.briefing, undefined);
+    assert.strictEqual(l.dossier, zustand, 'der Ladezustand des Dossiers wurde veraendert');
+    assert.strictEqual(l.rufe.length, 1, 'es haette nur der Briefing-Aufruf erfolgen duerfen');
+    assert.strictEqual(l.rufe[0].datei, 'AFL-001_briefing_final.md');
+  });
 });
