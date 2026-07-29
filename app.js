@@ -198,6 +198,12 @@
       return { Schritt: n + 1, Status: 'offen' };
     },
 
+    /* Pfad relativ zum Kursordner. Leerer Ordner heisst: die Datei liegt im
+       Kursordner selbst — das Dossier gehoert zu keinem Schritt. */
+    pfadImKursordner: function (ordner, datei) {
+      return ordner ? ordner + '/' + datei : datei;
+    },
+
     /* --- Netz --- */
 
     /* Laufwerk der Bibliothek Kursproduktion aufloesen. */
@@ -290,7 +296,7 @@
         if (!ord) throw new Error('Kein Kursordner für ' + kursId + '.');
         return auth.token().then(function (t) {
           return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
-                '/items/' + ord.id + ':/' + encodeURI(ordner + '/' + alt), {
+                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, alt)), {
             method: 'PATCH',
             headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: neu })
@@ -317,7 +323,7 @@
         }
         return auth.token().then(function (t) {
           return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
-                '/items/' + ord.id + ':/' + encodeURI(ordner + '/' + datei) + ':/content', {
+                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content', {
             method: 'PUT',
             headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'text/plain; charset=utf-8' },
             body: new Blob([text], { type: 'text/plain;charset=utf-8' })
@@ -443,7 +449,7 @@
           var did = r[0], ord = r[1], t = r[2];
           if (!ord) return null;
           return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
-                '/items/' + ord.id + ':/' + encodeURI(ordner + '/' + datei) + ':/content',
+                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content',
                 { headers: { Authorization: 'Bearer ' + t } })
             .then(function (x) { return x.ok ? x.text() : null; });
         })

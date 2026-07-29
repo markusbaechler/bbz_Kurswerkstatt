@@ -104,3 +104,8 @@ test('graph.siteUrl baut den Graph-Pfad aus der CONFIG', () => {
   assert.strictEqual(graph.siteUrl(),
     'https://graph.microsoft.com/v1.0/sites/bbzsg.sharepoint.com:/sites/ffentlicheAngebote');
 });
+
+test('pfadImKursordner(): leerer Ordner heisst Kursordner-Wurzel, ohne fuehrenden Schraegstrich', () => {
+  assert.strictEqual(graph.pfadImKursordner('01_briefing', 'x.md'), '01_briefing/x.md');
+  assert.strictEqual(graph.pfadImKursordner('', 'VL-001_dossier.json'), 'VL-001_dossier.json');
+});
