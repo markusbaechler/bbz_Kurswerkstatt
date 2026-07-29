@@ -703,10 +703,17 @@
     dossierSpeichern: function (knopf) {
       var kursId = state.position.kursId;
       if (!kursId) return;
-      var werte = controller.briefingFelderAusFormular();
-      var alt = state.data.dossier[kursId] || null;
-      var d = root.dossier.ausWerten(kursId, werte, alt, new Date().toISOString());
       var melde = typeof document !== 'undefined' && document.getElementById('briefing-felder-melde');
+      /* Ohne geladenes Dossier faellt ausWerten auf dossier.neu() zurueck — ein
+         bereits abgelegtes Dossier wuerde seine quellen/status/offen/entschieden
+         verlieren. undefined = noch nicht angefordert, null = laedt noch. */
+      if (state.data.dossier[kursId] === undefined || state.data.dossier[kursId] === null) {
+        if (melde) { melde.hidden = false; melde.textContent = 'Dossier wird noch geladen — gleich nochmals versuchen.'; }
+        return;
+      }
+      var werte = controller.briefingFelderAusFormular();
+      var alt = state.data.dossier[kursId];
+      var d = root.dossier.ausWerten(kursId, werte, alt, new Date().toISOString());
       if (knopf) knopf.disabled = true;
       if (melde) { melde.hidden = false; melde.textContent = 'Wird gesichert …'; }
 
