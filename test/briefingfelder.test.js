@@ -97,16 +97,22 @@ test('der Promptkopf verbietet das erneute Abfragen', () => {
   assert.match(k, /NICHT erneut ab/);
 });
 
-test('leere Felder werden als offen benannt, nicht verschwiegen', () => {
+test('leere Felder werden benannt und der Auftrag bleibt: fragen, dann schreiben', () => {
   const k = inhalt.briefingPromptKopf(DBS, { zielgruppe: 'da' });
-  assert.match(k, /NOCH OFFEN/);
+  assert.match(k, /NICHT ANGEGEBEN/);
   assert.ok(k.indexOf('Kurszweck') >= 0, 'offenes Feld nicht benannt');
+  assert.match(k, /höchstens drei Zeilen/, 'keine Obergrenze fuer die Rueckfragen');
+  assert.match(k, /auf die Antwort das Briefing/, 'kein Auftrag zu schreiben');
 });
 
-test('bei vollstaendigen Angaben wird eine leere Entscheidliste ausdruecklich erlaubt', () => {
+/* Der Kern der zweiten Fassung (29.07.): sind die Felder voll, wird geschrieben —
+   nicht gefragt. Die erste Fassung erzeugte hier fuenf Fragerunden. */
+test('bei vollstaendigen Angaben lautet der Auftrag: schreiben, nicht fragen', () => {
   const k = inhalt.briefingPromptKopf(DBS, VOLL);
-  assert.ok(k.indexOf('NOCH OFFEN') < 0, 'meldet offene Felder, obwohl keine offen sind');
-  assert.match(k, /leere Entscheidliste ist ein gutes Ergebnis/);
+  assert.ok(k.indexOf('NICHT ANGEGEBEN') < 0, 'meldet offene Felder, obwohl keine offen sind');
+  assert.match(k, /Schreibe jetzt das Briefing/);
+  assert.match(k, /Keine Rückfrage/);
+  assert.ok(k.indexOf('Entscheidliste') < 0, 'laedt weiterhin zum Fragensammeln ein');
 });
 
 /* ---------- Ansicht ---------- */

@@ -401,14 +401,16 @@
 
     /* --- Der Prompt bekommt die Felder mit ---
        Das ist der Zweck der ganzen Uebung: was hier steht, fragt der Chat nicht
-       mehr. Leere Felder werden ausdruecklich als offen benannt, damit sie in der
-       Entscheidliste landen statt erfunden zu werden. */
+       mehr. Leere Felder werden ausdruecklich benannt, damit sie nicht erfunden
+       werden — und der Schlusssatz sagt, was zu tun ist. Am 29.07. lieferte die
+       erste Fassung fuenf Fragerunden, weil er stattdessen zum Suchen einlud
+       ("deine Entscheidliste enthaelt, was dir auffaellt"). */
     briefingPromptKopf: function (kurs, werte) {
       werte = werte || {};
       var z = [];
       z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
-      z.push('Diese Werte sind gesetzt. Frage sie NICHT erneut ab und formuliere sie nicht um,');
-      z.push('ausser du findest einen Widerspruch — den benenne.');
+      z.push('Diese Werte sind gesetzt. Übernimm sie. Frage sie NICHT erneut ab, rechne sie');
+      z.push('nicht um und bewerte sie nicht.');
       z.push('');
       z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
       z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
@@ -421,11 +423,11 @@
       });
       z.push('');
       if (offen.length) {
-        z.push('NOCH OFFEN — diese gehoeren in die Entscheidliste: ' + offen.join(', ') + '.');
+        z.push('NICHT ANGEGEBEN: ' + offen.join(', ') + '.');
+        z.push('Frage danach — höchstens drei Zeilen — und schreibe auf die Antwort das Briefing.');
       } else {
-        z.push('Alle Felder sind ausgefuellt. Deine Entscheidliste enthaelt nur noch, was dir');
-        z.push('beim Lesen als Widerspruch, Luecke oder unbelegte Angabe auffaellt — im Zweifel');
-        z.push('ist sie kurz oder leer. Eine leere Entscheidliste ist ein gutes Ergebnis, kein Mangel.');
+        z.push('ALLE FELDER SIND AUSGEFÜLLT. Schreibe jetzt das Briefing. Keine Rückfrage,');
+        z.push('keine Feldübersicht, keine Liste. Nur die Datei.');
       }
       z.push('=== ENDE DER ANGABEN ===');
       z.push('');
