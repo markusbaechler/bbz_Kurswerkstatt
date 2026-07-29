@@ -365,7 +365,7 @@
       var leer = !wert.trim();
       h += '<div class="feld' + (f.pflicht && leer ? ' offen' : '') + '">';
       h += '<label for="bf-' + f.id + '"><b>' + esc(f.label) + '</b>' +
-           (f.einheit ? ' <span class="einheit">in ' + esc(f.einheit) + '</span>' : '') +
+           (f.einheit ? ' <span class="einheit">(' + esc(f.einheit) + ')</span>' : '') +
            (f.pflicht ? '' : ' <span class="einheit">optional</span>') + '</label>';
       h += '<div class="hilfe">' + esc(f.hilfe) + '</div>';
       if (f.fest) {

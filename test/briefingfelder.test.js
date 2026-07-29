@@ -129,7 +129,7 @@ test('gesicherte Werte stehen wieder in den Feldern', () => {
 test('Praesenz und Selbstlern sind Zahlenfelder mit ihrer Einheit', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
   assert.match(h, /type="number"[^>]*data-feld="praesenz"/);
-  assert.ok(h.indexOf('in Tage') >= 0 && h.indexOf('in Stunden') >= 0, 'Einheit fehlt');
+  assert.ok(h.indexOf('(Tage)') >= 0 && h.indexOf('(Stunden)') >= 0, 'Einheit fehlt');
 });
 
 test('das Formular meldet, wie viel noch offen ist', () => {
