@@ -583,7 +583,13 @@
           weg: p.weg
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
-        if (k && String(p.schrittId) === '2' && state.data.ordner[k.kursId]) {
+        /* Auf Schritt 1 stehen die Projekt-Instruktionen, und die tragen das
+           Briefing. Es wurde aber nur auf Schritt 2 geladen — deshalb stand dort
+           IMMER "[FEHLT]", auch wenn 01_briefing/ eine freigegebene Fassung hielt.
+           Genau das hat am 2026-07-29 bei VL-001 Schritt 2 blockiert: die
+           Instruktionen wurden mit der Fehlt-Marke ins KI-Projekt kopiert. */
+        if (k && (String(p.schrittId) === '1' || String(p.schrittId) === '2') &&
+            state.data.ordner[k.kursId]) {
           controller.briefingNachladen(k.kursId);
         }
         if (k && String(p.schrittId) === '1' && state.data.ordner[k.kursId]) {
@@ -627,7 +633,8 @@
         })
         .then(function (text) {
           state.data.briefing[kursId] = text;
-          if (state.position.kursId === kursId && String(state.position.schrittId) === '2') {
+          var p = String(state.position.schrittId);
+          if (state.position.kursId === kursId && (p === '1' || p === '2')) {
             controller.render();
           }
         })

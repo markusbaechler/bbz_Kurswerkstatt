@@ -98,3 +98,34 @@ test('Schritt 1 zeigt keine Abgeschlossen-Sperre mehr', () => {
   assert.ok(h.indexOf('Final ist final') < 0, 'die Sperre blockiert Schritt 1 wieder');
   assert.ok(/id="ergebnis"/.test(h), 'kein Ablegefeld trotz fehlender Sperre');
 });
+
+/* ---------- Das Briefing muss auf Schritt 1 geladen sein ----------
+   Dort stehen die Projekt-Instruktionen, und die tragen es. Geladen wurde es
+   aber nur auf Schritt 2 — also stand in den Instruktionen IMMER "[FEHLT]".
+   Das hat am 2026-07-29 bei VL-001 Schritt 2 blockiert. */
+
+test('die Instruktionen auf Schritt 1 tragen das Briefing, sobald es da ist', () => {
+  const h = ansichten.einSchritt(INHALT, VL, 1, null, {
+    ordnerFehlt: false, dateien: [], briefing: '# Kursbriefing VL-001\n\nZielgruppe: Beratende'
+  });
+  assert.ok(h.indexOf('[FEHLT') < 0, 'Fehlt-Marke trotz vorhandenem Briefing');
+  assert.ok(h.indexOf('Zielgruppe: Beratende') >= 0, 'das Briefing steht nicht drin');
+});
+
+test('ohne Briefing sagt Schritt 1 es — und sperrt Schritt 2 nicht still', () => {
+  const h = ansichten.einSchritt(INHALT, VL, 1, null,
+    { ordnerFehlt: false, dateien: [], briefing: null });
+  assert.ok(h.indexOf('Kein freigegebenes Briefing') >= 0,
+    'kein sichtbarer Hinweis, dass die Instruktionen unvollstaendig sind');
+});
+
+test('der Ladevorgang wird auf Schritt 1 UND 2 angestossen', () => {
+  /* Geprueft wird die Bedingung selbst — sie ist die Ursache des Fehlers. */
+  const quelle = require('fs').readFileSync(__dirname + '/../app.js', 'utf8');
+  const stelle = quelle.slice(quelle.indexOf('controller.briefingNachladen(k.kursId)') - 400,
+                             quelle.indexOf('controller.briefingNachladen(k.kursId)'));
+  assert.ok(/p\.schrittId\) === '1'/.test(stelle),
+    'Schritt 1 stoesst das Nachladen nicht an — die Instruktionen bleiben leer');
+  assert.ok(/p\.schrittId\) === '2'/.test(stelle),
+    'Schritt 2 stoesst das Nachladen nicht mehr an');
+});
