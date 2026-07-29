@@ -73,6 +73,24 @@
       if (!Array.isArray(d.offen)) p.push('offen ist keine Liste');
       if (!Array.isArray(d.entschieden)) p.push('entschieden ist keine Liste');
       return p;
+    },
+
+    /* Status ist ein Datum, nie ein Satz im Dokument (Spec §3). */
+    statusVon: function (d, lieferobjekt) {
+      return (d && d.status && d.status[lieferobjekt]) || 'entwurf';
+    },
+
+    statusSetzen: function (d, lieferobjekt, status) {
+      if (dossier.STATUS.indexOf(status) < 0) throw new Error('unbekannter Status: ' + status);
+      d.status[lieferobjekt] = status;
+      return d;
+    },
+
+    /* Der Banner fuer generierte Ansichten. null heisst: nichts anzeigen. */
+    banner: function (status) {
+      if (status === 'final') return null;
+      if (status === 'validiert') return '[VALIDIERT — Freigabe steht aus]';
+      return '[ENTWURF — unvalidiert]';
     }
   };
 

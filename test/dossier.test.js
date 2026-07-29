@@ -44,3 +44,20 @@ test('pruefe() benennt fehlende Pflichtteile', () => {
 test('DATEI() baut den Dateinamen aus der Kurs-ID', () => {
   assert.equal(dossier.DATEI('VL-001'), 'VL-001_dossier.json');
 });
+
+test('statusVon() ist ohne Eintrag entwurf — nie undefined', () => {
+  assert.equal(dossier.statusVon(dossier.neu('X'), 'briefing'), 'entwurf');
+});
+
+test('statusSetzen() schreibt nur bekannte Werte', () => {
+  const d = dossier.neu('X');
+  dossier.statusSetzen(d, 'briefing', 'final');
+  assert.equal(dossier.statusVon(d, 'briefing'), 'final');
+  assert.throws(() => dossier.statusSetzen(d, 'briefing', 'fertig'));  /* KWKurse-Vokabular ist hier falsch */
+});
+
+test('banner() wird gerendert, nie getippt: final ist bannerfrei', () => {
+  assert.equal(dossier.banner('final'), null);
+  assert.match(dossier.banner('entwurf'), /ENTWURF/);
+  assert.match(dossier.banner('validiert'), /VALIDIERT/);
+});
