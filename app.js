@@ -13,7 +13,14 @@
       tenantId: '3643e7ab-d166-4e27-bd5f-c5bbfcd282d7',
       clientId: 'c4143c1e-33ea-4c4d-a410-58110f966d0a',
       authority: 'https://login.microsoftonline.com/3643e7ab-d166-4e27-bd5f-c5bbfcd282d7',
-      redirectUri: 'https://markusbaechler.github.io/bbz_Kurswerkstatt/',
+      /* Lokal gilt die localhost-URI, deployt die Pages-URI — beide sind in Azure
+         registriert. Fest auf Pages verdrahtet war die Anmeldung lokal unmoeglich:
+         das Popup kehrte nach github.io zurueck und die Antwort erreichte die App
+         nie (gefunden bei der Live-Probe am 2026-07-29). In Node gibt es kein
+         location — dann zaehlt der Wert nicht, MSAL wird dort nie erzeugt. */
+      redirectUri: (typeof location !== 'undefined' && location.hostname === 'localhost')
+        ? 'http://localhost:8080/'
+        : 'https://markusbaechler.github.io/bbz_Kurswerkstatt/',
       scopes: ['User.Read', 'Sites.ReadWrite.All']
     },
 
