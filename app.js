@@ -645,6 +645,27 @@
       return werte;
     },
 
+    /* Die Zaehlung mitlaufen lassen, waehrend getippt wird. Ohne das steht nach dem
+       Ausfuellen weiter "8 offen", bis gesichert wurde — und das Formular wirkt
+       falsch, obwohl es stimmt. Kein Neuaufbau der Ansicht: der wuerde den Fokus
+       aus dem Feld nehmen, in dem gerade geschrieben wird. */
+    briefingFelderZaehlen: function () {
+      if (typeof document === 'undefined') return;
+      var ziel = document.querySelector('#briefing-felder .offen-zahl');
+      if (!ziel) return;
+      var werte = controller.briefingFelderAusFormular();
+      var fehlend = root.inhalt.briefingFehlend(werte);
+      ziel.textContent = fehlend.length
+        ? fehlend.length + ' offen: ' + fehlend.join(', ')
+        : '✓ vollständig — der Chat muss nichts mehr abfragen';
+      ziel.classList.toggle('gut', fehlend.length === 0);
+      Array.prototype.forEach.call(document.querySelectorAll('#briefing-felder [data-feld]'), function (el) {
+        var f = root.inhalt.briefingFeld(el.dataset.feld);
+        var leer = !String(el.value || '').trim();
+        if (el.parentNode) el.parentNode.classList.toggle('offen', !!(f && f.pflicht && leer));
+      });
+    },
+
     briefingFelderSpeichern: function (knopf) {
       var kursId = state.position.kursId;
       if (!kursId) return;
@@ -879,6 +900,10 @@
   }
 
   if (typeof document !== 'undefined') {
+    document.addEventListener('input', function (e) {
+      if (e.target && e.target.dataset && e.target.dataset.feld) controller.briefingFelderZaehlen();
+    });
+
     document.addEventListener('click', function (e) {
       var t = e.target.closest('[data-action]');
       if (!t) return;

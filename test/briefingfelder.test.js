@@ -144,3 +144,28 @@ test('Fremdtext in den Werten wird maskiert', () => {
     { briefingFelder: { zielgruppe: '<script>x</script>' } });
   assert.ok(h.indexOf('<script>x</script>') < 0, 'ungefiltertes HTML in der Ansicht');
 });
+
+/* ---------- Die Zaehlung laeuft beim Tippen mit ----------
+   Ohne das steht nach dem Ausfuellen weiter "8 offen", bis gesichert wurde. */
+
+test('die Zaehlung folgt dem, was in den Feldern steht', () => {
+  const { controller } = require('../app.js');
+  const felder = inhalt.BRIEFING_FELDER.map(f => ({
+    dataset: { feld: f.id }, value: '', parentNode: { classList: { toggle: function () {} } }
+  }));
+  const anzeige = { textContent: '', classList: { toggle: function () {} } };
+  global.document = {
+    querySelector: function (s) { return s.indexOf('offen-zahl') >= 0 ? anzeige : null; },
+    querySelectorAll: function () { return felder; }
+  };
+
+  controller.briefingFelderZaehlen();
+  assert.match(anzeige.textContent, /^8 offen/, 'leeres Formular zaehlt falsch: ' + anzeige.textContent);
+
+  felder.forEach(f => { f.value = VOLL[f.dataset.feld] || ''; });
+  controller.briefingFelderZaehlen();
+  assert.ok(anzeige.textContent.indexOf('vollständig') >= 0,
+    'volles Formular meldet weiterhin offene Felder: ' + anzeige.textContent);
+
+  delete global.document;
+});
