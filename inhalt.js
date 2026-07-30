@@ -382,7 +382,8 @@
         beispiel: 'Theoretische und rechtliche Deep Dives; vertiefte Optionsbewertung; Anlageprodukte mit zusätzlichem Kreditrisiko.' },
 
       { id: 'scope_quelle', label: 'Quelle des Scopes', form: 'text', zeilen: 4, pflicht: true,
-        hilfe: 'Woher stammt der Geltungsbereich? Dokument mit Stand. Ohne Quelle ist er nicht belegt.',
+        hilfe: 'Woher stammt der Geltungsbereich? Dokument mit Stand. Ohne Quelle ist er nicht belegt. ' +
+          'Verweise wenn möglich auf die erfassten Fachquellen (Q-001, Q-002 …).',
         beispiel: 'Kursausschreibung (verbindlich); SSPA Swiss Derivative Map 2025 als fachliche Referenz.' },
     ],
 

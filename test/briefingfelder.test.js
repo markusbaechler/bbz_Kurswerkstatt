@@ -33,6 +33,11 @@ test('Praesenz zaehlt in Tagen, Selbstlern in Stunden', () => {
   assert.strictEqual(inhalt.briefingFeld('selbstlern').einheit, 'Stunden');
 });
 
+test('die Hilfe zur Scope-Quelle verweist auf die erfassten Fachquellen (Etappe 1d)', () => {
+  const f = inhalt.briefingFeld('scope_quelle');
+  assert.match(f.hilfe, /Q-001/, 'kein Verweis auf die Q-IDs der Fachquellen');
+});
+
 test('der Rechtsrahmen steht fest und wird nicht erfragt', () => {
   const f = inhalt.briefingFeld('reg_zusatz');
   assert.ok(f.fest, 'kein fester Rahmen hinterlegt');

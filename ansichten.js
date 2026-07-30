@@ -350,7 +350,12 @@
     var gelesen = ablageDaten && ablageDaten.briefingFelderGelesen;
     var fehlend = I2.briefingFehlend(werte);
 
-    var h = '<h2 class="tun">Die Leitplanken' +
+    /* Quellen VOR den Leitplanken (Entscheid Markus 2026-07-30): erst sammeln,
+       was hereinkommt, dann daraus die Leitplanken formulieren — scope_quelle
+       kann anschliessend auf die hier erfassten Q-IDs verweisen. */
+    var h = quellenBlock(ablageDaten);
+
+    h += '<h2 class="tun">Die Leitplanken' +
             '<span class="tun-sub">was der Kurs voraussetzt und was er abdeckt &mdash; ' +
             'einmal ausgef&uuml;llt, danach fragt der Chat nicht mehr danach</span></h2>';
 
@@ -396,7 +401,6 @@
     h += '<span class="hinweis-leise" id="briefing-felder-melde" hidden></span>';
     h += '</div>';
     h += '</div>';
-    h += quellenBlock(ablageDaten);
     return h;
   }
 
@@ -452,6 +456,15 @@
     h += '<h3>Fachquellen</h3>';
     h += '<p class="hinweis-leise">Massgebende Quellen &mdash; sie werden nach 03_content/quellen/ ' +
          'gelegt und im Dossier eingetragen, in einem Zug. Altmaterial geh&ouml;rt nach 00_input, nicht hierher.</p>';
+    h += '<ul class="hinweis-leise">' +
+         '<li><b>Kursausschreibung</b> &mdash; das Leistungsversprechen, meist als Link</li>' +
+         '<li><b>Massgebende Systematik oder Standard</b> mit Jahrgang (z.&nbsp;B. eine Branchen-Map) &mdash; als Datei</li>' +
+         '<li><b>Gesetze, Verordnungen, Aufsichts- und Verbandspublikationen</b>, auf die sich der ' +
+           'Scope st&uuml;tzt &mdash; als Datei (PDF), Stand zwingend</li>' +
+         '<li><b>Fachliteratur</b>, soweit massgebend</li>' +
+         '<li><b>Nicht hierher:</b> Altmaterial (bisherige Kursunterlagen) &mdash; das geh&ouml;rt nach 00_input</li>' +
+         '<li><b>Gibt es keine validen Quellen:</b> Modus &laquo;quellenfrei&raquo; setzen, nicht raten</li>' +
+         '</ul>';
     h += quellenVerzeichnis(d, true);
     h += '<label>Titel <input id="quelle-titel" type="text"></label>';
     h += '<label>Herausgeber <input id="quelle-herausgeber" type="text"></label>';

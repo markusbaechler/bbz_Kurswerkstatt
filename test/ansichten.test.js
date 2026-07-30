@@ -197,6 +197,28 @@ test('Schritt 1 zeigt die erfassten Quellen und den Erfassen-Knopf', () => {
   assert.match(html, /name="content-modus"/);
 });
 
+/* ---------- Reihenfolge: Quellen vor Leitplanken (Etappe 1d, Entscheid Markus 2026-07-30) ---------- */
+
+test('der Quellen-Block steht VOR den Leitplanken — erst sammeln, was hereinkommt', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.ok(html.indexOf('id="quellen"') < html.indexOf('id="briefing-felder"'),
+    'Quellen-Block muesste vor der Box "briefing-felder" stehen');
+});
+
+test('der Quellen-Block nennt, was als Fachquelle verlangt bzw. sinnvoll ist', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /Kursausschreibung/);
+  assert.match(html, /Nicht hierher/);
+});
+
 /* ---------- Entfernen-Knopf (Etappe 1c) ---------- */
 
 test('Schritt 1 traegt je Quelle einen Entfernen-Knopf mit der richtigen id', () => {

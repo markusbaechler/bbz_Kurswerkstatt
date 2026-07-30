@@ -239,6 +239,11 @@ Kursansicht, Schritt 1, Schritt 3 —, erfasst wird weiterhin nur in Schritt 1.
 danach die Datei per Graph DELETE in den SharePoint-Papierkorb (`dossier.quelleEntfernen`,
 `graph.dateiLoeschen`, `controller.quelleEntfernen`).
 
+**Der Quellen-Block steht in der Schritt-1-Ansicht VOR der Box „Die Leitplanken"**
+(Entscheid Markus, 2026-07-30, Etappe 1d): erst wird gesammelt, was an Fachquellen hereinkommt,
+erst danach werden daraus die Leitplanken formuliert — das Feld `scope_quelle` (Hilfetext) kann
+seither auf die dort erfassten Q-IDs (`Q-001`, `Q-002` …) verweisen.
+
 Projekt-Instruktionen bleiben aus Ablage-Kontrakt/`schritte.json` (Struktur), `KWKurse`
 (Kurs-ID/Titel/Kompetenzfeld) und dem eingelesenen Kursbriefing aus `01_briefing/` aufgebaut wie
 bisher — **neu kommt nur der Teil „Fachquellen des Kurses" aus dem Dossier** (`quellen`,
