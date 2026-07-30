@@ -203,3 +203,31 @@ test('ohne Inhaltskontrakt wird kein Dateiname geraten', () => {
   assert.strictEqual(inhalt.bauauftrag(INHALT, 6), null, 'Schritt 6 hat keinen Inhaltskontrakt');
   assert.strictEqual(inhalt.bauauftrag(INHALT, 99), null, 'unbekannter Schritt');
 });
+
+/* ---------- gateProtokoll (Etappe 2, Task 6) ----------
+   Reine Funktion nach Ablage-Kontrakt §5 — kein Date hier drin, datum kommt
+   als Parameter herein (der Controller ruft new Date(), inhalt.js nie). */
+
+test('das Gate-Protokoll folgt dem Ablage-Kontrakt §5', () => {
+  const md = inhalt.gateProtokoll({
+    gate: 'Gate 1 · 4-Augen', kursId: 'VL-001',
+    von: 'VL-001_lernziele-drehbuch_v3.xlsx', nach: 'VL-001_lernziele-drehbuch_final.xlsx',
+    datum: '2026-07-30', person: 'Markus Baechler', zweitpruefung: 'N. N.',
+    geprueft: ['9 Lernziele, Bloom-Stufen begruendet'],
+    offen: [{ was: 'Zeitbudget M05', wo: '3_Drehbuch', fuer: 'gate-2', begruendung: 'braucht Content' }]
+  });
+  assert.ok(md.startsWith('# Gate 1 · 4-Augen — VL-001'));
+  for (const z of ['Freigegeben:  VL-001_lernziele-drehbuch_v3.xlsx',
+                   'Umbenannt in: VL-001_lernziele-drehbuch_final.xlsx',
+                   'Datum:        2026-07-30, Markus Baechler',
+                   'Zweitprüfung: N. N.', 'Geprüft:', '- 9 Lernziele',
+                   'Offene Punkte:', '- Zeitbudget M05 (3_Drehbuch) — an gate-2: braucht Content']) {
+    assert.ok(md.includes(z), z + ' fehlt');
+  }
+});
+
+test('ohne offene Punkte sagt das Protokoll das ausdruecklich', () => {
+  const md = inhalt.gateProtokoll({ gate: 'G', kursId: 'X', von: 'a', nach: 'b',
+    datum: 'd', person: 'p', zweitpruefung: 'z', geprueft: [], offen: [] });
+  assert.ok(md.includes('- keine'));
+});

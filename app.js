@@ -1580,6 +1580,131 @@
         });
     },
 
+    /* ---------- Gate-KLICK (Etappe 2, Task 6): _final, _gate.md, Dossier-Status final ----------
+       Ablauf: S2-Sperre (offene Punkte an GENAU dieses Gate, aus dem bereits geladenen
+       Dossier — kein Netzzugriff dafuer noetig) · Zweitpruefung (Pflicht, Gate 1 ist 4-Augen,
+       ebenfalls vor jedem Netzzugriff geprueft) · Ordner frisch lesen · umbenennen (_vN ->
+       _final) · Protokoll schreiben (Kontraktfeld gate_datei, Default _gate.md, gelesen ueber
+       inhalt.gateDatei) · Dossier-Status des Lieferobjekts auf final — der FUENFTE Schreiber
+       durch controller.dossierSchreiben, kein eigener graph.ablegen-Pfad. KWKurse
+       (Schritt/Status) fasst dieser Klick NICHT an: das bleibt beim Erledigt-Haken (Abgrenzung
+       KWKurse=Programmstand, Dossier=Lieferobjektstatus, Meta-Spec §3).
+
+       Idempotenz ist Pflicht (Wiedereinstieg nach einem Teilfehler darf nichts verdoppeln).
+       Sobald der Ordner gelesen ist, unterscheidet gateKlick drei Faelle:
+       (a) _final liegt schon, das Protokoll fehlt noch  -> Umbenennung ueberspringen,
+           Protokoll UND Status nachziehen. Der "von"-Name ist hier nicht mehr rekonstruierbar
+           — die _vN-Datei heisst ja bereits _final, geltendeDatei() liefert nur noch den
+           _final-Namen zurueck. Das Protokoll traegt deshalb NUR in diesem Fall den
+           Platzhalter 'unbekannt (Wiedereinstieg)' als von-Wert (das Protokoll wird neu
+           geschrieben UND der geltende v-Name existiert nicht mehr).
+       (b) _final UND das Protokoll liegen schon        -> nur noch der Dossier-Status, kein
+           Schreiben von Datei oder Protokoll mehr (der zweite Klick fuegt sonst kein zweites
+           Mal dieselbe Zeile hinzu — es gibt nichts, was verdoppelt werden koennte).
+       (c) nichts davon liegt                           -> voller Durchlauf: umbenennen,
+           Protokoll schreiben, Status setzen. */
+    gateKlick: function (n, knopf) {
+      var k = nav.kurs(); if (!k) return;
+      var kursId = k.kursId;
+      var inh = state.data.inhalt;
+      var d = state.data.dossier[kursId];
+      var melde = typeof document !== 'undefined' && document.getElementById('gate-melde');
+      function sag(txt) { if (melde) { melde.hidden = false; melde.textContent = txt; } }
+
+      if (!d || typeof d !== 'object') {
+        var keinDossier = 'Dossier nicht geladen — Gate nicht durchlaufen.';
+        sag(keinDossier);
+        state.fehlerHinweis = keinDossier;
+        controller.render();
+        return;
+      }
+
+      var adressat = root.inhalt.gateAdressat(n);
+      if (root.dossier.offenFuer(d, adressat).length) {
+        var textS2 = 'Offene Punkte an dieses Gate — erst behandeln (S2).';
+        sag(textS2);
+        state.fehlerHinweis = textS2;
+        controller.render();
+        return;
+      }
+
+      var ablage = root.inhalt.ablageVon(inh, n, kursId);
+      var schl = kursId + '/' + ablage.ordner;
+      var zweit = String((document.getElementById('gate-zweitpruefung') || {}).value || '').trim();
+      if (!zweit) { sag('Zweitprüfung fehlt — Gate 1 ist 4-Augen.'); return; }
+      var geprueft = String((document.getElementById('gate-geprueft') || {}).value || '')
+        .split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+
+      /* Sentinel statt eines fruehen return in der Promise-Kette (Abbruch nach dem
+         Bestaetigungs-Dialog): ein blosses return aus dem inneren .then wuerde die
+         AEUSSERE Erfolgsmeldung trotzdem auslösen. */
+      var ABGEBROCHEN = {};
+
+      delete state.data.dateien[schl];
+      if (knopf) knopf.disabled = true;
+      sag('Wird durchgeführt …');
+
+      return graph.ordnerInhalt(kursId, ablage.ordner).then(function (dateien) {
+        var lief = root.inhalt.lieferobjektVon(inh, n, ablage.variante);
+        var endung = root.inhalt.erwarteteEndung(inh, n);
+        var final = root.inhalt.finalVorhanden(dateien, kursId, lief);
+        var gateDateiName = root.inhalt.gateDatei(inh);
+        var protokollDa = (dateien || []).some(function (x) { return x.name === gateDateiName; });
+
+        /* Schreibt (wo noetig) das Protokoll und setzt danach den Dossier-Status —
+           der Dossier-Schreiber ist immer der fuenfte Schreiber durch die Warteschlange,
+           auch im Wiedereinstiegsfall (b), wo gar nichts mehr geschrieben wird ausser dem
+           Status. */
+        function protokollUndStatus(von, nach) {
+          var schreiben = protokollDa ? Promise.resolve() : Promise.resolve().then(function () {
+            var md = root.inhalt.gateProtokoll({
+              gate: ablage.gate, kursId: kursId, von: von, nach: nach,
+              datum: new Date().toISOString().slice(0, 10),
+              person: (state.auth.account && state.auth.account.name) || '',
+              zweitpruefung: zweit, geprueft: geprueft, offen: (d.offen || [])
+            });
+            return graph.ablegen(kursId, ablage.ordner, gateDateiName, md);
+          });
+          return schreiben.then(function () {
+            return controller.dossierSchreiben(kursId, function (kopie) {
+              root.dossier.statusSetzen(kopie, lief, 'final');
+              return kopie;
+            });
+          });
+        }
+
+        if (final) {
+          /* Wiedereinstieg (a)/(b): die Umbenennung ist bereits geschehen — geltendeDatei()
+             liefert ab hier nur noch final selbst, der urspruengliche _vN-Name ist nicht
+             mehr da. */
+          return protokollUndStatus('unbekannt (Wiedereinstieg)', final);
+        }
+
+        var geltend = root.inhalt.geltendeDatei(dateien, kursId, lief);
+        if (!geltend) throw new Error('keine versionierte Datei in ' + ablage.ordner);
+        var nach = root.inhalt.finalName(kursId, lief, endung);
+        if (!controller._bestaetige('Gate durchlaufen?\n' + geltend + ' → ' + nach)) {
+          if (knopf) knopf.disabled = false;
+          sag('');
+          return ABGEBROCHEN;
+        }
+        return graph.umbenennen(kursId, ablage.ordner, geltend, nach).then(function () {
+          return protokollUndStatus(geltend, nach);
+        });
+      }).then(function (ergebnis) {
+        if (ergebnis === ABGEBROCHEN) return;
+        state.hinweis = 'Gate durchlaufen — Protokoll geschrieben, Status final.';
+        controller.render();
+      }).catch(function (e) {
+        if (knopf) knopf.disabled = false;
+        var text = 'Gate nicht (vollständig) durchlaufen: ' + (e.message || e) +
+          ' — erneuter Klick setzt fort, was fehlt.';
+        sag(text);
+        state.fehlerHinweis = text;
+        controller.render();
+      });
+    },
+
     /* Die Wahl steht fuer sich, ohne Formular und ohne Knopf — sie wird direkt
        beim Umschalten des Radios abgelegt. */
     contentModus: function (el) {
@@ -1909,6 +2034,7 @@
       if (a === 'offen-erfassen') { controller.offenErfassen(t); return; }
       if (a === 'offen-entscheiden') { controller.offenEntscheiden(t); return; }
       if (a === 'offen-verschieben') { controller.offenVerschieben(t); return; }
+      if (a === 'gate-klick') { controller.gateKlick(t.dataset.schritt, t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {

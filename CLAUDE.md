@@ -528,8 +528,11 @@ neue Zählung verwenden.
 `principle`, `wugrow`, `bloomcal`, `anchor` — die hier nicht portiert sind. Inhaltlich
 vollständig, optisch ohne Raster.
 
-**Gate-Ablauf und Steckbrief-Auswertung fehlen.** `_final`-Umbenennung, `_gate.md` schreiben,
-Status setzen — wartet bewusst, bis ein Gate einmal von Hand gelaufen ist.
+**Gate 1 gebaut (Etappe 2); Gate 2/Sign-off folgen mit Etappe 4/5.** Der Gate-Klick
+(`_final`-Umbenennung, `_gate.md` schreiben, Dossier-Status setzen) ist als generischer
+Mechanismus für jeden Gate-Schritt gebaut (s. „Gate-Ablauf" oben) — an Schritt 2 (Gate 1) durch
+Tests belegt, an Schritt 4 (Sign-off) und Schritt 7 (Gate 2) noch nicht live geprüft.
+Steckbrief-Auswertung bleibt offen.
 
 **Die Navigation ist nicht abgenommen.** Eine Zoom-Achse über fünf Ebenen wurde als Mockup
 gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →
@@ -744,3 +747,73 @@ entschieden bei getipptem `wer`/`wann`, Punkt B rückt auf denselben Index nach 
 statt A-Werte zu übernehmen (plus Gegenprobe: bleibt derselbe Eintrag am selben Index, greift
 das Restore weiterhin). Mutationsprobe (der `data-was`-Vergleich auskommentiert): genau dieser
 eine Test fiel rot (36 grün/1 rot von 37), danach wiederhergestellt, komplette Suite wieder grün.
+
+## Gate-Ablauf (Task 6): der Gate-Klick — `_final`, `_gate.md`, Dossier-Status `final`
+
+Der Freigabe-Teil ergänzt die Gate-Box aus Task 5 (Prüfliste, Erfassung/Behandlung offener
+Punkte) um den eigentlichen Klick: `ansichten.gateFreigabe(inh, kurs, schrittId, ablage, offen,
+ablageDaten)` wird von `gateBlock` unmittelbar nach der Erfassungs-Zeile gerendert und zeigt,
+sobald `ablageDaten.dateien` als Array vorliegt (asynchron geladen wie überall sonst), eine
+Vorschau „Freigegeben wird: `{geltend}` → `{final}`" (`I().geltendeDatei`/`I().finalName`), ein
+Pflichtfeld `#gate-zweitpruefung` (Gate 1 ist 4-Augen), eine optionale Textarea
+`#gate-geprueft` (eine Zeile je geprüftem Punkt) und den Knopf
+`data-action="gate-klick" data-schritt="{n}"`. Beide neuen Felder tragen `data-gate-feld` wie
+alle übrigen Gate-Box-Felder (Task 5) — der bestehende, generische Formular-Erhalt-Mechanismus
+(`controller._formularSnapshot`/`_formularWiederherstellen`, `[data-gate-feld]`) deckt sie ohne
+Sonderfall ab. Der Knopf ist `disabled` mit Begründungszeile in drei Fällen: (a) unbehandelte
+Punkte an GENAU dieses Gate (`dossier.offenFuer` — dieselbe Liste, die die Prüfliste darüber
+zeigt), (b) es liegt schon eine `_final` (Begründung nennt den Namen), (c) es gibt noch keine
+versionierte Datei überhaupt. Ohne geladene `dateien` bleibt nur (a) prüfbar — (b)/(c) würden
+sonst fälschlich „gesperrt" zeigen, obwohl nur die Anzeige noch nichts weiss;
+`controller.gateKlick` liest beim Klick ohnehin frisch nach.
+
+**`controller.gateKlick(n, knopf)`** ist die Aktion hinter dem Knopf (Click-Kette in `app.js`
+nach `offen-verschieben`: `gate-klick` → `controller.gateKlick(t.dataset.schritt, t)`). Ablauf:
+S2-Sperre zuerst (`dossier.offenFuer(d, inhalt.gateAdressat(n))` gegen das bereits geladene
+Dossier — **kein Netzzugriff**, wenn hier schon Punkte offen sind) · Zweitprüfung-Pflichtfeld
+(ebenfalls vor jedem Netzzugriff geprüft, Gate 1 ist 4-Augen) · Ordner frisch lesen
+(`graph.ordnerInhalt`, mit vorherigem Cache-Invalidieren wie bei `controller.ablegen`) ·
+umbenennen (`graph.umbenennen`, `_vN` → `_final`, Bestätigung über `controller._bestaetige` —
+Muster `quelleEntfernen`, damit der Dialog in Tests ersetzbar bleibt) · Protokoll schreiben
+(`inhalt.gateProtokoll(...)`, abgelegt unter dem Kontraktfeld `gate_datei`, gelesen über den
+neuen Helfer `inhalt.gateDatei(i)` — Default `_gate.md`; `projektInstruktionenTeile` liest
+seither denselben Helfer statt des bisherigen Inline-Literals) · Dossier-Status des
+Lieferobjekts auf `final` (`dossier.statusSetzen`) über **`controller.dossierSchreiben`** — der
+**fünfte** Schreiber durch dieselbe Warteschlange wie `dossierSpeichern`/`quelleErfassen`/
+`quelleEntfernen`/`contentModus`, kein eigener `graph.ablegen`-Pfad. `KWKurse`
+(`Schritt`/`Status`) fasst der Gate-Klick **nicht** an — das bleibt beim Erledigt-Haken
+(Abgrenzung KWKurse=Programmstand, Dossier=Lieferobjektstatus, Meta-Spec §3).
+
+**`inhalt.gateProtokoll(p)`** ist eine reine Funktion (kein `Date` darin — `datum` kommt als
+Parameter herein, `controller.gateKlick` ruft `new Date()`, `inhalt.js` nie) und folgt dem
+Ablage-Kontrakt §5 wortwörtlich, inklusive der echten Umlaute „Zweitprüfung"/„Geprüft" (kein
+„ß" — Konvention 6). Ohne geprüfte Punkte steht `- —` unter „Geprüft:", ohne offene Punkte
+ausdrücklich `- keine` unter „Offene Punkte:" — nie eine leere Liste ohne Erklärung.
+
+**Idempotenz ist Pflicht — ein Wiedereinstieg nach einem Teilfehler darf nichts verdoppeln.**
+Sobald der Ordner gelesen ist, unterscheidet `gateKlick` drei Fälle über `finalVorhanden` und
+ob die Protokoll-Datei schon im gelesenen Ordner liegt:
+- **(a) `_final` liegt schon, das Protokoll fehlt noch** — die Umbenennung entfällt, Protokoll
+  UND Status werden nachgezogen. Der „von"-Name ist an dieser Stelle nicht mehr rekonstruierbar
+  (die `_vN`-Datei heisst ja bereits `_final`, `geltendeDatei()` liefert ab hier nur noch den
+  `_final`-Namen selbst zurück) — das Protokoll trägt deshalb **nur in diesem Fall** den
+  Platzhalter `'unbekannt (Wiedereinstieg)'` als von-Wert.
+- **(b) `_final` UND Protokoll liegen schon** — nur noch der Dossier-Status wird geschrieben,
+  kein zweites Protokoll, keine zweite Umbenennung.
+- **(c) nichts davon liegt** — voller Durchlauf wie beim ersten Versuch.
+
+Ein Abbruch am Bestätigungs-Dialog (`controller._bestaetige` liefert `false`) schreibt nichts
+und zeigt keine Erfolgsmeldung — ein interner Sentinel in der Promise-Kette unterscheidet den
+Abbruch von einem echten Erfolg, damit der äussere `.then` nicht fälschlich `state.hinweis`
+setzt. Scheitert ein Netzaufruf, landet die Meldung in `state.fehlerHinweis` mit dem Hinweis
+„erneuter Klick setzt fort, was fehlt" — genau das beschreibt die drei Wiedereinstiegsfälle
+oben.
+
+Tests: `test/inhalt.test.js` (Wortlaut-Vertrag für `gateProtokoll`, inkl. Leerfall „- keine"),
+`test/ansichten.test.js` (Vorschau-Zeile, die drei Sperr-Begründungen, `data-gate-feld` an den
+neuen Feldern), `test/gate.test.js` (S2-Sperre und fehlende Zweitprüfung blockieren ohne jeden
+Graph-Aufruf, voller Durchlauf in der Reihenfolge umbenennen → Protokoll ablegen → Dossier-Status,
+Abbruch am Bestätigungs-Dialog, beide Wiedereinstiegsfälle (a)/(b)). Mutationsprobe (die
+S2-Sperre `if (root.dossier.offenFuer(d, adressat).length)` in `gateKlick` auf `if (false && ...)`
+gesetzt): `node --test test/gate.test.js` fiel genau beim S2-Test rot (14 grün/1 rot von 15),
+danach wiederhergestellt, komplette Suite wieder grün (510 Tests).

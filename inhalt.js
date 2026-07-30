@@ -744,6 +744,43 @@
       return ({ '2': 'gate-1', '4': 'sign-off', '7': 'gate-2' })[String(schrittId)] || null;
     },
 
+    /* Der Name des Gate-Protokolls neben der Datei — EINE Stelle statt eines
+       Literals an jeder Aufrufstelle (bereits vorher an dieser Stelle als
+       Inline-Fallback gelesen, s. projektInstruktionenTeile oben; Etappe 2
+       Task 6 zieht ihn als Helfer heraus, damit controller.gateKlick nicht
+       ein zweites Mal '_gate.md' hartkodiert). */
+    gateDatei: function (i) {
+      var k = (i && i['ablage-kontrakt']) || {};
+      return k.gate_datei || '_gate.md';
+    },
+
+    /* Das Gate-Protokoll (Ablage-Kontrakt §5) — reine Funktion, kein Date
+       hier drin: datum kommt als Parameter herein, der Controller ruft
+       new Date() nie inhalt.js. p = { gate, kursId, von, nach, datum, person,
+       zweitpruefung, geprueft, offen }. geprueft ist eine Liste von Zeilen
+       (optional, leer bleibt nicht ohne Zeile — '—' markiert "nichts
+       Ausdrueckliches vermerkt"); offen ist die Liste der zum Freigabezeitpunkt
+       noch offenen Punkte (dossier.offenFuer o.ae.), 'keine' wenn leer. */
+    gateProtokoll: function (p) {
+      var z = [
+        '# ' + p.gate + ' — ' + p.kursId, '',
+        'Freigegeben:  ' + p.von,
+        'Umbenannt in: ' + p.nach,
+        'Datum:        ' + p.datum + ', ' + p.person,
+        'Zweitprüfung: ' + p.zweitpruefung, '',
+        'Geprüft:'
+      ];
+      ((p.geprueft && p.geprueft.length) ? p.geprueft : ['—']).forEach(function (g) { z.push('- ' + g); });
+      z.push('', 'Offene Punkte:');
+      if (p.offen && p.offen.length) {
+        p.offen.forEach(function (o) {
+          z.push('- ' + o.was + ' (' + o.wo + ') — an ' + o.fuer +
+                 (o.begruendung ? ': ' + o.begruendung : ''));
+        });
+      } else z.push('- keine');
+      return z.join('\n') + '\n';
+    },
+
     /* Wohin Fachquellen kommen (Schritt 1) — EINE Stelle statt drei getippter
        (Audit I3). Vorher stand '03_content/quellen' woertlich in app.js
        (QUELLEN_ORDNER), im UI-Hinweistext von ansichten.js und im
@@ -823,7 +860,7 @@
              '. Gibt es eine _final, gilt sie (entsteht durch Umbenennen, nie durch ' +
              'Kopieren); sonst die höchste Versionsnummer. Verboten darin: ' +
              ((kontrakt.benennung && kontrakt.benennung.verboten) || []).join(', ') + '.');
-      z.push('Gate-Protokolle liegen als ' + (kontrakt.gate_datei || '_gate.md') + ' neben der ' +
+      z.push('Gate-Protokolle liegen als ' + inhalt.gateDatei(i) + ' neben der ' +
              'Datei. Der Stand steht in KWKurse (Schritt, Status), nie im Ordner; Referenzen ' +
              'zeigen auf die Kurs-ID, nie auf einen Pfad.');
 

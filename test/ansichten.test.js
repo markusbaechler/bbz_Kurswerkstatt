@@ -798,3 +798,46 @@ test('Gate-Box ohne offene Punkte zeigt den Leerfall-Text', () => {
   const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
   assert.match(html, /Keine offenen Punkte an dieses Gate adressiert/);
 });
+
+/* ---------- Etappe 2, Task 6: der Freigabe-Teil der Gate-Box ---------- */
+
+function dossierOhneOffen() {
+  return { dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: [] };
+}
+
+test('mit einer versionierten Datei und ohne offene Punkte zeigt die Gate-Box den Zielnamen und einen freien Knopf', () => {
+  const props = { dossier: dossierOhneOffen(), dateien: [{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }] };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /Freigegeben wird:.*DBS-001_lernziele-drehbuch_v3\.xlsx.*DBS-001_lernziele-drehbuch_final\.xlsx/s);
+  assert.match(html, /data-action="gate-klick"[^>]*data-schritt="2"/);
+  assert.doesNotMatch(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.match(html, /id="gate-zweitpruefung"[^>]*data-gate-feld/);
+  assert.match(html, /id="gate-geprueft"[^>]*data-gate-feld/);
+  assert.match(html, /id="gate-melde"/);
+});
+
+test('offene Punkte an diesem Gate sperren den Gate-Knopf (S2) mit Begruendungszeile', () => {
+  const d = dossierOhneOffen();
+  d.offen = [{ was: 'Bloom-Stufe pruefen', wo: 'LZ-004', fuer: 'gate-1' }];
+  const props = { dossier: d, dateien: [{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }] };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.match(html, /1 offene[rs]? Punkte? an Gate 1 · 4-Augen/);
+  assert.match(html, /entscheiden oder begr.ndet verschieben/);
+});
+
+test('liegt bereits eine _final, ist der Gate-Knopf gesperrt', () => {
+  const props = { dossier: dossierOhneOffen(),
+    dateien: [{ name: 'DBS-001_lernziele-drehbuch_final.xlsx' }] };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.match(html, /bereits freigegeben: DBS-001_lernziele-drehbuch_final\.xlsx/);
+});
+
+test('ohne jede versionierte Datei ist der Gate-Knopf gesperrt', () => {
+  const props = { dossier: dossierOhneOffen(), dateien: [] };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.match(html, /keine versionierte Datei/);
+});
