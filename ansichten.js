@@ -406,15 +406,20 @@
      erfasst wird nur in Schritt 1, sichtbar ist es an allen drei Stellen
      (Entscheid Markus, 2026-07-30). Bei einer Datei steht der reine Dateiname
      (der SharePoint-Ordnerlink existiert nur in der Schrittansicht); bei einem
-     Link ein <a>, esc() auch im href-Attribut — der Wert kommt vom Menschen. */
+     Link ein <a>, esc() auch im href-Attribut — der Wert kommt vom Menschen.
+     Rueckfallebene (Fix-Runde 1): esc() filtert kein Schema, nur Zeichen — ein
+     dossier.json mit url "javascript:…" muesste dossier.pruefe() eigentlich
+     schon abweisen, aber sollte trotzdem je ein anderer Leseweg ein solches
+     Dossier durchlassen, wird hier zusaetzlich nur bei http(s) ein <a> gebaut,
+     sonst bleibt die URL reiner esc()-Text — nie ein klickbares href. */
   function quellenVerzeichnis(d) {
     var ql = (d && d.quellen) || [];
     if (!ql.length) return '<p class="hinweis-leise">Noch keine Quellen erfasst.</p>';
     var h = '<div class="tblwrap"><table class="tbl"><tr><th>ID</th><th>Titel</th><th>Stand</th><th>Quelle</th></tr>';
     ql.forEach(function (q) {
-      var quelle = q.url
+      var quelle = (q.url && /^https?:\/\//i.test(String(q.url).trim()))
         ? '<a href="' + esc(q.url) + '" target="_blank" rel="noopener">' + esc(q.url) + '</a>'
-        : esc(q.datei);
+        : esc(q.url || q.datei);
       h += '<tr><td>' + esc(q.id) + '</td><td>' + esc(q.titel) +
            (q.herausgeber ? ' (' + esc(q.herausgeber) + ')' : '') + '</td><td>' +
            esc(q.stand) + '</td><td>' + quelle + '</td></tr>';

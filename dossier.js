@@ -69,8 +69,15 @@
         var hatUrl = !!(q && String(q.url || '').trim());
         if (hatDatei === hatUrl) {
           p.push('Quelle ' + (n + 1) + ': entweder datei oder url');
-        } else if (hatUrl && !String((q || {}).abgerufen || '').trim()) {
-          p.push('Quelle ' + (n + 1) + ': abgerufen fehlt');
+        } else if (hatUrl) {
+          if (!String((q || {}).abgerufen || '').trim()) p.push('Quelle ' + (n + 1) + ': abgerufen fehlt');
+          /* Dieselbe Schema-Pruefung wie in quelleNeu (Schreibweg) — ein von Hand
+             editiertes dossier.json geht nie durch quelleNeu, muss aber genauso
+             abgewiesen werden. esc() beim Rendern filtert kein Schema; javascript:
+             waere sonst ein klickbarer <a href> in drei Ansichten. */
+          if (!/^https?:\/\//i.test(String(q.url).trim())) {
+            p.push('Quelle ' + (n + 1) + ': url muss mit http:// oder https:// beginnen');
+          }
         }
       });
       if (!d.status || typeof d.status !== 'object') p.push('status fehlt');

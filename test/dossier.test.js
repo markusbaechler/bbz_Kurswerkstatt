@@ -134,3 +134,21 @@ test('positivliste() ignoriert Link-Quellen — nur Dateien gehen in die Leselis
   dossier.quelleNeu(d, { titel: 'B', stand: '2026', url: 'https://b.ch', abgerufen: '2026-07-30' });
   assert.deepEqual(dossier.positivliste(d), ['a.pdf']);
 });
+
+/* ---------- Fix-Runde 1: javascript:-URL wird auch beim Lesen abgewiesen ----------
+   quelleNeu() (Schreibweg) prueft das Schema schon; ein von Hand in SharePoint
+   editiertes dossier.json geht aber nie durch quelleNeu — pruefe()/lesen() muessen
+   dieselbe Schema-Pruefung tragen, sonst liesse sich ausfuehrbarer Code einschleusen. */
+
+test('pruefe() beanstandet eine url-Quelle mit fremdem Schema (javascript:)', () => {
+  const d = dossier.neu('X');
+  d.quellen.push({ id: 'Q-001', titel: 'X', stand: '2026', url: 'javascript:alert(1)', abgerufen: '2026-07-30' });
+  const p = dossier.pruefe(d);
+  assert.ok(p.some(x => /url|http/i.test(x)), 'pruefe() laesst javascript: klaglos durch');
+});
+
+test('lesen() weist ein Dossier mit javascript:-Quelle ab', () => {
+  const d = dossier.neu('X');
+  d.quellen.push({ id: 'Q-001', titel: 'X', stand: '2026', url: 'javascript:alert(1)', abgerufen: '2026-07-30' });
+  assert.equal(dossier.lesen(dossier.text(d)), null);
+});

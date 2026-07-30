@@ -110,6 +110,18 @@ test('eine Link-Quelle im Verzeichnis wird ein escapetes <a href>, kein Dateitex
   assert.match(h, /Sch&quot;one Seite/);
 });
 
+test('eine javascript:-URL wird NICHT als href gerendert, nur als sichtbarer Text (Fix-Runde 1)', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'Boese Quelle', herausgeber: '', stand: '2026',
+                url: 'javascript:alert(1)', abgerufen: '2026-07-30' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const h = ansichten.einKurs(INHALT, DBS, props);
+  assert.doesNotMatch(h, /href="javascript:/i, 'javascript:-URL landet im href-Attribut');
+  assert.match(h, /javascript:alert\(1\)/, 'die URL ist nicht einmal als Text sichtbar');
+});
+
 test('Schritt 3 zeigt dasselbe Quellenverzeichnis, lesend', () => {
   const props = { dossier: {
     dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
