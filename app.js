@@ -627,11 +627,19 @@
     },
 
     /* Sichert, was gerade in den Formularfeldern steht, BEVOR render() die Ansicht
-       neu aufbaut (Audit C2, Etappe 1e Task 2). Ohne das loeschte jeder Neuaufbau
-       ungesicherte Eingaben: briefingNachladen, dossierNachladen, quelleErfassen
-       (Erfolg) und contentModus (Fehler) rendern alle nach einem asynchronen
-       Abschluss neu — mitten im Tippen, ohne dass die Person etwas ausgeloest hat.
-       Reine Bestandsaufnahme, kein Fokus-Wechsel. */
+       neu aufbaut (Audit C2, Etappe 1e Task 2). Der Mechanismus sitzt zentral in
+       render() und deckt damit JEDEN Render-Aufruf ab, nicht nur eine feste Liste
+       von Ausloesern — Beispiele fuer Aufrufe, die mitten im Tippen neu rendern:
+       briefingNachladen, dossierNachladen, quelleErfassen (Erfolg), contentModus
+       (Fehler), aber ebenso dossierSpeichern-Erfolg und quelleEntfernen.
+       Reine Bestandsaufnahme, kein Fokus-Wechsel.
+
+       Stempelt zusaetzlich kursId/schrittId aus state.position (Fix-Runde 1,
+       Review-Finding 1): der Fremd-Kurs-Schutz war zuvor nur ein Nebeneffekt der
+       Navigation (ein Kurswechsel setzt zufaellig schrittId auf null, wodurch ein
+       Zwischen-Render ohne Formular laeuft) — jetzt verankert im Mechanismus
+       selbst. _formularWiederherstellen setzt nur ein, wenn beide beim
+       Wiederherstellen noch mit state.position uebereinstimmen. */
     _formularSnapshot: function () {
       if (typeof document === 'undefined') return null;
       var werte = {};
@@ -643,7 +651,12 @@
         if (el) werte['id:' + id] = String(el.value == null ? '' : el.value);
       });
       var aktiv = document.activeElement;
-      return { werte: werte, fokusId: (aktiv && aktiv.id) ? aktiv.id : null };
+      return {
+        werte: werte,
+        fokusId: (aktiv && aktiv.id) ? aktiv.id : null,
+        kursId: state.position.kursId || null,
+        schrittId: state.position.schrittId != null ? String(state.position.schrittId) : null
+      };
     },
 
     /* Setzt nach dem Neuaufbau zurueck, was vorher gesichert wurde — aber nur, wo
@@ -653,9 +666,19 @@
        der zufaellig waehrend eines Loeschvorgangs laeuft, das Leeren verewigen,
        bevor die Person es bestaetigt hat; der Dossier-Stand gewinnt dann bewusst.
        Kein Datei-Input: der laesst sich nicht programmatisch wiederbefuellen — eine
-       akzeptierte Luecke, siehe Task-2-Report. */
+       akzeptierte Luecke, siehe Task-2-Report.
+
+       Fremd-Kurs-Schutz (Fix-Runde 1, Review-Finding 1): stimmen kursId/schrittId
+       des Snapshots nicht mehr mit state.position ueberein, wird NICHTS
+       eingesetzt — der Snapshot stammt von einer anderen Ansicht (z. B. Kurs A),
+       die Formularfelder gehoeren aber schon zu einer anderen (Kurs B). Sonst
+       wuerde ein spaet eintreffendes Nachladen aus Kurs A seine alten Werte in
+       das Formular von Kurs B schreiben. */
     _formularWiederherstellen: function (snap) {
       if (!snap || typeof document === 'undefined') return;
+      var pKursId = state.position.kursId || null;
+      var pSchrittId = state.position.schrittId != null ? String(state.position.schrittId) : null;
+      if (snap.kursId !== pKursId || snap.schrittId !== pSchrittId) return;
       var feldGeaendert = false;
       Array.prototype.forEach.call(document.querySelectorAll('#briefing-felder [data-feld]'), function (el) {
         var alt = snap.werte['feld:' + el.dataset.feld];

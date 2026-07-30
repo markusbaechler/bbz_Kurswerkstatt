@@ -1,14 +1,22 @@
 'use strict';
-/* Formular-Erhalt bei Render (Audit C2, Etappe 1e Task 2). Vier asynchrone Pfade
-   rendern nach ihrem Abschluss neu, mitten im Tippen: briefingNachladen,
-   dossierNachladen, quelleErfassen (Erfolg), contentModus (Fehler). Ohne Erhalt
-   loescht jeder dieser Neuaufbauten ungesicherte Eingaben in #briefing-felder
-   [data-feld] und den drei Quellen-Feldern (quelle-titel/-herausgeber/-stand/-url).
+/* Formular-Erhalt bei Render (Audit C2, Etappe 1e Task 2). Der Schutz sitzt
+   zentral in controller.render() und deckt damit JEDEN Render-Aufruf ab, nicht
+   nur eine feste Liste von Ausloesern — Beispiele fuer Aufrufe, die mitten im
+   Tippen neu rendern: briefingNachladen, dossierNachladen, quelleErfassen
+   (Erfolg), contentModus (Fehler), aber ebenso dossierSpeichern-Erfolg und
+   quelleEntfernen. Ohne Erhalt loescht jeder dieser Neuaufbauten ungesicherte
+   Eingaben in #briefing-felder [data-feld] und den drei Quellen-Feldern
+   (quelle-titel/-herausgeber/-stand/-url).
    Mechanik: controller.render() sichert ueber controller._formularSnapshot() VOR
    dem Neuaufbau (controller._renderAufbau()) und setzt ueber
    controller._formularWiederherstellen() danach zurueck, was von den frisch
    gerenderten Werten abweicht und nicht leer ist. Muster: test/dossierspeichern.test.js
-   (gemocktes document, kein echtes DOM noetig). */
+   (gemocktes document, kein echtes DOM noetig).
+
+   Fix-Runde 1 (Review-Finding 1): _formularSnapshot stempelt kursId/schrittId aus
+   state.position; _formularWiederherstellen verwirft den Snapshot, sobald diese
+   beim Wiederherstellen nicht mehr uebereinstimmen — der Fremd-Kurs-Schutz ist
+   damit im Mechanismus verankert statt ein Nebeneffekt der Navigation. */
 const test = require('node:test');
 const assert = require('node:assert');
 
@@ -66,6 +74,75 @@ test('_formularSnapshot liest Briefing-Felder und die drei Quellen-Eingaben', ()
   assert.strictEqual(snap.werte['id:quelle-titel'], 'SSPA Map');
   assert.strictEqual(snap.fokusId, null);
   delete global.document;
+});
+
+test('_formularSnapshot stempelt kursId und schrittId aus state.position', () => {
+  state.position = { bereich: 'arbeiten', kursId: 'DBS-001', schrittId: 1, werkzeugId: null, werk: null };
+  global.document = baueDocument([], {}, null);
+
+  const snap = controller._formularSnapshot();
+
+  assert.strictEqual(snap.kursId, 'DBS-001');
+  assert.strictEqual(snap.schrittId, '1', 'schrittId wird als String gestempelt, wie state.position.schrittId ausgewertet wird');
+  delete global.document;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
+/* ---------- Fremd-Kurs-Schutz (Fix-Runde 1, Review-Finding 1) ----------
+   Der Schutz war zuvor nur ein Nebeneffekt der Navigation (ein Kurswechsel setzt
+   zufaellig schrittId auf null, wodurch ein Zwischen-Render ohne Formular laeuft).
+   Jetzt verankert im Mechanismus selbst: ein Snapshot aus Kurs A darf nie in ein
+   Formular von Kurs B einlaufen, egal wie spaet ein Nachladen aus A eintrifft. */
+
+test('Snapshot unter Kurs A, Wiederherstellen unter Kurs B: kein Wert laeuft ein', () => {
+  const feld = feldElement('zielgruppe', 'Getippt in Kurs A');
+  state.position = { bereich: 'arbeiten', kursId: 'DBS-001', schrittId: 1, werkzeugId: null, werk: null };
+  global.document = baueDocument([feld], {}, null);
+  const snap = controller._formularSnapshot();
+
+  /* Navigation wechselt den Kurs, bevor das spaete Nachladen aus Kurs A zurueckkommt. */
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: 1, werkzeugId: null, werk: null };
+  feld.value = 'Kurs-B-Feldwert';   /* der Neuaufbau von Kurs B zeichnet sein eigenes Formular */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(feld.value, 'Kurs-B-Feldwert',
+    'ein Snapshot aus Kurs A hat in ein Formular von Kurs B geschrieben — Fremd-Kurs-Schutz greift nicht');
+  delete global.document;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
+test('Snapshot und Wiederherstellen auf demselben Kurs, aber unterschiedlichem Schritt: kein Wert laeuft ein', () => {
+  const feld = feldElement('zielgruppe', 'Getippt auf Schritt 1');
+  state.position = { bereich: 'arbeiten', kursId: 'DBS-001', schrittId: 1, werkzeugId: null, werk: null };
+  global.document = baueDocument([feld], {}, null);
+  const snap = controller._formularSnapshot();
+
+  state.position = { bereich: 'arbeiten', kursId: 'DBS-001', schrittId: 3, werkzeugId: null, werk: null };
+  feld.value = 'Schritt-3-Feldwert';
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(feld.value, 'Schritt-3-Feldwert',
+    'ein Snapshot von Schritt 1 hat in das Formular von Schritt 3 geschrieben');
+  delete global.document;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
+test('Snapshot und Wiederherstellen auf demselben Kurs UND Schritt: der Wert laeuft normal ein ' +
+  '(Gegenprobe zum Fremd-Kurs-Schutz — der Schutz darf den Normalfall nicht mit blockieren)', () => {
+  const feld = feldElement('zielgruppe', 'Getippt und bleibt am selben Ort');
+  state.position = { bereich: 'arbeiten', kursId: 'DBS-001', schrittId: 1, werkzeugId: null, werk: null };
+  global.document = baueDocument([feld], {}, null);
+  const snap = controller._formularSnapshot();
+
+  feld.value = '';   /* der Neuaufbau derselben Ansicht zeigt den (leeren) Dossier-Stand */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(feld.value, 'Getippt und bleibt am selben Ort');
+  delete global.document;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
 });
 
 test('_formularWiederherstellen: getippter Wert ≠ frisch gerendert (nicht leer) gewinnt', () => {

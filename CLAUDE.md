@@ -273,22 +273,33 @@ eTag über eine vorgeschaltete Metadaten-GET, da er im Response-Header von `:/co
 zuverlässig steht) und wendet den Mutator genau einmal erneut an.
 
 **`controller.render()` überlebt getippte, ungesicherte Eingaben (Etappe 1e, Task 2, Audit
-C2).** Vier asynchrone Pfade rendern nach ihrem Abschluss neu, mitten im Tippen:
-`briefingNachladen`, `dossierNachladen`, `quelleErfassen` (Erfolg) und `contentModus` (Fehler).
-Ohne Erhalt löschte jeder dieser Neuaufbauten, was gerade in `#briefing-felder [data-feld]` oder
-den drei Quellen-Feldern (`quelle-titel`/`-herausgeber`/`-stand`/`-url`) stand. `render` ist
-jetzt ein dünner Wrapper: `controller._formularSnapshot()` sichert Werte und das fokussierte
-Feld VOR dem Neuaufbau (`controller._renderAufbau()`, der bisherige Rumpf von `render`),
-`controller._formularWiederherstellen()` setzt danach zurück, was vom frisch gerenderten Wert
-abweicht **und nicht leer ist** — ein leeres getipptes Feld verliert bewusst gegen einen
-gefüllten Dossier-Stand, denn Leeren gilt erst als geschehen, nachdem gesichert wurde, nicht
-schon durchs Löschen im Formular. Das fokussierte Feld wird per `id` erneut fokussiert, der
-Cursor ans Ende gesetzt (`setSelectionRange`, mit Try/Catch: `type="number"` bei
-Präsenz/Selbstlern kennt keine Selektion). **Der Datei-Input `quelle-datei` bleibt aussen vor**
-— ein Datei-Input lässt sich aus Browser-Sicherheitsgründen nicht programmatisch wiederbefüllen;
-eine laufende Dateiauswahl geht bei einem Neuaufbau weiterhin verloren. `quelleErfassen`
-(Erfolg) braucht deshalb keine eigene Sonderbehandlung mehr — der generelle Mechanismus reicht,
-weil er direkt in `render` sitzt, durch das jeder der vier Pfade ohnehin geht.
+C2).** Der Schutz sitzt zentral in `render()` selbst und deckt damit **jeden** Render-Aufruf ab
+— nicht nur eine feste Liste von Auslösern. Beispiele für Aufrufe, die mitten im Tippen neu
+rendern: `briefingNachladen`, `dossierNachladen`, `quelleErfassen` (Erfolg) und `contentModus`
+(Fehler), ebenso aber `dossierSpeichern`-Erfolg und `quelleEntfernen`. Ohne Erhalt löschte jeder
+Neuaufbau, was gerade in `#briefing-felder [data-feld]` oder den drei Quellen-Feldern
+(`quelle-titel`/`-herausgeber`/`-stand`/`-url`) stand. `render` ist jetzt ein dünner Wrapper:
+`controller._formularSnapshot()` sichert Werte und das fokussierte Feld VOR dem Neuaufbau
+(`controller._renderAufbau()`, der bisherige Rumpf von `render`), `controller._formularWiederherstellen()`
+setzt danach zurück, was vom frisch gerenderten Wert abweicht **und nicht leer ist** — ein
+leeres getipptes Feld verliert bewusst gegen einen gefüllten Dossier-Stand, denn Leeren gilt
+erst als geschehen, nachdem gesichert wurde, nicht schon durchs Löschen im Formular. Das
+fokussierte Feld wird per `id` erneut fokussiert, der Cursor ans Ende gesetzt
+(`setSelectionRange`, mit Try/Catch: `type="number"` bei Präsenz/Selbstlern kennt keine
+Selektion). **Der Datei-Input `quelle-datei` bleibt aussen vor** — ein Datei-Input lässt sich
+aus Browser-Sicherheitsgründen nicht programmatisch wiederbefüllen; eine laufende Dateiauswahl
+geht bei einem Neuaufbau weiterhin verloren. `quelleErfassen` (Erfolg) braucht deshalb keine
+eigene Sonderbehandlung mehr — der generelle Mechanismus reicht, weil er direkt in `render`
+sitzt, durch das jeder Aufruf ohnehin geht.
+
+**Fremd-Kurs-Schutz ist im Mechanismus verankert, nicht nur ein Navigations-Nebeneffekt
+(Fix-Runde 1, Review-Finding 1).** `_formularSnapshot` stempelt zusätzlich `kursId` und
+`schrittId` aus `state.position`. `_formularWiederherstellen` setzt nur ein, wenn beide beim
+Wiederherstellen noch mit `state.position` übereinstimmen — sonst wird der Snapshot verworfen.
+Ohne diesen Stempel-Vergleich könnte ein spät eintreffendes Nachladen aus Kurs A (oder Schritt 1)
+seine alten Feldwerte in ein längst geöffnetes Formular von Kurs B (oder Schritt 3) schreiben;
+bisher verhinderte das nur zufällig, dass ein Kurswechsel `schrittId` auf `null` setzt und damit
+das Zwischen-Render ohne Formular läuft.
 
 ## Stand 2026-07-22
 
