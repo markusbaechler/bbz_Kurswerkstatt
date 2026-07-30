@@ -343,6 +343,29 @@
       });
     },
 
+    /* Eine Datei in den SharePoint-Papierkorb legen — der Datei-Teil von
+       controller.quelleEntfernen (Etappe 1c). 404 gilt als erledigt: die Datei
+       war schon weg, das ist kein Fehlerfall. Jeder andere Status ist einer. */
+    dateiLoeschen: function (kursId, ordner, datei) {
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId), auth.token()]).then(function (r) {
+        var did = r[0], ord = r[1], t = r[2];
+        if (!ord) {
+          throw new Error('In der Bibliothek Kursproduktion gibt es keinen Ordner für ' + kursId + '.');
+        }
+        return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+              '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)), {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + t }
+        });
+      }).then(function (r) {
+        if (r.status !== 204 && r.status !== 404) {
+          throw new Error('Nicht gelöscht (Graph ' + r.status + ')');
+        }
+        delete state.data.dateien[kursId + '/' + ordner];
+        return true;
+      });
+    },
+
     /* Einen Ordner anlegen. 409 heisst „gibt es schon" und gilt als Erfolg —
        nur so bleibt der Knopf beliebig oft drueckbar, ohne Schaden anzurichten. */
     ordnerAnlegen: function (did, elternPfad, name) {
@@ -555,6 +578,10 @@
       return root.ansichten.standort(state.data.inhalt, nav.kurs(), state.position);
     }
   };
+
+  /* Wohin Fachquellen-Dateien kommen (Spec §5.6) — eine Konstante, nicht an zwei
+     Stellen getippt: quelleErfassen legt hierhin ab, quelleEntfernen loescht von hier. */
+  var QUELLEN_ORDNER = '03_content/quellen';
 
   /* ---------- controller ---------- */
   var controller = {
@@ -846,7 +873,7 @@
       sag(nurDatei ? 'Wird hochgeladen …' : 'Wird gesichert …');
 
       var vorgang = nurDatei
-        ? graph.hochladen(kursId, '03_content/quellen', name, datei)
+        ? graph.hochladen(kursId, QUELLEN_ORDNER, name, datei)
             .then(function () { return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d)); })
         : graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d));
 
@@ -855,6 +882,55 @@
           state.data.dossier[kursId] = d;
           state.hinweis = q.id + ' erfasst: ' + (nurDatei ? name : url);
           controller.render();
+        })
+        .catch(function (e) { sag(String(e.message || e)); if (knopf) knopf.disabled = false; });
+    },
+
+    /* Ersetzbare Indirektion fuer confirm() — der Handler bleibt so in Node
+       testbar, ohne dass jeder Aufrufer window.confirm kennen muss. */
+    _bestaetige: function (frage) { return confirm(frage); },
+
+    /* Dossier-Eintrag zuerst raus, danach — nur bei einer Datei-Quelle — die
+       Datei in den SharePoint-Papierkorb (Entscheid Markus, 2026-07-30).
+       Reihenfolge ist bindend: scheitert das Datei-Loeschen NACH erfolgreichem
+       Dossier-Schreiben, gilt die Dossier-Entfernung trotzdem — eine verwaiste
+       Datei ist harmlos, ein Dossier-Eintrag zu einer geloeschten Datei waere
+       es nicht. Guards wie quelleErfassen: Dossier geladen, Kursordner da. */
+    quelleEntfernen: function (knopf) {
+      var kursId = state.position.kursId;
+      var d0 = state.data.dossier[kursId];
+      var melde = typeof document !== 'undefined' && document.getElementById('quelle-melde');
+      function sag(t) { if (melde) { melde.hidden = false; melde.textContent = t; } }
+      if (state.data.ordner[kursId] === null) { sag('Kein Kursordner — zuerst in Schritt 1 die Ablage anlegen.'); return; }
+      if (!d0) { sag('Dossier noch nicht geladen — kurz warten.'); return; }
+
+      var id = knopf && knopf.dataset && knopf.dataset.quelle;
+      if (!controller._bestaetige('Quelle ' + id + ' wirklich entfernen?')) return;
+
+      var d = JSON.parse(JSON.stringify(d0));
+      var eintrag = root.dossier.quelleEntfernen(d, id);
+      if (!eintrag) { sag('Quelle nicht gefunden.'); return; }
+
+      if (knopf) knopf.disabled = true;
+      sag('Wird entfernt …');
+
+      return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d))
+        .then(function () {
+          state.data.dossier[kursId] = d;
+          if (!eintrag.datei) {
+            state.hinweis = id + ' entfernt.';
+            controller.render();
+            return;
+          }
+          return graph.dateiLoeschen(kursId, QUELLEN_ORDNER, eintrag.datei)
+            .then(function () {
+              state.hinweis = id + ' entfernt.';
+              controller.render();
+            })
+            .catch(function () {
+              sag('Eintrag entfernt; Datei liegt noch in ' + QUELLEN_ORDNER + '/ — von Hand löschen.');
+              controller.render();
+            });
         })
         .catch(function (e) { sag(String(e.message || e)); if (knopf) knopf.disabled = false; });
     },
@@ -1148,6 +1224,7 @@
       if (a === 'ablage-anlegen')     { controller.ablageAnlegen(t); return; }
       if (a === 'briefing-felder-speichern') { controller.dossierSpeichern(t); return; }
       if (a === 'quelle-erfassen') { controller.quelleErfassen(t); return; }
+      if (a === 'quelle-entfernen') { controller.quelleEntfernen(t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {
