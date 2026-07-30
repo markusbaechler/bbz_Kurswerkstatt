@@ -223,3 +223,110 @@ test('quelleNeu() weist eine doppelte URL ab und nennt die bestehende Q-ID (C3)'
   );
   assert.equal(d.quellen.length, 1, 'die doppelte URL wurde trotzdem angehaengt');
 });
+
+/* ---------- Fix-Runde T3: der Fallback-Throw in quelleNeu() nutzt quellePruefe() ---------- */
+
+test('quelleNeu() wirft beim Fallback (nur abgerufen fehlt) dieselbe Meldung wie quellePruefe()', () => {
+  const d = dossier.neu('X');
+  const q = { titel: 'X', stand: '2026', url: 'https://x.ch' };
+  let meldung = null;
+  try { dossier.quelleNeu(d, q); } catch (e) { meldung = e.message; }
+  assert.equal(meldung, dossier.quellePruefe(q).join(' · '));
+});
+
+/* ---------- Etappe 1e, Task 6: regulatorik (Schema-Erweiterung, Entscheid Markus
+   2026-07-30 — governance-minimal: genau EIN neues Pflichtfeld [Rechtsstand] +
+   EIN Haekchen [SAQ-Rezertifizierung]). dossier.SCHEMA bleibt bewusst 1: das
+   Feld ist rein additiv, kein Bruch mit dem, was vorher galt. ---------- */
+
+test('neu() traegt ein leeres regulatorik-Objekt, pruefe() akzeptiert es', () => {
+  const d = dossier.neu('X');
+  assert.deepEqual(d.regulatorik, {});
+  assert.deepEqual(dossier.pruefe(d), []);
+});
+
+test('pruefe() beanstandet ein fehlendes regulatorik (von Hand kaputt editiert)', () => {
+  const d = dossier.neu('X');
+  delete d.regulatorik;
+  assert.ok(dossier.pruefe(d).some(x => /regulatorik/.test(x)));
+});
+
+test('pruefe() verlangt regulatorik.stand NICHT — alte Dossiers haben keins', () => {
+  const d = dossier.neu('X');
+  d.regulatorik = { zusatz: 'Rezert IK' };   /* kein stand */
+  assert.deepEqual(dossier.pruefe(d), []);
+});
+
+test('ausWerten() ohne felder-Parameter bleibt rueckwaertskompatibel: alles nach scope', () => {
+  const d = dossier.ausWerten('X', { reg_zusatz: 'Text', zielgruppe: 'Berater' }, null, null);
+  assert.equal(d.scope.reg_zusatz, 'Text');
+  assert.deepEqual(d.regulatorik, {});
+});
+
+test('ausWerten() routet ziel:regulatorik ueber speicherName, alles andere bleibt scope', () => {
+  const felder = [
+    { id: 'reg_zusatz', ziel: 'regulatorik', speicherName: 'zusatz' },
+    { id: 'rechtsstand', ziel: 'regulatorik', speicherName: 'stand' },
+    { id: 'saq_rezert', ziel: 'regulatorik' },
+    { id: 'zielgruppe' }
+  ];
+  const d = dossier.ausWerten('X',
+    { reg_zusatz: 'Rezert IK', rechtsstand: '1.1.2026', saq_rezert: true, zielgruppe: 'Berater' },
+    null, null, felder);
+  assert.deepEqual(d.regulatorik, { zusatz: 'Rezert IK', stand: '1.1.2026', saq_rezert: true });
+  assert.deepEqual(d.scope, { zielgruppe: 'Berater' });
+});
+
+test('ausWerten() haelt ein explizites saq_rezert:false fest, statt es wegzulassen', () => {
+  const felder = [{ id: 'saq_rezert', ziel: 'regulatorik' }];
+  const d = dossier.ausWerten('X', { saq_rezert: false }, null, null, felder);
+  assert.strictEqual(d.regulatorik.saq_rezert, false, 'false ist eine vollstaendige Antwort, kein Fehlen');
+});
+
+/* ---------- Migration bestehender Dossiers ohne regulatorik (Pflicht-Test) ----------
+   Ein heute in SharePoint liegendes Dossier (VL-001-artig: dossier:1, scope.reg_zusatz
+   gesetzt, KEIN regulatorik-Schluessel ueberhaupt — geschrieben, bevor dieses Feld
+   existierte) muss weiterhin lesbar bleiben. lesen() ergaenzt regulatorik als {}
+   und uebernimmt scope.reg_zusatz nach regulatorik.zusatz, entfernt es aus scope. */
+
+test('lesen() eines Alt-Dossiers ohne regulatorik bleibt lesbar und migriert reg_zusatz', () => {
+  const alt = {
+    dossier: 1, kurs: 'VL-001', stand: null,
+    scope: { zielgruppe: 'Berater', reg_zusatz: 'Rezertifizierung IK' },
+    content_modus: 'quellengestuetzt', quellen: [], status: {}, offen: [], entschieden: []
+  };
+  const d = dossier.lesen(JSON.stringify(alt));
+  assert.ok(d, 'ein Alt-Dossier ohne regulatorik wurde faelschlich abgewiesen');
+  assert.deepEqual(d.regulatorik, { zusatz: 'Rezertifizierung IK' });
+  assert.equal('reg_zusatz' in d.scope, false, 'reg_zusatz haette aus scope verschwinden sollen');
+  assert.equal(d.scope.zielgruppe, 'Berater', 'unbeteiligte scope-Felder wurden angetastet');
+});
+
+test('lesen() eines Alt-Dossiers ohne jedes reg_zusatz ergibt ein leeres regulatorik', () => {
+  const alt = {
+    dossier: 1, kurs: 'VL-001', stand: null, scope: {},
+    content_modus: 'quellengestuetzt', quellen: [], status: {}, offen: [], entschieden: []
+  };
+  const d = dossier.lesen(JSON.stringify(alt));
+  assert.ok(d);
+  assert.deepEqual(d.regulatorik, {});
+});
+
+test('lesen() eines bereits migrierten Dossiers (regulatorik vorhanden) laesst es unangetastet', () => {
+  const heutig = {
+    dossier: 1, kurs: 'VL-001', stand: null, scope: {},
+    regulatorik: { zusatz: 'X', stand: '1.1.2026', saq_rezert: true },
+    content_modus: 'quellengestuetzt', quellen: [], status: {}, offen: [], entschieden: []
+  };
+  const d = dossier.lesen(JSON.stringify(heutig));
+  assert.deepEqual(d.regulatorik, { zusatz: 'X', stand: '1.1.2026', saq_rezert: true });
+});
+
+/* Mutationsprobe (dokumentiert statt automatisiert, wie im Task-6-Auftrag verlangt):
+   entfernt man in dossier.lesen() den Migrationsblock (die drei Zeilen, die
+   d.regulatorik = {} setzen und scope.reg_zusatz uebernehmen), schlaegt der erste
+   der drei Tests oben fehl — dossier.pruefe() wuerde "regulatorik fehlt" melden und
+   lesen() gaebe null zurueck: ein echtes, altes VL-001-Dossier waere ab diesem
+   Commit nicht mehr lesbar. Von Hand nachvollzogen (nicht Teil des Testlaufs): den
+   Migrationsblock auskommentieren, `node --test` laufen lassen — die drei Tests in
+   diesem Abschnitt werden rot, alle anderen bleiben gruen. */

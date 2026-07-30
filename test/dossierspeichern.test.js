@@ -9,6 +9,10 @@ const assert = require('node:assert');
 
 const { controller, state, graph } = require('../app.js');
 require('../dossier.js');
+/* dossierSpeichern ruft seit Etappe 1e Task 6 root.inhalt.BRIEFING_FELDER auf
+   (die ziel/speicherName-Zuordnung fuer regulatorik) — ohne diesen Require
+   waere root.inhalt in diesem Testprozess undefined. */
+require('../inhalt.js');
 
 function melde() {
   const el = { hidden: true, textContent: '' };
@@ -99,5 +103,42 @@ test('geladenes Dossier — dossierSpeichern legt ab und bewahrt bestehende Quel
   const d = JSON.parse(geschrieben.text);
   assert.strictEqual(d.quellen.length, 1, 'die bestehende Quelle ist beim Sichern verloren gegangen');
   assert.strictEqual(knopf.disabled, true, 'der Knopf wird waehrend des Sicherns nicht gesperrt');
+  delete global.document;
+});
+
+/* ---------- Etappe 1e, Task 6: regulatorik ---------- */
+
+test('dossierSpeichern schreibt Rechtsstand, SAQ-Haekchen und Zusatz nach regulatorik, nicht nach scope', async () => {
+  state.position.kursId = 'DBS-001';
+  const bestehend = {
+    dossier: 1, kurs: 'DBS-001', stand: null, scope: {}, regulatorik: {},
+    content_modus: 'quellengestuetzt', quellen: [], status: {}, offen: [], entschieden: []
+  };
+  state.data.dossier = { 'DBS-001': bestehend };
+  state.data.dossierETag = {};
+  let geschrieben = null;
+  graph.ablegen = function (kursId, ordner, datei, text) { geschrieben = text; return Promise.resolve({ eTag: 'W/"1"' }); };
+  const knopf = { disabled: false };
+
+  const felder = [
+    { dataset: { feld: 'zielgruppe' }, value: 'Kundenberater' },
+    { dataset: { feld: 'reg_zusatz' }, value: 'Rezertifizierung IK' },
+    { dataset: { feld: 'rechtsstand' }, value: '1.1.2026' },
+    { dataset: { feld: 'saq_rezert' }, type: 'checkbox', checked: true }
+  ];
+  global.document = {
+    getElementById: function (id) { return id === 'briefing-felder-melde' ? { hidden: true, textContent: '' } : null; },
+    querySelectorAll: function (sel) { return sel === '[data-feld]' ? felder : []; }
+  };
+
+  await controller.dossierSpeichern(knopf);
+
+  assert.ok(geschrieben, 'graph.ablegen wurde nicht aufgerufen');
+  const d = JSON.parse(geschrieben);
+  assert.strictEqual(d.scope.zielgruppe, 'Kundenberater', 'ein regulaeres scope-Feld landet nicht mehr in scope');
+  assert.strictEqual('reg_zusatz' in d.scope, false, 'reg_zusatz landete faelschlich weiterhin in scope');
+  assert.strictEqual(d.regulatorik.zusatz, 'Rezertifizierung IK');
+  assert.strictEqual(d.regulatorik.stand, '1.1.2026');
+  assert.strictEqual(d.regulatorik.saq_rezert, true);
   delete global.document;
 });

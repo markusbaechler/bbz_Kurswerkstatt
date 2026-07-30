@@ -19,6 +19,7 @@
         kurs: String(kursId || ''),
         stand: null,
         scope: {},
+        regulatorik: {},
         content_modus: 'quellengestuetzt',
         quellen: [],
         status: {},
@@ -27,17 +28,38 @@
       };
     },
 
-    /* Formularwerte nach scope uebernehmen. Alles ausser scope bleibt unangetastet —
-       das Formular ist nicht die einzige Schreibstelle, aber jede Schreibstelle
-       schreibt nur ihren Teil. stand kommt als Parameter (kein Date hier drin). */
-    ausWerten: function (kursId, werte, alt, stand) {
+    /* Formularwerte nach scope UND regulatorik uebernehmen (Etappe 1e, Task 6).
+       Standardmaessig geht jedes Feld nach scope, wie bisher. Das optionale
+       fuenfte Argument felder (z. B. inhalt.BRIEFING_FELDER) darf Eintraege mit
+       ziel:'regulatorik' tragen — die werden stattdessen unter speicherName
+       (oder, fehlt der, unter der eigenen id) nach d.regulatorik geschrieben.
+       dossier.js bleibt dabei rein: es kennt nur das Attribut ziel/speicherName,
+       nie inhalt.js selbst — die Feldliste kommt als Daten herein, kein require.
+       Bool-Werte (das SAQ-Haekchen) bleiben bool und werden nie wegen Leere
+       verworfen (false ist eine vollstaendige Antwort, kein Fehlen); alles
+       andere wird wie bisher getrimmt, Leeres faellt weg. Alles ausser
+       scope/regulatorik bleibt unangetastet — das Formular ist nicht die
+       einzige Schreibstelle, aber jede Schreibstelle schreibt nur ihren Teil.
+       stand kommt als Parameter (kein Date hier drin). */
+    ausWerten: function (kursId, werte, alt, stand, felder) {
       var d = alt ? JSON.parse(JSON.stringify(alt)) : dossier.neu(kursId);
       d.kurs = String(kursId || d.kurs);
       d.scope = {};
+      var regulatorikNeu = {};
       Object.keys(werte || {}).forEach(function (k) {
-        var v = String(werte[k] == null ? '' : werte[k]).trim();
-        if (v) d.scope[k] = v;
+        var roh = werte[k];
+        var f = (felder || []).filter(function (x) { return x && x.id === k; })[0];
+        var regulatorikZiel = !!(f && f.ziel === 'regulatorik');
+        var name = (f && f.speicherName) || k;
+        if (typeof roh === 'boolean') {
+          if (regulatorikZiel) regulatorikNeu[name] = roh; else d.scope[k] = roh;
+          return;
+        }
+        var v = String(roh == null ? '' : roh).trim();
+        if (!v) return;
+        if (regulatorikZiel) regulatorikNeu[name] = v; else d.scope[k] = v;
       });
+      d.regulatorik = regulatorikNeu;
       if (stand) d.stand = stand;
       return d;
     },
@@ -45,11 +67,30 @@
     text: function (d) { return JSON.stringify(d, null, 2) + '\n'; },
 
     /* Unbrauchbares wird abgewiesen, nie still repariert — ein kaputtes Dossier
-       still zu ersetzen hiesse, Quellen und Status zu verlieren. */
+       still zu ersetzen hiesse, Quellen und Status zu verlieren.
+
+       EINE Ausnahme, dokumentiert (Etappe 1e, Task 6): Schema-ERWEITERUNG ist
+       keine Reparatur. dossier.SCHEMA bleibt bewusst 1 — regulatorik ist rein
+       additiv, kein Bruch mit dem, was vorher galt. Vor diesem Feld
+       geschriebene Dossiers (z. B. VL-001 in SharePoint, Stand 2026-07-30)
+       tragen gar kein regulatorik; ein fehlendes oder falsch typisiertes Objekt
+       wird zu {} ergaenzt, und ein vorhandenes scope.reg_zusatz wandert nach
+       regulatorik.zusatz (derselbe Feldinhalt, neuer Platz — das Formular
+       schreibt seit diesem Feld dorthin, s. inhalt.BRIEFING_FELDER/ziel) und
+       verschwindet aus scope. Das unterscheidet sich von echtem Reparieren:
+       hier gab es das Feld zum Zeitpunkt des Schreibens schlicht noch nicht;
+       pruefe() weist jeden ECHTEN Fehler weiterhin unveraendert ab. */
     lesen: function (text) {
       if (!text) return null;
       var d;
       try { d = JSON.parse(text); } catch (e) { return null; }
+      if (d && typeof d === 'object' && (!d.regulatorik || typeof d.regulatorik !== 'object')) {
+        d.regulatorik = {};
+        if (d.scope && typeof d.scope === 'object' && d.scope.reg_zusatz) {
+          d.regulatorik.zusatz = d.scope.reg_zusatz;
+          delete d.scope.reg_zusatz;
+        }
+      }
       return dossier.pruefe(d).length ? null : d;
     },
 
@@ -87,6 +128,12 @@
       if (d.dossier !== dossier.SCHEMA) p.push('unbekannte Schema-Version: ' + d.dossier);
       if (!d.kurs) p.push('kurs fehlt');
       if (!d.scope || typeof d.scope !== 'object') p.push('scope fehlt');
+      /* regulatorik.stand ist NICHT hier Pflicht (Etappe 1e, Task 6, Entscheid
+         Markus): alte Dossiers haben keins, lesen() darf sie nicht abweisen.
+         Pflicht ist es nur im Formular-Zaehler (inhalt.briefingFehlend) — nach
+         der Migration in lesen() ist ein fehlendes regulatorik-Objekt ohnehin
+         unmoeglich, dieser Check trifft nur ein von Hand kaputt editiertes. */
+      if (!d.regulatorik || typeof d.regulatorik !== 'object') p.push('regulatorik fehlt');
       if (dossier.MODI.indexOf(d.content_modus) < 0) p.push('content_modus unbekannt: ' + d.content_modus);
       if (!Array.isArray(d.quellen)) p.push('quellen ist keine Liste');
       else d.quellen.forEach(function (q, n) {
@@ -158,7 +205,14 @@
         if (!/^https?:\/\//i.test(String(q.url || '').trim())) {
           throw new Error('Link muss mit http:// oder https:// beginnen');
         }
-        throw new Error('Quelle: abgerufen fehlt');
+        /* Fallback-Zweig (Nebenauftrag T3-Review, Etappe 1e Task 6): alle
+           vorstehenden, wortlaut-geprueften Faelle sind bereits abgefangen —
+           was hier ankommt, ist ausschliesslich das fehlende abgerufen. Statt
+           das hart zu benennen, meldet quellePruefe() selbst die Problemliste:
+           waechst dessen Regelwerk kuenftig (z. B. eine Stand-Formatregel),
+           bleibt dieser Zweig automatisch richtig, statt eine veraltete
+           Meldung auszugeben. */
+        throw new Error(dossier.quellePruefe(q).join(' · '));
       }
       if (hatDatei) {
         var dateiNeu = String(q.datei).trim().toLowerCase();

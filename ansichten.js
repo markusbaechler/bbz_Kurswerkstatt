@@ -373,7 +373,10 @@
 
     I2.BRIEFING_FELDER.forEach(function (f) {
       var wert = String(werte[f.id] || '');
-      var leer = !wert.trim();
+      /* Ein Haekchen kennt kein "leer" (Etappe 1e, Task 6, wie briefingFehlend
+         in inhalt.js) — nicht angehakt ist eine vollstaendige Antwort, keine
+         fehlende, deshalb hier von der offen-Markierung ausgenommen. */
+      var leer = f.form !== 'haken' && !wert.trim();
       h += '<div class="feld' + (f.pflicht && leer ? ' offen' : '') + '">';
       h += '<label for="bf-' + f.id + '"><b>' + esc(f.label) + '</b>' +
            (f.einheit ? ' <span class="einheit">(' + esc(f.einheit) + ')</span>' : '') +
@@ -386,6 +389,9 @@
         h += '<input type="number" step="' + f.schritt + '" min="0" id="bf-' + f.id +
              '" data-feld="' + f.id + '" value="' + esc(wert) + '" placeholder="' +
              esc(f.beispiel) + '">';
+      } else if (f.form === 'haken') {
+        h += '<label><input type="checkbox" id="bf-' + f.id + '" data-feld="' + f.id + '"' +
+             (wert === 'true' ? ' checked' : '') + '> Ja</label>';
       } else {
         h += '<textarea id="bf-' + f.id + '" data-feld="' + f.id + '" rows="' + (f.zeilen || 3) +
              '" placeholder="' + esc(f.beispiel) + '">' + esc(wert) + '</textarea>';

@@ -797,7 +797,9 @@
           /* undefined = noch nicht nachgesehen, null = nachgesehen und nicht da */
           ordnerFehlt: k ? state.data.ordner[k.kursId] === null : false,
           briefing: k ? state.data.briefing[k.kursId] : undefined,
-          briefingFelder: k ? (((state.data.dossier[k.kursId] || {}).scope) || {}) : {},
+          /* Scope UND regulatorik zusammengefuehrt (Etappe 1e, Task 6) — eine
+             Stelle, dieselbe, die dossier.ausWerten beim Schreiben nutzt. */
+          briefingFelder: k ? root.inhalt.briefingWerteAusDossier(state.data.dossier[k.kursId]) : {},
           briefingFelderGelesen: k ? (state.data.dossier[k.kursId] != null) : false,
           dossier: k ? (state.data.dossier[k.kursId] || null) : null,
           /* Der echte Ordnername, sobald nachgesehen wurde — er geht in die
@@ -962,7 +964,7 @@
           return graph.dateiLesen(kursId, ordner, kursId + '_briefing-felder.md')
             .then(function (alt) {
               var werte = alt ? root.inhalt.briefingFelderLesen(alt) : {};
-              state.data.dossier[kursId] = root.dossier.ausWerten(kursId, werte, null, null);
+              state.data.dossier[kursId] = root.dossier.ausWerten(kursId, werte, null, null, root.inhalt.BRIEFING_FELDER);
               controller.render();
             });
         })
@@ -980,7 +982,10 @@
       var werte = {};
       if (typeof document === 'undefined') return werte;
       Array.prototype.forEach.call(document.querySelectorAll('[data-feld]'), function (el) {
-        werte[el.dataset.feld] = String(el.value || '').trim();
+        /* Ein Haekchen (form:'haken', Etappe 1e Task 6) traegt seine Antwort in
+           .checked, nicht in .value — ein natives Checkbox-Element liefert dort
+           unabhaengig vom Anhaken immer denselben Wert ("on" o. ae.). */
+        werte[el.dataset.feld] = (el.type === 'checkbox') ? !!el.checked : String(el.value || '').trim();
       });
       return werte;
     },
@@ -1103,7 +1108,7 @@
          nicht die von hier (Etappe 1e, Task 1) — sonst kaeme das Lost-Update-Risiko
          durch die Hintertuer zurueck. */
       return controller.dossierSchreiben(kursId, function (kopie) {
-        return root.dossier.ausWerten(kursId, werte, kopie, stand);
+        return root.dossier.ausWerten(kursId, werte, kopie, stand, root.inhalt.BRIEFING_FELDER);
       }, function (t) { if (melde) melde.textContent = t; })
         .then(function () {
           state.hinweis = 'Dossier gesichert: ' + root.dossier.DATEI(kursId);
@@ -1613,7 +1618,7 @@
              ueberschreiben ihn — wer tippt und sofort kopiert, bekommt, was er sieht.
              kurs2 kann null sein (Kurs nicht mehr in KWKurse) — briefingPromptKopf
              toleriert das mit '?', der Zugriff aufs Dossier davor nicht (M-1). */
-          var basis = (kurs2 && (state.data.dossier[kurs2.kursId] || {}).scope) || {};
+          var basis = kurs2 ? root.inhalt.briefingWerteAusDossier(state.data.dossier[kurs2.kursId]) : {};
           var form = controller.briefingFelderAusFormular();
           var werte = {};
           Object.keys(basis).forEach(function (k) { werte[k] = basis[k]; });

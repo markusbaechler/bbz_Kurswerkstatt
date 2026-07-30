@@ -71,6 +71,30 @@ test('ohne Dossier bleiben die Instruktionen wie bisher — kein Quellen-Teil', 
   assert.doesNotMatch(t, /Fachquellen/);
 });
 
+/* ---------- Etappe 1e, Task 6: Rechtsstand/SAQ-Rezertifizierung aus dem Dossier ---------- */
+
+test('die Instruktionen tragen Rechtsstand und SAQ-Rezertifizierung aus regulatorik', () => {
+  const d = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+              regulatorik: { stand: '1.1.2026', saq_rezert: true },
+              quellen: [], status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', d);
+  assert.match(t, /Rechtsstand: 1\.1\.2026/);
+  assert.match(t, /SAQ-Rezertifizierung: ja/);
+});
+
+test('fehlt regulatorik.stand, steht [OFFEN] statt eines erfundenen Datums', () => {
+  const d = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+              regulatorik: {}, quellen: [], status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', d);
+  assert.match(t, /Rechtsstand: \[OFFEN\]/);
+  assert.match(t, /SAQ-Rezertifizierung: nein/);
+});
+
+test('die Rechtsstand/SAQ-Zeile fehlt ohne Dossier, wie der ganze Fachquellen-Teil', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x');
+  assert.doesNotMatch(t, /Rechtsstand:/);
+});
+
 /* ---------- Die zwei Fassungen ---------- */
 
 test('Claude bekommt XML-Tags, ChatGPT Trenn-Ueberschriften', () => {

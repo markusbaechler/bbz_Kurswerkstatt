@@ -371,11 +371,40 @@
 
       /* Fester Rahmen, nur Zusätze werden gefragt — Entscheid Markus 2026-07-29.
          Der Rahmen gilt fuer jeden Kurs dieses Hauses; ihn jedes Mal zu erfragen
-         erzeugt eine Frage, deren Antwort schon feststeht. */
+         erzeugt eine Frage, deren Antwort schon feststeht.
+
+         ziel:'regulatorik' + speicherName (Etappe 1e, Task 6): dieses Feld
+         schreibt NICHT nach scope, sondern nach dossier.regulatorik.zusatz —
+         die Feld-ID reg_zusatz bleibt unveraendert (sie traegt schon die
+         Bedeutung, s. Kommentar bei briefingFelderText weiter unten), nur der
+         Ablageort im Dossier aendert sich. dossier.ausWerten() liest ziel und
+         speicherName als Daten, ohne inhalt.js zu kennen — eine Quelle fuer
+         die Zuordnung, hier, wo auch Label/Hilfe/Beispiel stehen. Der feste
+         Rahmen-Satz selbst (oben, fest:) wird NIE ins Dossier geschrieben —
+         reine Ansichtssache, damit er nicht in jeder einzelnen dossier.json
+         als Kopie herumliegt, die still veralten koennte: die einzige Quelle
+         bleibt dieser fest-Text hier. */
       { id: 'reg_zusatz', label: 'Regulatorische Zusätze', form: 'text', zeilen: 4, pflicht: false,
+        ziel: 'regulatorik', speicherName: 'zusatz',
         fest: 'Schweizer Markt- und Beratungskontext. FIDLEG, GWG und VSB gelten als Rahmen.',
         hilfe: 'Nur Zusätze oder Abweichungen zum festen Rahmen. Leer lassen, wenn nichts dazukommt.',
         beispiel: 'Rezertifizierung für IK, Affluent, CWMA, KMU, CCoB. Keine FIDLEG-Vertiefung als Kursinhalt.' },
+
+      /* Rechtsstand-Pflichtfeld und SAQ-Häkchen (Entscheide Markus, 2026-07-30,
+         Etappe 1e Task 6 — governance-minimal: genau EIN neues Pflichtfeld
+         plus EIN Häkchen). Beide gehören zur Regulatorik, nicht zum fachlichen
+         Scope, deshalb ziel:'regulatorik' wie beim Zusatz oben. rechtsstand
+         braucht speicherName:'stand' — das Schema (dossier.js) nennt den
+         Schlüssel stand, nicht die Formular-id; saq_rezert braucht keinen
+         eigenen speicherName, die id ist schon der gewünschte Schlüssel. */
+      { id: 'rechtsstand', label: 'Rechtsstand', form: 'text', zeilen: 4, pflicht: true,
+        ziel: 'regulatorik', speicherName: 'stand',
+        hilfe: 'Auf diesen Stand werden alle Zahlen und Aussagen in Schritt 3 belegt.',
+        beispiel: '1.1.2026' },
+
+      { id: 'saq_rezert', label: 'SAQ-Rezertifizierung', form: 'haken', pflicht: false,
+        ziel: 'regulatorik',
+        hilfe: 'Zählt dieser Kurs für die SAQ-Rezertifizierung? Leer lassen heisst nein.' },
 
       { id: 'ausschluesse', label: 'Bewusste Ausschlüsse', form: 'text', zeilen: 5, pflicht: true,
         hilfe: 'Was ausdrücklich NICHT Teil ist. Begrenzt den Content-Umfang stärker als jede Positivliste.',
@@ -391,12 +420,38 @@
       return inhalt.BRIEFING_FELDER.filter(function (f) { return f.id === id; })[0] || null;
     },
 
-    /* Welche Pflichtfelder noch leer sind. Leere Liste heisst: das Formular traegt. */
+    /* Welche Pflichtfelder noch leer sind. Leere Liste heisst: das Formular traegt.
+       Ein Haekchen zaehlt NIE als offen (Etappe 1e, Task 6): ein Kaestchen kennt
+       kein "leer" — nicht angehakt ist eine vollstaendige Antwort (nein), keine
+       fehlende. Aktuell ist ohnehin kein Haken-Feld Pflicht; die Ausnahme steht
+       trotzdem hier, nicht als Zufallsergebnis von pflicht:false. */
     briefingFehlend: function (werte) {
       werte = werte || {};
       return inhalt.BRIEFING_FELDER
-        .filter(function (f) { return f.pflicht && !String(werte[f.id] || '').trim(); })
+        .filter(function (f) { return f.pflicht && f.form !== 'haken' && !String(werte[f.id] || '').trim(); })
         .map(function (f) { return f.label; });
+    },
+
+    /* Die Formularwerte AUS dem Dossier — die Ruecklesung zu dossier.ausWerten(),
+       ueber dieselbe ziel/speicherName-Zuordnung der BRIEFING_FELDER-Eintraege
+       (Etappe 1e, Task 6): ein Feld mit ziel:'regulatorik' liest aus
+       d.regulatorik statt aus d.scope, unter speicherName (oder der eigenen id).
+       EINE Stelle fuer diese Zuordnung in beide Richtungen — Schreiben
+       (dossier.ausWerten) und Lesen (hier) koennen so nie auseinanderlaufen.
+       Ein Haken-Feld kommt als String 'true'/'false' zurueck, damit das Formular
+       (data-feld, String-Vergleich) es wie jedes andere Feld behandelt. */
+    briefingWerteAusDossier: function (d) {
+      var scope = (d && d.scope) || {};
+      var regulatorik = (d && d.regulatorik) || {};
+      var werte = {};
+      inhalt.BRIEFING_FELDER.forEach(function (f) {
+        var quelle = (f.ziel === 'regulatorik') ? regulatorik : scope;
+        var name = f.speicherName || f.id;
+        var v = quelle[name];
+        if (f.form === 'haken') { werte[f.id] = v ? 'true' : 'false'; return; }
+        if (v != null) werte[f.id] = v;
+      });
+      return werte;
     },
 
     /* --- Datei 01_briefing/{K}_briefing-felder.md ---
@@ -687,6 +742,15 @@
           z.push('Noch keine Fachquellen erfasst. Vor Schritt 3 in der Kurswerkstatt erfassen ' +
                  'oder den Modus quellenfrei setzen — nicht selbst welche wählen.');
         }
+        /* Rechtsstand/SAQ (Etappe 1e, Task 6): steht im selben Teil wie die
+           Fachquellen — beides sind Angaben aus dem Dossier, beide fehlen ganz,
+           solange kein Dossier vorliegt (derselbe if (d) wie oben, keine zweite
+           Bedingung dafuer). regulatorik.stand ist im Dossier nicht erzwungen
+           (alte Dossiers haben keins) — hier steht dafuer ausdruecklich
+           [OFFEN], nie ein erfundenes Datum. */
+        var regulatorik = d.regulatorik || {};
+        z.push('Rechtsstand: ' + (regulatorik.stand ? regulatorik.stand : '[OFFEN]') +
+               ' · SAQ-Rezertifizierung: ' + (regulatorik.saq_rezert ? 'ja' : 'nein'));
       }
 
       teil('kursbriefing', 'Das freigegebene Kursbriefing');

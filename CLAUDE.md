@@ -368,6 +368,59 @@ die Person ihn liest; `state.fehlerHinweis` lebt im State und übersteht das.
    im `.catch`: `state.fehlerHinweis` setzen, rendern, danach auf `undefined` zurückfallen.
    `graph.dateiLesen` selbst bleibt unverändert.
 
+**`regulatorik` — Rechtsstand-Pflichtfeld und SAQ-Häkchen (Etappe 1e, Task 6, Entscheid
+Markus 2026-07-30, governance-minimal: genau EIN neues Pflichtfeld plus EIN Häkchen).**
+Das Dossier trägt seither `regulatorik: { zusatz, stand, saq_rezert }` — ein eigenes
+Objekt, nicht länger `scope.reg_zusatz`. **`dossier.SCHEMA` bleibt bewusst 1**: regulatorik
+ist rein additiv, kein Bruch mit dem, was vorher galt — eine zweite Schema-Version hätte
+eine Migrationsfunktion gebraucht, wo eine dokumentierte Auffüllung reicht. `dossier.lesen()`
+ergänzt ein fehlendes oder falsch typisiertes `regulatorik` zu `{}` und übernimmt ein
+vorhandenes `scope.reg_zusatz` nach `regulatorik.zusatz` (danach aus `scope` entfernt) —
+**Schema-Erweiterung, keine Reparatur**: das Feld gab es zum Zeitpunkt des Schreibens
+schlicht noch nicht, `pruefe()` weist echte Fehler unverändert ab. Ein VL-001-artiges
+Alt-Dossier (kein `regulatorik`-Schlüssel überhaupt) bleibt damit lesbar; ein Test hält den
+Fall samt dokumentierter Mutationsprobe fest (`test/dossier.test.js`). `pruefe()` verlangt
+nur, dass `regulatorik` ein Objekt ist — **`stand` ist dort NICHT Pflicht** (alte Dossiers
+haben keins); Pflicht ist er allein im Formular-Zähler `inhalt.briefingFehlend()`.
+
+**Die Zuordnung scope/regulatorik steht an genau einer Stelle: `ziel`/`speicherName` auf dem
+BRIEFING_FELDER-Eintrag.** Ein Feld ohne `ziel` geht wie bisher nach `scope`; `ziel:
+'regulatorik'` schreibt stattdessen unter `speicherName` (fehlt der, unter der eigenen `id`)
+nach `d.regulatorik` — `reg_zusatz` bleibt als Feld-ID bestehen (sie trägt schon die
+Bedeutung), landet aber über `speicherName:'zusatz'` in `regulatorik.zusatz`; `rechtsstand`
+braucht `speicherName:'stand'`, weil das Schema den Schlüssel `stand` nennt, nicht die
+Formular-ID. `dossier.ausWerten(kursId, werte, alt, stand, felder)` bekommt diese Feldliste
+als **Daten** herein (fünftes, optionales Argument) — `dossier.js` bleibt dabei rein und
+kennt `inhalt.js` nicht, es interpretiert nur das Attribut. `inhalt.briefingWerteAusDossier(d)`
+ist die Ruecklesung über dieselbe Zuordnung (scope **und** regulatorik zusammengeführt in
+ein flaches Formular-Objekt) — Schreiben und Lesen können so nie auseinanderlaufen. Beide
+Aufrufer, die vorher direkt `.scope` lasen (`app.js`: die Formularbefüllung in der
+Schritt-Ansicht und die Basis beim Prompt-Kopieren), rufen jetzt diese eine Funktion.
+Bool-Werte (das SAQ-Häkchen) bleiben in `ausWerten()` bool und werden nie wegen Leere
+verworfen — `false` ist eine vollständige Antwort, kein Fehlen.
+
+**Der feste Rahmen-Satz (`fest` bei `reg_zusatz`, „Schweizer Markt- und Beratungskontext.
+FIDLEG, GWG und VSB gelten als Rahmen.") wird NIE ins Dossier geschrieben** — bewusste
+Entscheidung für die Variante mit einer Quelle: `regulatorik.rahmen` persistieren hieße,
+denselben Satz in jede einzelne `dossier.json` zu kopieren, wo er still veralten könnte,
+ohne dass es auffällt. Die einzige Quelle bleibt der `fest`-Text in `inhalt.BRIEFING_FELDER`;
+die Ansicht zeigt ihn wie bisher direkt im Formular („Gilt fest: …").
+
+**Das SAQ-Häkchen ist ein neuer `form`-Typ `'haken'`** (natives `<input type="checkbox">`,
+kein Freitext) — `ansichten.js` rendert ihn im selben generischen Feld-Loop wie `'zahl'` und
+Freitext, `controller.briefingFelderAusFormular()` liest bei `el.type === 'checkbox'` `.checked`
+statt `.value`. Ein Häkchen kennt kein „leer": `inhalt.briefingFehlend()` und die
+`offen`-Markierung in `ansichten.js` nehmen `form:'haken'`-Felder von der Pflicht-Prüfung aus,
+unabhängig davon, ob ein Haken-Feld je `pflicht:true` wird.
+
+**Nebenauftrag (Fix-Runde T3-Review): `dossier.quelleNeu()` benennt seinen letzten
+Fallback-Wurf jetzt über `quellePruefe(q).join(' · ')` statt über den festen Text
+„Quelle: abgerufen fehlt".** Die drei vorstehenden, wortlaut-geprüften Zweige (Datei-oder-Link,
+titel/stand, URL-Schema) bleiben unverändert; nur der letzte, allgemeine Fall — der ohnehin
+immer exakt „abgerufen fehlt" bedeutet — zieht seine Meldung jetzt aus derselben
+Prüffunktion wie `pruefe()`. Wächst `quellePruefe()` künftig um eine weitere Regel, bleibt
+dieser Zweig automatisch richtig, statt eine veraltete Meldung auszugeben.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht
@@ -423,6 +476,15 @@ Status setzen — wartet bewusst, bis ein Gate einmal von Hand gelaufen ist.
 gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →
 ein Schritt, Werkzeuge inline) und *Nachschlagen*. Wird an der laufenden App beurteilt, nicht
 an einer Skizze.
+
+**Das SAQ-Häkchen übersteht einen Zwischen-Render nicht ungesichert** (Etappe 1e, Task 6,
+bewusst kleiner Schnitt): `controller._formularSnapshot()`/`_formularWiederherstellen()`
+(Task 2, Audit C2) kennen nur `.value`-Felder — ein angehakter, aber noch nicht gesicherter
+Zustand geht bei einem Neuaufbau mitten im Tippen verloren (z. B. durch ein spät eintreffendes
+`dossierNachladen`), während Freitext-Felder das überstehen. Der Auftrag nannte nur
+`briefingFelderAusFormular` (liest `checked`) und `briefingFehlend` (behandelt das Häkchen
+nie als offen) ausdrücklich; die Snapshot/Restore-Erweiterung auf Checkboxen war nicht
+Teil des Auftrags und ist eine bekannte Restlücke, keine übersehene.
 
 **Die Dossier-ERSTanlage läuft ohne `If-Match`** (`controller.dossierSchreiben`, Etappe 1e,
 Task 1): Existiert noch kein eTag (Datei war nie geladen oder noch gar nicht angelegt), schreibt

@@ -4,6 +4,7 @@ const assert = require('node:assert');
 require('../app.js');
 const { inhalt } = require('../inhalt.js');
 const { ansichten } = require('../ansichten.js');
+const { dossier } = require('../dossier.js');
 const { INHALT, KURSE } = require('./fixture.js');
 
 const DBS = KURSE[0];
@@ -16,16 +17,35 @@ const VOLL = {
   selbstlern: '2',
   scope: 'SSPA Swiss Derivative Map 2025',
   reg_zusatz: 'Rezertifizierung IK, Affluent',
+  rechtsstand: '1.1.2026',
+  saq_rezert: 'true',
   ausschluesse: 'Keine Optionsbewertung',
   scope_quelle: 'Kursausschreibung, Stand 2026-06'
 };
 
 /* ---------- Felddefinition ---------- */
 
-test('die Felder sind die acht generischen plus die Scope-Quelle', () => {
+test('die Felder sind die acht generischen plus Scope-Quelle, Rechtsstand und SAQ-Haekchen', () => {
   const ids = inhalt.BRIEFING_FELDER.map(f => f.id);
   assert.deepStrictEqual(ids, ['zielgruppe', 'vorkenntnisse', 'kurszweck', 'praesenz',
-    'selbstlern', 'scope', 'reg_zusatz', 'ausschluesse', 'scope_quelle']);
+    'selbstlern', 'scope', 'reg_zusatz', 'rechtsstand', 'saq_rezert', 'ausschluesse', 'scope_quelle']);
+});
+
+/* ---------- Etappe 1e, Task 6: regulatorik statt scope ---------- */
+
+test('reg_zusatz, Rechtsstand und SAQ-Haekchen gehen an regulatorik, nicht an scope', () => {
+  ['reg_zusatz', 'rechtsstand', 'saq_rezert'].forEach(id => {
+    assert.strictEqual(inhalt.briefingFeld(id).ziel, 'regulatorik', id + ' hat kein ziel:regulatorik');
+  });
+});
+
+test('Rechtsstand ist Pflicht, SAQ-Rezertifizierung ist ein Haekchen und optional', () => {
+  const stand = inhalt.briefingFeld('rechtsstand');
+  assert.strictEqual(stand.pflicht, true);
+  assert.strictEqual(stand.form, 'text');
+  const saq = inhalt.briefingFeld('saq_rezert');
+  assert.strictEqual(saq.pflicht, false, 'governance-minimal: genau EIN neues Pflichtfeld, das Haekchen ist es nicht');
+  assert.strictEqual(saq.form, 'haken');
 });
 
 test('Praesenz zaehlt in Tagen, Selbstlern in Stunden', () => {
@@ -145,9 +165,62 @@ test('Praesenz und Selbstlern sind Zahlenfelder mit ihrer Einheit', () => {
 
 test('das Formular meldet, wie viel noch offen ist', () => {
   const leer = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
-  assert.match(leer, /8 offen/);
+  assert.match(leer, /9 offen/, 'neun Pflichtfelder seit Rechtsstand (Etappe 1e Task 6)');
   const voll = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: VOLL });
   assert.ok(voll.indexOf('vollst&auml;ndig') >= 0, 'kein Vollstaendig-Vermerk');
+});
+
+/* ---------- Das SAQ-Haekchen (Etappe 1e, Task 6) ---------- */
+
+test('das SAQ-Haekchen rendert als Checkbox, nicht als Textfeld', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
+  assert.match(h, /type="checkbox"[^>]*data-feld="saq_rezert"/);
+});
+
+test('ein leeres Formular haengt kein "offen" ans SAQ-Haekchen, obwohl es optional ist', () => {
+  /* Kein Widerspruch pruefbar, wenn saq_rezert eh nie Pflicht ist — die
+     eigentliche Absicherung ist der Test "Rechtsstand ist Pflicht ..." oben:
+     das Haekchen bleibt pflicht:false. Hier nur die Gegenprobe am Rendering:
+     kein Pflicht-Stern/-Klasse am Haekchen-Feld. */
+  const h = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
+  const stelle = h.slice(h.indexOf('data-feld="saq_rezert"') - 400, h.indexOf('data-feld="saq_rezert"'));
+  assert.ok(!/class="feld offen"/.test(stelle), 'SAQ-Haekchen faelschlich als offen markiert');
+});
+
+test('ein gesetztes SAQ-Haekchen kommt als checked zurueck', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 1, null,
+    { briefingFelder: Object.assign({}, VOLL, { saq_rezert: 'true' }) });
+  assert.match(h, /data-feld="saq_rezert"\s+checked/);
+});
+
+test('Rechtsstand rendert als Pflichtfeld mit Beispiel', () => {
+  const h = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
+  assert.ok(h.indexOf('data-feld="rechtsstand"') >= 0, 'Rechtsstand-Feld fehlt');
+  assert.ok(h.indexOf('1.1.2026') >= 0, 'Beispiel fehlt');
+});
+
+/* ---------- inhalt.briefingWerteAusDossier() — die Ruecklesung zu dossier.ausWerten() ----------
+   EINE Zuordnung (ziel/speicherName), in beide Richtungen benutzt: dossier.ausWerten()
+   schreibt danach, briefingWerteAusDossier() liest danach. Ein Schreib-Lese-Kreis
+   ueber echte dossier.js-Funktionen ist der ehrlichste Beweis, dass beide Seiten
+   noch zusammenpassen. */
+test('briefingWerteAusDossier() liest scope UND regulatorik wieder in ein flaches Formular-Objekt', () => {
+  const d = dossier.ausWerten('DBS-001', {
+    zielgruppe: 'Berater', reg_zusatz: 'Rezert IK', rechtsstand: '1.1.2026', saq_rezert: true
+  }, null, null, inhalt.BRIEFING_FELDER);
+
+  const werte = inhalt.briefingWerteAusDossier(d);
+
+  assert.strictEqual(werte.zielgruppe, 'Berater', 'scope-Feld nicht zurueckgelesen');
+  assert.strictEqual(werte.reg_zusatz, 'Rezert IK', 'regulatorik.zusatz nicht ueber speicherName zurueckgelesen');
+  assert.strictEqual(werte.rechtsstand, '1.1.2026', 'regulatorik.stand nicht ueber speicherName zurueckgelesen');
+  assert.strictEqual(werte.saq_rezert, 'true', 'Haken-Feld kommt nicht als String true/false zurueck');
+});
+
+test('briefingWerteAusDossier() ohne Dossier ergibt ein leeres Formular, kein Crash', () => {
+  const werte = inhalt.briefingWerteAusDossier(null);
+  assert.strictEqual(werte.zielgruppe, undefined);
+  assert.strictEqual(werte.saq_rezert, 'false', 'ein fehlendes Haken-Feld muss dennoch false sein, nie undefined');
 });
 
 test('Fremdtext in den Werten wird maskiert', () => {
@@ -171,7 +244,7 @@ test('die Zaehlung folgt dem, was in den Feldern steht', () => {
   };
 
   controller.briefingFelderZaehlen();
-  assert.match(anzeige.textContent, /^8 offen/, 'leeres Formular zaehlt falsch: ' + anzeige.textContent);
+  assert.match(anzeige.textContent, /^9 offen/, 'leeres Formular zaehlt falsch: ' + anzeige.textContent);
 
   felder.forEach(f => { f.value = VOLL[f.dataset.feld] || ''; });
   controller.briefingFelderZaehlen();
