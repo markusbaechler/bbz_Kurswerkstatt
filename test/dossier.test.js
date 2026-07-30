@@ -152,3 +152,31 @@ test('lesen() weist ein Dossier mit javascript:-Quelle ab', () => {
   d.quellen.push({ id: 'Q-001', titel: 'X', stand: '2026', url: 'javascript:alert(1)', abgerufen: '2026-07-30' });
   assert.equal(dossier.lesen(dossier.text(d)), null);
 });
+
+/* ---------- Etappe 1c: Quelle entfernen ---------- */
+
+test('quelleEntfernen() entfernt den Eintrag mit dieser id und gibt ihn zurueck', () => {
+  const d = dossier.neu('X');
+  dossier.quelleNeu(d, { titel: 'A', stand: '2025', datei: 'a.pdf' });
+  const q2 = dossier.quelleNeu(d, { titel: 'B', stand: '2026', datei: 'b.pdf' });
+  const entfernt = dossier.quelleEntfernen(d, 'Q-001');
+  assert.deepEqual(entfernt, { id: 'Q-001', titel: 'A', herausgeber: '', stand: '2025', datei: 'a.pdf' });
+  assert.deepEqual(d.quellen, [q2]);
+});
+
+test('quelleEntfernen() mit unbekannter id liefert null, Liste bleibt unveraendert', () => {
+  const d = dossier.neu('X');
+  dossier.quelleNeu(d, { titel: 'A', stand: '2025', datei: 'a.pdf' });
+  const vorher = JSON.parse(JSON.stringify(d.quellen));
+  const entfernt = dossier.quelleEntfernen(d, 'Q-099');
+  assert.equal(entfernt, null);
+  assert.deepEqual(d.quellen, vorher);
+});
+
+test('naechsteQuellenId() zaehlt nach dem Entfernen weiter hoch statt Luecken zu fuellen', () => {
+  const d = dossier.neu('X');
+  dossier.quelleNeu(d, { titel: 'A', stand: '2025', datei: 'a.pdf' });   /* Q-001 */
+  dossier.quelleNeu(d, { titel: 'B', stand: '2026', datei: 'b.pdf' });   /* Q-002 */
+  dossier.quelleEntfernen(d, 'Q-001');
+  assert.equal(dossier.naechsteQuellenId(d), 'Q-003');
+});

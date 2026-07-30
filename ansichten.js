@@ -411,18 +411,26 @@
      dossier.json mit url "javascript:…" muesste dossier.pruefe() eigentlich
      schon abweisen, aber sollte trotzdem je ein anderer Leseweg ein solches
      Dossier durchlassen, wird hier zusaetzlich nur bei http(s) ein <a> gebaut,
-     sonst bleibt die URL reiner esc()-Text — nie ein klickbares href. */
-  function quellenVerzeichnis(d) {
+     sonst bleibt die URL reiner esc()-Text — nie ein klickbares href.
+     mitEntfernen (Etappe 1c, Entscheid Markus 2026-07-30): nur Schritt 1 ruft
+     mit true und bekommt je Zeile den Entfernen-Knopf; Kursansicht und Schritt 3
+     bleiben ohne Parameter, also lesend — rueckwaertskompatibel, weil undefined
+     falsy ist. */
+  function quellenVerzeichnis(d, mitEntfernen) {
     var ql = (d && d.quellen) || [];
     if (!ql.length) return '<p class="hinweis-leise">Noch keine Quellen erfasst.</p>';
-    var h = '<div class="tblwrap"><table class="tbl"><tr><th>ID</th><th>Titel</th><th>Stand</th><th>Quelle</th></tr>';
+    var h = '<div class="tblwrap"><table class="tbl"><tr><th>ID</th><th>Titel</th><th>Stand</th><th>Quelle</th>' +
+            (mitEntfernen ? '<th></th>' : '') + '</tr>';
     ql.forEach(function (q) {
       var quelle = (q.url && /^https?:\/\//i.test(String(q.url).trim()))
         ? '<a href="' + esc(q.url) + '" target="_blank" rel="noopener">' + esc(q.url) + '</a>'
         : esc(q.url || q.datei);
       h += '<tr><td>' + esc(q.id) + '</td><td>' + esc(q.titel) +
            (q.herausgeber ? ' (' + esc(q.herausgeber) + ')' : '') + '</td><td>' +
-           esc(q.stand) + '</td><td>' + quelle + '</td></tr>';
+           esc(q.stand) + '</td><td>' + quelle + '</td>' +
+           (mitEntfernen ? '<td><button class="knopf still" data-action="quelle-entfernen" ' +
+             'data-quelle="' + esc(q.id) + '">Entfernen</button></td>' : '') +
+           '</tr>';
     });
     h += '</table></div>';
     return h;
@@ -444,7 +452,7 @@
     h += '<h3>Fachquellen</h3>';
     h += '<p class="hinweis-leise">Massgebende Quellen &mdash; sie werden nach 03_content/quellen/ ' +
          'gelegt und im Dossier eingetragen, in einem Zug. Altmaterial geh&ouml;rt nach 00_input, nicht hierher.</p>';
-    h += quellenVerzeichnis(d);
+    h += quellenVerzeichnis(d, true);
     h += '<label>Titel <input id="quelle-titel" type="text"></label>';
     h += '<label>Herausgeber <input id="quelle-herausgeber" type="text"></label>';
     h += '<label>Stand <input id="quelle-stand" type="text" placeholder="z. B. 2025 oder 2026-01-01"></label>';

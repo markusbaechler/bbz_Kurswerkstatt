@@ -132,6 +132,7 @@ test('Schritt 3 zeigt dasselbe Quellenverzeichnis, lesend', () => {
   assert.match(h, /Quellenverzeichnis/);
   assert.match(h, /Q-001/);
   assert.doesNotMatch(h, /data-action="quelle-erfassen"/, 'Schritt 3 erfasst nicht, nur Schritt 1');
+  assert.doesNotMatch(h, /data-action="quelle-entfernen"/, 'Schritt 3 entfernt nicht, nur Schritt 1');
 });
 
 /* ---------- Ein Schritt ---------- */
@@ -194,6 +195,32 @@ test('Schritt 1 zeigt die erfassten Quellen und den Erfassen-Knopf', () => {
   assert.match(html, /SSPA &lt;Map&gt;/);            /* esc() ist Pflicht */
   assert.match(html, /data-action="quelle-erfassen"/);
   assert.match(html, /name="content-modus"/);
+});
+
+/* ---------- Entfernen-Knopf (Etappe 1c) ---------- */
+
+test('Schritt 1 traegt je Quelle einen Entfernen-Knopf mit der richtigen id', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [
+      { id: 'Q-001', titel: 'SSPA Map', herausgeber: '', stand: '2025', datei: 'sspa.pdf' },
+      { id: 'Q-002', titel: 'B', herausgeber: '', stand: '2026', datei: 'b.pdf' }
+    ],
+    status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /data-action="quelle-entfernen" data-quelle="Q-001"/);
+  assert.match(html, /data-action="quelle-entfernen" data-quelle="Q-002"/);
+});
+
+test('die Kursansicht zeigt keinen Entfernen-Knopf — lesend', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025', datei: 'sspa.pdf' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const h = ansichten.einKurs(INHALT, DBS, props);
+  assert.doesNotMatch(h, /data-action="quelle-entfernen"/);
 });
 
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {

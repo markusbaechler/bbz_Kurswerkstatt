@@ -150,6 +150,17 @@
       return e;
     },
 
+    /* Entfernt den Eintrag mit dieser id aus d.quellen und gibt ihn zurueck;
+       unbekannte id liefert null, d bleibt unveraendert. IDs werden NICHT neu
+       vergeben — Q-002 bleibt Q-002, auch wenn Q-001 verschwindet;
+       naechsteQuellenId zaehlt ohnehin max+1, nie die Lueckenzahl. */
+    quelleEntfernen: function (d, id) {
+      var ql = (d && d.quellen) || [];
+      var i = ql.findIndex(function (q) { return q.id === id; });
+      if (i < 0) return null;
+      return ql.splice(i, 1)[0];
+    },
+
     /* Die Positivliste: genau diese Dateien liest der Auftrag, keine andere.
        Link-Quellen tragen kein datei-Feld und bleiben aussen vor — Auftraege
        behandeln Links separat (direkt aufrufen, nicht als Ablage lesen). */
