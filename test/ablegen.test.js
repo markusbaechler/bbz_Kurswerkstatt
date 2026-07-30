@@ -290,3 +290,59 @@ test('bei geladenem Dossier rueckt das Ablegen des Briefings den Status auf fina
     assert.strictEqual(l.rufe[0].datei, 'AFL-001_briefing_final.md');
   });
 });
+
+/* Fix-Runde 1 (Review-Finding 1, Task 1): der Content-Ablage-Erfolg darf nicht durch einen
+   gescheiterten Dossier-Status-Write verschluckt werden — state.hinweis muss das melden statt
+   im .catch von controller.dossierSchreiben zu verschwinden. Mutationsprobe: entfernt man den
+   .catch-Zweig um den controller.dossierSchreiben(...)-Aufruf im Schritt-1-Zweig von
+   controller.ablegen (app.js, "Status nicht aktualisiert"), wird dieser Test rot — die
+   Fehlermeldung erreicht state.hinweis dann nicht mehr, weil die Ablehnung unbehandelt durch die
+   Kette faellt und render() nie mit dem Hinweistext aufgerufen wird (durchgefuehrt und wieder
+   rueckgaengig gemacht, siehe task-1-report.md). */
+test('Briefing-Ablage gelingt, der Dossier-Status-Write scheitert: state.hinweis meldet es, kein Crash', async () => {
+  const vorher = dossier.neu('AFL-001');
+  let anzahlAblegen = 0;
+  const rufe = [];
+  const meldung = { textContent: '', hidden: true };
+
+  state.data.inhalt = INHALT;
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
+                        schritt: 1, status: 'offen' }];
+  state.data.dateien = {};
+  state.data.briefing = { 'AFL-001': { irgendwas: true } };
+  state.data.dossier = { 'AFL-001': vorher };
+  state.data.dossierETag = {};
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '1',
+                     werkzeugId: null, werk: null, variante: null, weg: null };
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'ergebnis') return { value: 'Briefing-Text aus dem Chat', focus: function () {} };
+      if (id === 'ablegefehler') return meldung;
+      return null;
+    }
+  };
+
+  graph.ordnerInhalt = function () { return Promise.resolve([]); };
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    anzahlAblegen++;
+    rufe.push({ kursId: kursId, ordner: ordner, datei: datei, text: text });
+    if (anzahlAblegen === 1) return Promise.resolve();            /* Briefing: gelingt */
+    return Promise.reject(new Error('Graph 500'));                /* Dossier-Status: scheitert */
+  };
+  graph.standSetzenRoh = function () { return Promise.resolve(); };
+  let gerendert = false;
+  controller.render = function () { gerendert = true; };
+
+  controller.ablegen('1', { disabled: false, textContent: 'Ablegen' });
+  await new Promise(function (r) { setTimeout(r, 20); });
+
+  assert.strictEqual(meldung.textContent, '', 'die Content-Ablage selbst darf nicht als gescheitert gemeldet werden');
+  assert.strictEqual(rufe.length, 2, 'erwartet: Briefing- und der gescheiterte Dossier-Versuch');
+  assert.ok(gerendert, 'controller.render() wurde nach dem gescheiterten Status-Write nicht aufgerufen');
+  assert.match(state.hinweis || '', /Status nicht aktualisiert/,
+    'ein gescheiterter Dossier-Status-Write darf nicht stillschweigend verschluckt werden');
+  assert.match(state.hinweis || '', /Graph 500/, 'die eigentliche Fehlermeldung fehlt im Hinweis');
+  assert.strictEqual(state.data.dossier['AFL-001'].status.briefing, undefined,
+    'der Status haette bei gescheitertem Schreiben nicht uebernommen werden duerfen');
+});

@@ -327,3 +327,9 @@ Status setzen — wartet bewusst, bis ein Gate einmal von Hand gelaufen ist.
 gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →
 ein Schritt, Werkzeuge inline) und *Nachschlagen*. Wird an der laufenden App beurteilt, nicht
 an einer Skizze.
+
+**Die Dossier-ERSTanlage läuft ohne `If-Match`** (`controller.dossierSchreiben`, Etappe 1e,
+Task 1): Existiert noch kein eTag (Datei war nie geladen oder noch gar nicht angelegt), schreibt
+`graph.ablegen` unbedingt — zwei Sitzungen, die gleichzeitig zum ersten Mal ein Dossier anlegen,
+können sich dabei gegenseitig überschreiben. Ausserhalb des behobenen Lost-Update (zwischen den
+vier Schreibern eines bereits bestehenden Dossiers), aber eine bekannte Restlücke.
