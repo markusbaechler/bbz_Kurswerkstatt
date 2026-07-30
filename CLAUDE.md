@@ -560,3 +560,17 @@ Graph-Aufruf (Datei lesen/hochladen/löschen, Kursliste) wird nirgends automatis
 **Der Duplikatschutz für Fachquellen gilt nur am Schreibweg** (`dossier.quelleNeu()`, s. o.):
 `dossier.pruefe()` (Leseweg) weist ein von Hand doppelt eingetragenes Duplikat in der
 `dossier.json` nicht zurück. Beim zweiten Schreibweg (Etappe 2, Gate-Ablauf) mitziehen.
+
+## Stand 2026-07-30 — Härtung Etappe 1e, an VL-001 abgenommen
+
+Der Drei-Linsen-Audit (Code · Inhalte · Spec) fand 3 Critical + 10 Important; alle sind
+geschlossen (Details: `../IT_Architektur_bbz/output/specs/2026-07-30-schritt-1-audit.md` und
+`…/2026-07-30-etappe-1e-ausfuehrungsprotokoll.md`). Kern: serialisiertes Dossier-Schreiben mit
+eTag/412-Wiederholung · Formular überlebt Renders (inkl. Häkchen, Fremd-Kurs-Stempel) · ein
+Quellen-Validator mit Duplikatschutz · `regulatorik { zusatz, stand, saq_rezert }` mit Migration ·
+Prompt-Kopf erbt Quellenliste und Rechtsstand GENAU aus dem Dossier · Kaltstart-Sperre ·
+Quellen-Ordnerpfad einquellig aus dem Kontrakt. **463 Tests grün.** Die Nachprobe an VL-001 hat
+den 412-Pfad, die Migration und die GENAU-Vererbung erstmals **am echten Graph** belegt — kein
+Lost Update bei konkurrierenden Schreibern. Erb-Quelle für `rechtsstand`/`quellen` ist per
+Entscheid vom 2026-07-30 das Dossier; Ablage-Kontrakt §3.4 und Prozess-Spec tragen datierte
+Nachträge.
