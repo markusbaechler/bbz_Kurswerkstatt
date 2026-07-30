@@ -106,6 +106,40 @@ test('geladenes Dossier — dossierSpeichern legt ab und bewahrt bestehende Quel
   delete global.document;
 });
 
+/* ---------- I-NEU-1 (Fix-Runde Final) ----------
+   melde.textContent haengt am beim Klick eingefangenen #briefing-felder-melde-Knoten —
+   haengt ein Zwischen-Render diesen aus, bevor graph.ablegen scheitert, erreicht die
+   Fehlermeldung niemanden mehr. state.fehlerHinweis lebt im State (Muster
+   quelleErfassen-I10-Fix) und wird von controller.render() ueber den globalen
+   Meldungsblock gezeigt — deshalb hier zusaetzlich pruefen, nicht nur melde. */
+test('graph.ablegen scheitert: state.fehlerHinweis meldet es zusaetzlich zu melde, render() wird gerufen', async () => {
+  state.position.kursId = 'DBS-001';
+  const bestehend = {
+    dossier: 1, kurs: 'DBS-001', stand: null, scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  };
+  state.data.dossier = { 'DBS-001': bestehend };
+  state.data.dossierETag = {};
+  state.fehlerHinweis = null;
+  const el = melde();
+  graph.ablegen = function () { return Promise.reject(new Error('Graph 500')); };
+  const echtesRender = controller.render;
+  let gerendert = false;
+  controller.render = function () { gerendert = true; };
+  const knopf = { disabled: false };
+
+  await controller.dossierSpeichern(knopf);
+
+  assert.match(el.textContent, /Graph 500/, 'melde() nennt den Fehler weiterhin');
+  assert.match(state.fehlerHinweis || '', /Graph 500/, 'state.fehlerHinweis nennt den Fehler nicht');
+  assert.ok(gerendert, 'controller.render() wurde im catch nicht aufgerufen');
+  assert.strictEqual(knopf.disabled, false, 'der Knopf blieb gesperrt, obwohl das Schreiben gescheitert ist');
+
+  controller.render = echtesRender;
+  state.fehlerHinweis = null;
+  delete global.document;
+});
+
 /* ---------- Etappe 1e, Task 6: regulatorik ---------- */
 
 test('dossierSpeichern schreibt Rechtsstand, SAQ-Haekchen und Zusatz nach regulatorik, nicht nach scope', async () => {

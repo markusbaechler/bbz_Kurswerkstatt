@@ -368,6 +368,94 @@ test('C-2: eine Checkbox bleibt unangetastet, wenn sie mit dem frisch gerenderte
   delete global.document;
 });
 
+/* ---------- M-2 (Fix-Runde Final): content-modus-Radios im Formular-Erhalt ----------
+   Die Radios (name="content-modus", je ein value pro Modus) tragen weder data-feld
+   noch eine eigene id — bislang kannten _formularSnapshot/_formularWiederherstellen
+   sie gar nicht, ein Zwischen-Render (z. B. ein spaet eintreffendes dossierNachladen)
+   konnte deshalb zweierlei zuruecksetzen: die optische Auswahl (checked, waehrend die
+   Person gerade erst geklickt hat, aber controller.contentModus() das Schreiben noch
+   nicht bestaetigt hat) UND die Schreibsperre (disabled, die contentModus() waehrend
+   des laufenden PUT setzt — die Ansicht selbst kennt nur ordnerFehlt, nicht einen
+   laufenden Schreibvorgang, und wuerde die Radios beim Neuaufbau also faelschlich
+   wieder freigeben).
+
+   checked folgt derselben Beide-Richtungen-Regel wie eine Checkbox (C-2 oben): beide
+   Zustaende (angehakt/nicht) sind eine bewusste, beobachtbare Antwort, keine Leere.
+   disabled folgt derselben Regel aus demselben Grund: "gesperrt" und "frei" sind
+   beides eindeutige, beobachtbare Zustaende. */
+
+function radioElement(value, checked, disabled) {
+  return { name: 'content-modus', value: value, checked: !!checked, disabled: !!disabled };
+}
+
+function baueDocumentMitRadios(felder, radios) {
+  const doc = baueDocument(felder, {}, null);
+  const alt = doc.querySelectorAll;
+  doc.querySelectorAll = function (sel) {
+    if (sel === '[name="content-modus"]') return radios;
+    return alt(sel);
+  };
+  return doc;
+}
+
+test('M-2: _formularSnapshot sichert checked UND disabled je Radio-value', () => {
+  const a = radioElement('quellengestuetzt', true, false);
+  const b = radioElement('quellenfrei', false, false);
+  global.document = baueDocumentMitRadios([], [a, b]);
+
+  const snap = controller._formularSnapshot();
+
+  assert.deepStrictEqual(snap.werte['radio:content-modus:quellengestuetzt'], { checked: true, disabled: false });
+  assert.deepStrictEqual(snap.werte['radio:content-modus:quellenfrei'], { checked: false, disabled: false });
+  delete global.document;
+});
+
+test('M-2: eine gewaehlte Auswahl uebersteht einen Neuaufbau, der den alten Modus zeigt (beide Richtungen)', () => {
+  const a = radioElement('quellengestuetzt', false, false);
+  const b = radioElement('quellenfrei', true, false);
+  global.document = baueDocumentMitRadios([], [a, b]);
+  const snap = controller._formularSnapshot();   /* Person hat gerade auf quellenfrei geklickt */
+
+  /* Neuaufbau zeigt den (aelteren) Dossier-Stand: quellengestuetzt */
+  a.checked = true; b.checked = false;
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(a.checked, false, 'die frisch gewaehlte Auswahl ist beim Neuaufbau zurueckgedreht worden');
+  assert.strictEqual(b.checked, true, 'quellenfrei haette wieder angehakt werden muessen');
+  delete global.document;
+});
+
+test('M-2: eine laufende Schreibsperre (disabled) uebersteht einen Neuaufbau, der die Radios frei zeigt', () => {
+  const a = radioElement('quellengestuetzt', true, true);
+  const b = radioElement('quellenfrei', false, true);
+  global.document = baueDocumentMitRadios([], [a, b]);
+  const snap = controller._formularSnapshot();   /* contentModus() haelt gerade die Sperre */
+
+  /* Neuaufbau kennt den laufenden Schreibvorgang nicht, zeichnet frei (disabled=false) */
+  a.disabled = false; b.disabled = false;
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(a.disabled, true, 'die Schreibsperre ist beim Neuaufbau faelschlich aufgehoben worden');
+  assert.strictEqual(b.disabled, true, 'die Schreibsperre ist beim Neuaufbau faelschlich aufgehoben worden');
+  delete global.document;
+});
+
+test('M-2: Radios bleiben unangetastet, wenn sie mit dem frisch gerenderten Stand uebereinstimmen', () => {
+  const a = radioElement('quellengestuetzt', true, false);
+  const b = radioElement('quellenfrei', false, false);
+  global.document = baueDocumentMitRadios([], [a, b]);
+  const snap = controller._formularSnapshot();
+  /* kein Neuaufbau-Unterschied */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(a.checked, true);
+  assert.strictEqual(b.checked, false);
+  delete global.document;
+});
+
 /* ---------- Integration: controller.render() selbst erhaelt das Formular ----------
    "render-Äquivalent" reicht laut Brief; hier zusaetzlich der echte Aufruf, mit einem
    document-Mock, dessen innerHTML-Setter den Neuaufbau simuliert: das Feld faellt auf

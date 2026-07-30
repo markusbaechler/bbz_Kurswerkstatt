@@ -254,6 +254,34 @@ test('contentModus ohne geladenes Dossier tut nichts', () => {
   assert.strictEqual(abgelegt, false, 'graph.ablegen wurde trotz ungeladenem Dossier aufgerufen');
 });
 
+/* M-1 (Fix-Runde Final): fehlt der Kursordner, laeuft dossierNachladen nie an — ohne
+   diesen Guard (Muster dossierSpeichern/quelleErfassen, Guard-Reihenfolge ordner vor
+   d0) meldete contentModus() dauerhaft "Dossier noch nicht geladen", obwohl gar
+   nichts laedt. */
+test('contentModus ohne Kursordner: eigene Meldung, kein ablegen', () => {
+  state.position.kursId = 'DBS-001';
+  state.data.ordner = { 'DBS-001': null };
+  state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: [] } };
+  const melde = { hidden: true, textContent: '' };
+  global.document = {
+    getElementById: function (id) { return id === 'quelle-melde' ? melde : null; },
+    querySelectorAll: function () { return []; }
+  };
+  let abgelegt = false;
+  graph.ablegen = function () { abgelegt = true; return Promise.resolve(); };
+
+  controller.contentModus({ value: 'quellenfrei' });
+
+  assert.strictEqual(abgelegt, false, 'graph.ablegen wurde trotz fehlendem Kursordner aufgerufen');
+  assert.strictEqual(melde.hidden, false);
+  assert.match(melde.textContent, /Kein Kursordner/);
+  assert.doesNotMatch(melde.textContent, /noch geladen/, 'die irrefuehrende Ladeanzeige haette hier ewig gestanden');
+
+  delete global.document;
+  state.data.ordner = {};
+});
+
 test('contentModus legt den gewaehlten Modus ab', async () => {
   state.position.kursId = 'DBS-001';
   state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',

@@ -182,6 +182,43 @@ test('dateiLoeschen scheitert: State traegt trotzdem das bereinigte Dossier, plu
   delete global.document;
 });
 
+/* ---------- I-NEU-1 (Fix-Runde Final) ----------
+   Anders als der bereits behandelte dateiLoeschen-Fehlerfall oben (der ruft render()
+   bereits): scheitert schon graph.ablegen selbst (der Dossier-Schreibvorgang), landete
+   die Meldung bislang nur in sag() — dem beim Klick eingefangenen #quelle-melde-Knoten.
+   Haengt ein Zwischen-Render diesen aus, bevor der Schreibvorgang scheitert, erreicht
+   die Meldung niemanden mehr. state.fehlerHinweis lebt im State (Muster
+   quelleErfassen-I10-Fix) und wird von controller.render() ueber den globalen
+   Meldungsblock gezeigt. */
+test('dossierSchreiben (graph.ablegen) scheitert: state.fehlerHinweis meldet es, render() wird gerufen', async () => {
+  state.position.kursId = 'DBS-001';
+  state.data.ordner = { 'DBS-001': { id: 'ORD' } };
+  state.data.dossier = { 'DBS-001': dossierMit(
+    [{ id: 'Q-001', titel: 'A', stand: '2025', datei: 'a.pdf' }]) };
+  state.fehlerHinweis = null;
+  const m = melde();
+  controller._bestaetige = function () { return true; };
+  graph.ablegen = function () { return Promise.reject(new Error('Graph 500')); };
+  let dateiGeloescht = false;
+  graph.dateiLoeschen = function () { dateiGeloescht = true; return Promise.resolve(true); };
+  const echtesRender = controller.render;
+  let gerendert = false;
+  controller.render = function () { gerendert = true; };
+  const knopf = { disabled: false, dataset: { quelle: 'Q-001' } };
+
+  await controller.quelleEntfernen(knopf);
+
+  assert.strictEqual(dateiGeloescht, false, 'graph.dateiLoeschen wurde trotz gescheitertem Dossier-Schreiben aufgerufen');
+  assert.match(m.textContent, /Graph 500/, 'sag() nennt den Fehler weiterhin');
+  assert.match(state.fehlerHinweis || '', /Graph 500/, 'state.fehlerHinweis nennt den Fehler nicht');
+  assert.ok(gerendert, 'controller.render() wurde im catch nicht aufgerufen');
+  assert.strictEqual(knopf.disabled, false, 'der Knopf blieb gesperrt, obwohl das Schreiben gescheitert ist');
+
+  controller.render = echtesRender;
+  state.fehlerHinweis = null;
+  delete global.document;
+});
+
 test('unbekannte id: Meldung "Quelle nicht gefunden", kein ablegen', () => {
   state.position.kursId = 'DBS-001';
   state.data.ordner = { 'DBS-001': { id: 'ORD' } };

@@ -526,6 +526,19 @@
       z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
       var offen = [];
       inhalt.BRIEFING_FELDER.forEach(function (f) {
+        /* Ein Haekchen (form:'haken') ist NIE offen (C-NEU-1, Fix-Runde Final):
+           `String(werte[f.id] || '')` behandelte ein echtes Bool false wie leer
+           (false || '' wird zu '', weil false selbst falsy ist) und meldete den
+           Normalfall "nicht angehakt" faelschlich als NICHT ANGEGEBEN; ein
+           echtes true landete umgekehrt als englisches 'true' im Prompttext.
+           Muster wie projektInstruktionen (s. o., regulatorik.saq_rezert ?
+           'ja' : 'nein') — hier zusaetzlich robust gegen den String 'true'/
+           'false', den briefingWerteAusDossier() fuer ein Haken-Feld liefert. */
+        if (f.form === 'haken') {
+          var an = (werte[f.id] === true) || (werte[f.id] === 'true');
+          z.push(f.label + ': ' + (an ? 'ja' : 'nein'));
+          return;
+        }
         var v = String(werte[f.id] || '').trim();
         var fest = f.fest ? f.fest + (v ? ' ' + v : '') : v;
         if (!v && !f.fest) { offen.push(f.label); return; }

@@ -541,3 +541,22 @@ Task 1): Existiert noch kein eTag (Datei war nie geladen oder noch gar nicht ang
 `graph.ablegen` unbedingt — zwei Sitzungen, die gleichzeitig zum ersten Mal ein Dossier anlegen,
 können sich dabei gegenseitig überschreiben. Ausserhalb des behobenen Lost-Update (zwischen den
 vier Schreibern eines bereits bestehenden Dossiers), aber eine bekannte Restlücke.
+
+**`s.zweck`/`s.lief` aus `schritte.json` gehen ungeprüft in die Ansicht** (vorbestehend,
+betrifft die Sichtbarkeit in Schritt-Ansicht F2) — kein `esc()` davor. `schritte.json` kommt aus
+SharePoint, nicht aus dem Repo; ein Redakteur mit fremdem HTML darin liesse es ungefiltert
+mitrendern. Nicht Teil dieser Härtungsrunde.
+
+**Kein genereller Retry/Backoff bei Netzfehlern.** Das 412-Handling (`_dossierVersuch`, s. o.)
+deckt ausschliesslich den Konfliktfall beim Dossier-Schreiben ab — ein einmaliges Neu-Lesen und
+einen zweiten Mutator-Durchlauf. Ein einfacher Netz-Hänger (Timeout, 5xx) auf irgendeinem anderen
+Graph-Aufruf (Datei lesen/hochladen/löschen, Kursliste) wird nirgends automatisch wiederholt.
+
+**`inhalt.briefingFelderText()` ist toter Code** — wird von keinem Aufrufer mehr gerufen
+(Aufräumkandidat). Trägt denselben `String(werte[f.id] || '')`-Bug wie ehemals
+`briefingPromptKopf` für ein Haken-Feld mit echtem Bool `false` (wird zu `[OFFEN]` statt
+`'false'`) — bewusst nicht mitgezogen, weil der Code beim Aufräumen ohnehin verschwindet.
+
+**Der Duplikatschutz für Fachquellen gilt nur am Schreibweg** (`dossier.quelleNeu()`, s. o.):
+`dossier.pruefe()` (Leseweg) weist ein von Hand doppelt eingetragenes Duplikat in der
+`dossier.json` nicht zurück. Beim zweiten Schreibweg (Etappe 2, Gate-Ablauf) mitziehen.

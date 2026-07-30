@@ -9,6 +9,11 @@ const { INHALT, KURSE } = require('./fixture.js');
 
 const DBS = KURSE[0];
 
+/* saq_rezert: false (echtes Bool, C-NEU-1, Fix-Runde Final) — bewusst der Normalfall
+   ("nicht angehakt"), nicht der String 'true'. Vor dem Fix maskierte ein String-Wert
+   genau den Bug: `String('true' || '').trim()` ist nie leer, egal ob 'true' oder
+   'false' drinsteht — der Fehler zeigte sich nur mit einem ECHTEN Bool false, wie es
+   briefingFelderAusFormular() ueber `!!el.checked` tatsaechlich liefert. */
 const VOLL = {
   zielgruppe: 'Kunden- und Anlageberatende',
   vorkenntnisse: 'Risikoprofilierung, Anlageklassen',
@@ -18,7 +23,7 @@ const VOLL = {
   scope: 'SSPA Swiss Derivative Map 2025',
   reg_zusatz: 'Rezertifizierung IK, Affluent',
   rechtsstand: '1.1.2026',
-  saq_rezert: 'true',
+  saq_rezert: false,
   ausschluesse: 'Keine Optionsbewertung',
   scope_quelle: 'Kursausschreibung, Stand 2026-06'
 };
@@ -69,7 +74,13 @@ test('der Rechtsrahmen steht fest und wird nicht erfragt', () => {
 
 test('Schreiben und Lesen ergibt dieselben Werte', () => {
   const zurueck = inhalt.briefingFelderLesen(inhalt.briefingFelderText('DBS-001', VOLL));
-  inhalt.BRIEFING_FELDER.forEach(f => {
+  /* Haken-Felder ausgenommen (M8, Offen in CLAUDE.md): briefingFelderText ist toter
+     Code (wird nirgends mehr gerufen) und traegt denselben ungefixten Bug wie vormals
+     briefingPromptKopf — `String(werte[f.id] || '')` behandelt ein echtes Bool false
+     wie leer und schreibt [OFFEN] statt 'false'. Nicht Teil dieses Fixes (C-NEU-1 gilt
+     nur fuer briefingPromptKopf); hier nur bewusst ausgeklammert, damit VOLL trotzdem
+     ein echtes Bool tragen kann. */
+  inhalt.BRIEFING_FELDER.filter(f => f.form !== 'haken').forEach(f => {
     assert.strictEqual(zurueck[f.id], VOLL[f.id], 'Feld ' + f.id);
   });
 });
@@ -111,10 +122,47 @@ test('vollstaendig ausgefuellt meldet nichts mehr', () => {
 
 test('der Promptkopf traegt jeden ausgefuellten Wert', () => {
   const k = inhalt.briefingPromptKopf(DBS, VOLL);
-  Object.keys(VOLL).forEach(id => {
+  /* Haken-Felder ausgenommen: sie werden nie woertlich uebernommen, sondern als
+     "ja"/"nein" gerendert (C-NEU-1) — eigene Tests direkt im Anschluss. */
+  Object.keys(VOLL).filter(id => inhalt.briefingFeld(id).form !== 'haken').forEach(id => {
     assert.ok(k.indexOf(VOLL[id]) >= 0, 'Wert fehlt im Promptkopf: ' + id);
   });
   assert.ok(k.indexOf('FIDLEG') >= 0, 'der feste Rahmen geht nicht mit');
+});
+
+/* ---------- C-NEU-1 (Fix-Runde Final): das SAQ-Haekchen im Promptkopf ----------
+   Vorher: `String(werte[f.id] || '').trim()` behandelte ein echtes Bool false wie
+   leer (false || '' wird zu '', weil false selbst falsy ist) — der Normalfall
+   "nicht angehakt" landete faelschlich unter NICHT ANGEGEBEN, obwohl das Formular
+   vollstaendig war; ein echtes true kam als das englische Wort 'true' im Text an,
+   nie als "ja". Die VOLL-Fixture oben trug bislang den String 'true' und maskierte
+   genau das: `String('true' || '')` ist so oder so nie leer, unabhaengig vom Inhalt
+   des Strings. Erst ein echtes Bool deckte den Fehler auf.
+
+   Mutationsprobe (durchgefuehrt): die if-Abzweigung fuer f.form === 'haken' in
+   inhalt.briefingPromptKopf entfernt (zurueck auf den reinen String(...)-Pfad) —
+   `node --test test/briefingfelder.test.js` wurde rot an GENAU drei Tests: den beiden
+   folgenden (der erste, weil saq_rezert:false dann unter NICHT ANGEGEBEN auftauchte
+   statt bei den ausgefuellten Feldern; der zweite, weil bei saq_rezert:true das Wort
+   'true' statt 'ja' im Text stand) UND zusaetzlich "bei vollstaendigen Angaben lautet
+   der Auftrag: schreiben, nicht fragen" (oben) — die VOLL-Fixture traegt jetzt selbst
+   ein echtes saq_rezert:false und faengt die Regression damit ein zweites Mal ab. 43
+   von 46 Tests dieser Datei blieben gruen. Danach wiederhergestellt, wieder 46/46 bzw.
+   463/463 gesamt gruen. */
+
+test('C-NEU-1: saq_rezert === false (echtes Bool) gilt als vollstaendig ausgefuellt, nicht als offen', () => {
+  const k = inhalt.briefingPromptKopf(DBS, VOLL);   /* VOLL.saq_rezert ist false, der Normalfall */
+  assert.ok(k.indexOf('NICHT ANGEGEBEN') < 0, 'ein nicht angehaktes Haekchen meldet faelschlich NICHT ANGEGEBEN');
+  assert.match(k, /ALLE FELDER SIND AUSGEFÜLLT/);
+  assert.match(k, /SAQ-Rezertifizierung: nein/);
+});
+
+test('C-NEU-1: saq_rezert === true (echtes Bool) steht als "ja" im Text, nie als "true"', () => {
+  const werte = Object.assign({}, VOLL, { saq_rezert: true });
+  const k = inhalt.briefingPromptKopf(DBS, werte);
+  assert.match(k, /SAQ-Rezertifizierung: ja/);
+  assert.doesNotMatch(k, /SAQ-Rezertifizierung: true/, 'das englische Wort true steht im Text');
+  assert.ok(!/\btrue\b/.test(k), 'irgendwo im Promptkopf steht das rohe Wort true');
 });
 
 test('der Promptkopf verbietet das erneute Abfragen', () => {

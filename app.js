@@ -667,6 +667,21 @@
         var el = document.getElementById(id);
         if (el) werte['id:' + id] = String(el.value == null ? '' : el.value);
       });
+      /* Die content-modus-Radios (M-2, Fix-Runde Final) tragen weder data-feld
+         noch eine eigene id, nur ein gemeinsames name — Schluessel ist deshalb
+         der Wert (value) des jeweiligen Radios. checked UND disabled werden
+         gesichert: checked wie bei einer Checkbox (Konvention T6 — beide
+         Zustaende sind immer eine bewusste, beobachtbare Antwort, keine
+         Zweideutigkeit wie bei leerem Text); disabled zusaetzlich, weil
+         contentModus() waehrend des Schreibens alle Radios sperrt — ein
+         Zwischen-Render mitten in dieser Sperre wuerde sie sonst beim
+         Neuaufbau wieder aufheben (die Ansicht kennt den laufenden
+         Schreibvorgang nicht, nur ordnerFehlt), und ein zweiter Klick koennte
+         die Warteschlange waehrend des ersten Schreibens ein zweites Mal
+         anstossen. */
+      Array.prototype.forEach.call(document.querySelectorAll('[name="content-modus"]'), function (r) {
+        werte['radio:content-modus:' + r.value] = { checked: !!r.checked, disabled: !!r.disabled };
+      });
       var aktiv = document.activeElement;
       return {
         werte: werte,
@@ -729,6 +744,18 @@
         var alt = snap.werte['id:' + id];
         var neu = String(el.value == null ? '' : el.value);
         if (alt && alt !== neu) el.value = alt;
+      });
+      /* content-modus-Radios (M-2, Fix-Runde Final): checked folgt derselben
+         Beide-Richtungen-Regel wie eine Checkbox (s. _formularSnapshot); disabled
+         ebenso, sonst hoebe ein Zwischen-Render die Schreibsperre waehrend eines
+         laufenden contentModus()-Schreibvorgangs wieder auf. Absichtlich NICHT
+         auf feldGeaendert/briefingFelderZaehlen gemappt — das zaehlt Briefing-
+         Pflichtfelder, mit denen ein Radio nichts zu tun hat. */
+      Array.prototype.forEach.call(document.querySelectorAll('[name="content-modus"]'), function (r) {
+        var alt = snap.werte['radio:content-modus:' + r.value];
+        if (!alt) return;
+        if (alt.checked !== !!r.checked) r.checked = alt.checked;
+        if (alt.disabled !== !!r.disabled) r.disabled = alt.disabled;
       });
       /* Ohne das steht nach der Wiederherstellung weiter "8 offen" fuer ein
          Feld, das gerade wieder befuellt wurde (wie beim Tippen, s. briefingFelderZaehlen). */
@@ -1178,7 +1205,17 @@
           controller.render();
         })
         .catch(function (e) {
-          if (melde) melde.textContent = String(e.message || e);
+          var text = String(e.message || e);
+          if (melde) melde.textContent = text;
+          /* state.fehlerHinweis zusaetzlich zu melde.textContent (I-NEU-1,
+             Fix-Runde Final, Muster quelleErfassen-I10-Fix): melde haengt am
+             beim Klick eingefangenen #briefing-felder-melde-Knoten — haengt ein
+             Zwischen-Render ihn aus, bevor das Schreiben scheitert, erreicht die
+             Fehlermeldung niemanden mehr. state.fehlerHinweis lebt im State,
+             nicht im DOM-Knoten, und wird von controller.render() ueber den
+             globalen Meldungsblock gezeigt (I2/M3). */
+          state.fehlerHinweis = text;
+          controller.render();
           if (knopf) knopf.disabled = false;
         });
     },
@@ -1334,7 +1371,18 @@
               controller.render();
             });
         })
-        .catch(function (e) { sag(String(e.message || e)); if (knopf) knopf.disabled = false; });
+        .catch(function (e) {
+          var text = String(e.message || e);
+          sag(text);
+          /* state.fehlerHinweis zusaetzlich zu sag() (I-NEU-1, Fix-Runde Final,
+             Muster quelleErfassen-I10-Fix): sag() schreibt in den beim Klick
+             eingefangenen #quelle-melde-Knoten — haengt ein Zwischen-Render ihn
+             aus, bevor das Schreiben (dossierSchreiben) scheitert, erreicht die
+             Fehlermeldung niemanden mehr. */
+          state.fehlerHinweis = text;
+          controller.render();
+          if (knopf) knopf.disabled = false;
+        });
     },
 
     /* Die Wahl steht fuer sich, ohne Formular und ohne Knopf — sie wird direkt
@@ -1343,6 +1391,14 @@
       var kursId = state.position.kursId;
       var d0 = state.data.dossier[kursId];
       var melde = typeof document !== 'undefined' && document.getElementById('quelle-melde');
+      /* Fehlt der Kursordner, laeuft dossierNachladen nie an (siehe render()) — ohne
+         diese Unterscheidung meldete der Guard unten dauerhaft "noch nicht geladen",
+         obwohl gar nichts laedt (M-1, Fix-Runde Final, Muster dossierSpeichern/
+         quelleErfassen — Guard-Reihenfolge konsistent: ordner vor d0). */
+      if (state.data.ordner[kursId] === null) {
+        if (melde) { melde.hidden = false; melde.textContent = 'Kein Kursordner — zuerst in Schritt 1 die Ablage anlegen.'; }
+        return;
+      }
       /* Meldung statt stillem Rueckkehren (Etappe 1e, Task 1) — sonst zeigt das
          Radio den neuen Wert, ohne dass je etwas gesichert wurde. */
       if (!d0) {
