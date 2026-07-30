@@ -630,15 +630,26 @@
             state.data.ordner[k.kursId]) {
           controller.briefingNachladen(k.kursId);
         }
-        if (k && String(p.schrittId) === '1' && state.data.ordner[k.kursId]) {
+        /* Schritt 1 erfasst die Quellen, Schritt 3 zeigt das Quellenverzeichnis
+           nur lesend — wer nur Schritt 3 ansieht, ohne vorher auf Schritt 1
+           gewesen zu sein, muesste sonst auf ein leeres state.data.dossier
+           starren (dieselbe Lehre wie beim Briefing-Nachladen oben: wenn eine
+           Ansicht Daten zeigt, muss der Ladevorgang an derselben Ansicht haengen). */
+        if (k && (String(p.schrittId) === '1' || String(p.schrittId) === '3') &&
+            state.data.ordner[k.kursId]) {
           controller.dossierNachladen(k.kursId);
         }
       } else if (p.kursId) {
         var kk = nav.kurs();
         controller.setz(root.ansichten.einKurs(inh, kk, {
-          ordnerFehlt: kk ? state.data.ordner[kk.kursId] === null : false
+          ordnerFehlt: kk ? state.data.ordner[kk.kursId] === null : false,
+          dossier: kk ? (state.data.dossier[kk.kursId] || null) : null
         }));
         if (kk) controller.ordnerPruefen(kk.kursId);
+        /* Auch die Kursansicht zeigt jetzt das Quellenverzeichnis (Etappe 1b) —
+           ohne eigenes Nachladen bliebe es dort dauerhaft leer, selbst wenn
+           Schritt 1 laengst ein Dossier abgelegt hat. */
+        if (kk && state.data.ordner[kk.kursId]) controller.dossierNachladen(kk.kursId);
       } else {
         controller.setz(root.ansichten.alleKurse(state.data.kurse));
       }
@@ -796,7 +807,10 @@
 
     /* Datei ablegen und Dossier-Eintrag sind EIN Vorgang (Spec §5.6) — beides
        nacheinander, damit nie eine Datei ohne Dossier-Eintrag herumliegt oder
-       umgekehrt. Guard wie dossierSpeichern: undefined/null heisst nicht bereit. */
+       umgekehrt. Guard wie dossierSpeichern: undefined/null heisst nicht bereit.
+       Eine Quelle ist Datei ODER Link (Entscheid Markus, 2026-07-30): bei einem
+       Link gibt es kein Hochladen, nur die Dossier-Ablage; new Date() steht nur
+       hier — dossier.js bleibt ohne Date, das Abrufdatum kommt fertig herein. */
     quelleErfassen: function (knopf) {
       var kursId = state.position.kursId;
       var d0 = state.data.dossier[kursId];
@@ -808,25 +822,38 @@
       if (!d0) { sag('Dossier noch nicht geladen — kurz warten.'); return; }
       var eingabe = document.getElementById('quelle-datei');
       var datei = eingabe && eingabe.files && eingabe.files[0];
-      if (!datei) { sag('Zuerst eine Datei wählen.'); return; }
-      var name = root.dossier.quellenDateiname(datei.name);
+      var urlFeld = document.getElementById('quelle-url');
+      var url = urlFeld ? String(urlFeld.value || '').trim() : '';
+      if (!datei && !url) { sag('Datei wählen oder Link angeben.'); return; }
+
+      var name = datei ? root.dossier.quellenDateiname(datei.name) : null;
+      var werte = {
+        titel: (document.getElementById('quelle-titel') || {}).value,
+        herausgeber: (document.getElementById('quelle-herausgeber') || {}).value,
+        stand: (document.getElementById('quelle-stand') || {}).value
+      };
+      if (datei) werte.datei = name;
+      if (url) { werte.url = url; werte.abgerufen = new Date().toISOString().slice(0, 10); }
+
       var d = JSON.parse(JSON.stringify(d0));
       var q;
       try {
-        q = root.dossier.quelleNeu(d, {
-          titel: (document.getElementById('quelle-titel') || {}).value,
-          herausgeber: (document.getElementById('quelle-herausgeber') || {}).value,
-          stand: (document.getElementById('quelle-stand') || {}).value,
-          datei: name
-        });
+        q = root.dossier.quelleNeu(d, werte);
       } catch (e) { sag(String(e.message || e)); return; }
+
       if (knopf) knopf.disabled = true;
-      sag('Wird hochgeladen …');
-      return graph.hochladen(kursId, '03_content/quellen', name, datei)
-        .then(function () { return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d)); })
+      var nurDatei = datei && !url;
+      sag(nurDatei ? 'Wird hochgeladen …' : 'Wird gesichert …');
+
+      var vorgang = nurDatei
+        ? graph.hochladen(kursId, '03_content/quellen', name, datei)
+            .then(function () { return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d)); })
+        : graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d));
+
+      return vorgang
         .then(function () {
           state.data.dossier[kursId] = d;
-          state.hinweis = q.id + ' erfasst: ' + name;
+          state.hinweis = q.id + ' erfasst: ' + (nurDatei ? name : url);
           controller.render();
         })
         .catch(function (e) { sag(String(e.message || e)); if (knopf) knopf.disabled = false; });

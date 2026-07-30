@@ -16,7 +16,8 @@ function els(werte) {
     'quelle-titel': { value: (werte && werte.titel) || '' },
     'quelle-herausgeber': { value: (werte && werte.herausgeber) || '' },
     'quelle-stand': { value: (werte && werte.stand) || '' },
-    'quelle-datei': { files: (werte && werte.datei) ? [werte.datei] : [] }
+    'quelle-datei': { files: (werte && werte.datei) ? [werte.datei] : [] },
+    'quelle-url': { value: (werte && werte.url) || '' }
   };
   global.document = {
     getElementById: function (id) { return felder[id] || null; },
@@ -127,6 +128,72 @@ test('mit Datei und Feldern: Upload nach 03_content/quellen mit bereinigtem Name
   assert.strictEqual(d.quellen[0].id, 'Q-001');
   assert.strictEqual(d.quellen[0].datei, 'sspa-map-uenterstrich.pdf');
   assert.strictEqual(state.data.dossier['DBS-001'].quellen.length, 1, 'der Zustand wurde nach dem Ablegen nicht aktualisiert');
+  delete global.document;
+});
+
+test('ohne Datei und ohne Link kommt eine eigene Meldung, kein Upload', () => {
+  state.position.kursId = 'DBS-001';
+  state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: [] } };
+  const melde = els({ titel: 'X', stand: '2026' });   /* weder Datei noch Link */
+  let hochgeladen = false;
+  graph.hochladen = function () { hochgeladen = true; return Promise.resolve(); };
+  const knopf = { disabled: false };
+
+  controller.quelleErfassen(knopf);
+
+  assert.strictEqual(hochgeladen, false, 'graph.hochladen wurde ohne Datei und Link aufgerufen');
+  assert.strictEqual(melde.hidden, false);
+  assert.match(melde.textContent, /Datei w.hlen oder Link angeben/);
+  delete global.document;
+});
+
+test('Nur-URL-Pfad: kein Upload, Dossier-Ablage enthaelt url und ein Abrufdatum von heute', async () => {
+  state.position.kursId = 'DBS-001';
+  state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: [] } };
+  els({ titel: 'Ausschreibung', herausgeber: 'SSPA', stand: '2026', url: 'https://sspa.ch/ausschreibung' });
+  let hochgeladen = false;
+  graph.hochladen = function () { hochgeladen = true; return Promise.resolve(); };
+  let abgelegtMit = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    abgelegtMit = { kursId, ordner, datei, text };
+    return Promise.resolve();
+  };
+  const knopf = { disabled: false };
+
+  await controller.quelleErfassen(knopf);
+
+  assert.strictEqual(hochgeladen, false, 'graph.hochladen wurde beim Nur-URL-Pfad aufgerufen');
+  assert.ok(abgelegtMit, 'graph.ablegen wurde nicht aufgerufen');
+  const d = JSON.parse(abgelegtMit.text);
+  assert.strictEqual(d.quellen.length, 1);
+  assert.strictEqual(d.quellen[0].id, 'Q-001');
+  assert.strictEqual(d.quellen[0].url, 'https://sspa.ch/ausschreibung');
+  assert.match(d.quellen[0].abgerufen, /^\d{4}-\d{2}-\d{2}$/, 'kein YYYY-MM-DD-Abrufdatum');
+  assert.strictEqual('datei' in d.quellen[0], false);
+  assert.strictEqual(state.data.dossier['DBS-001'].quellen.length, 1);
+  delete global.document;
+});
+
+test('Datei UND Link zugleich: Meldung aus quelleNeu, kein Upload, keine Ablage', () => {
+  state.position.kursId = 'DBS-001';
+  state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: [] } };
+  const melde = els({ titel: 'X', stand: '2026', datei: { name: 'x.pdf' }, url: 'https://x.ch' });
+  let hochgeladen = false;
+  graph.hochladen = function () { hochgeladen = true; return Promise.resolve(); };
+  let abgelegt = false;
+  graph.ablegen = function () { abgelegt = true; return Promise.resolve(); };
+  const knopf = { disabled: false };
+
+  controller.quelleErfassen(knopf);
+
+  assert.strictEqual(hochgeladen, false, 'graph.hochladen wurde trotz doppelter Angabe aufgerufen');
+  assert.strictEqual(abgelegt, false, 'graph.ablegen wurde trotz doppelter Angabe aufgerufen');
+  assert.strictEqual(melde.hidden, false);
+  assert.match(melde.textContent, /entweder/i);
+  assert.strictEqual(knopf.disabled, false, 'der Knopf wurde gesperrt, obwohl gar nichts abgelegt wird');
   delete global.document;
 });
 

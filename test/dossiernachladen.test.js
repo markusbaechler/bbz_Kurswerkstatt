@@ -80,3 +80,30 @@ test('Netzfehler in der Kette selbst (Promise-Reject) — faengt das fehlende .c
   assert.strictEqual(state.data.dossier['DBS-001'], null);
   assert.match(state.hinweis, /nicht gelesen werden/);
 });
+
+/* ---------- Etappe 1b: dossierNachladen haengt auch an Kursansicht und Schritt 3 ----------
+   "Wenn eine Ansicht Daten zeigt, muss der Ladevorgang an derselben Ansicht haengen"
+   (dieselbe Lehre wie beim Briefing-Nachladen, s. briefingversion.test.js) — die
+   Kursansicht und Schritt 3 zeigen jetzt das Quellenverzeichnis, also muessen sie
+   das Dossier auch selbst nachladen, nicht nur Schritt 1. Geprueft wird die
+   Bedingung im Quelltext, wie beim Briefing-Test. */
+
+test('der Ladevorgang wird auf Schritt 1 UND 3 angestossen', () => {
+  const quelle = require('fs').readFileSync(__dirname + '/../app.js', 'utf8');
+  const stelle = quelle.slice(quelle.indexOf('controller.dossierNachladen(k.kursId)') - 400,
+                             quelle.indexOf('controller.dossierNachladen(k.kursId)'));
+  assert.ok(/p\.schrittId\) === '1'/.test(stelle),
+    'Schritt 1 stoesst das Dossier-Nachladen nicht an');
+  assert.ok(/p\.schrittId\) === '3'/.test(stelle),
+    'Schritt 3 stoesst das Dossier-Nachladen nicht an — das Quellenverzeichnis bliebe leer');
+});
+
+test('die Kursansicht stoesst dossierNachladen ebenfalls an und reicht das Dossier an die Ansicht weiter', () => {
+  const quelle = require('fs').readFileSync(__dirname + '/../app.js', 'utf8');
+  const kursblock = quelle.slice(quelle.indexOf("} else if (p.kursId) {"),
+                                  quelle.indexOf('} else {', quelle.indexOf("} else if (p.kursId) {")));
+  assert.ok(/controller\.dossierNachladen\(kk\.kursId\)/.test(kursblock),
+    'die Kursansicht stoesst dossierNachladen nicht an — das Quellenverzeichnis bliebe leer');
+  assert.ok(/dossier:/.test(kursblock),
+    'die Kursansicht reicht kein dossier-Prop an ansichten.einKurs weiter');
+});
