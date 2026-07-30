@@ -449,6 +449,15 @@ immer exakt „abgerufen fehlt" bedeutet — zieht seine Meldung jetzt aus derse
 Prüffunktion wie `pruefe()`. Wächst `quellePruefe()` künftig um eine weitere Regel, bleibt
 dieser Zweig automatisch richtig, statt eine veraltete Meldung auszugeben.
 
+**Erb-Quelle Dossier für den Briefing-Prompt-Kopf (Etappe 1e, Task 5, Audit A/F1/M4, Entscheid
+1): das Dossier ist die eine Quelle für Quellenliste und Rechtsstand des Briefings — das
+Frontmatter, das die KI daraus schreibt, ist nur ein Spiegel davon, nie eine zweite Wahrheit.**
+`inhalt.briefingPromptKopf(kurs, werte, d)` bekommt dafür ein optionales drittes Argument, das
+geladene Dossier: der Kopf trägt danach einen Block `FACHQUELLEN … GENAU diese Liste, nichts
+anderes` mit jeder Zeile aus `d.quellen` (nie aus dem Formular — Quellen sind dort nicht
+editierbar) sowie die Anweisung, das YAML-Feld `rechtsstand` GENAU aus der angezeigten
+Rechtsstand-Angabe zu bauen; ohne `d` bleibt der Kopf unverändert wie vor diesem Task.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht

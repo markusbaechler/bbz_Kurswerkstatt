@@ -499,8 +499,20 @@
        mehr. Leere Felder werden ausdruecklich benannt, damit sie nicht erfunden
        werden — und der Schlusssatz sagt, was zu tun ist. Am 29.07. lieferte die
        erste Fassung fuenf Fragerunden, weil er stattdessen zum Suchen einlud
-       ("deine Entscheidliste enthaelt, was dir auffaellt"). */
-    briefingPromptKopf: function (kurs, werte) {
+       ("deine Entscheidliste enthaelt, was dir auffaellt").
+
+       Erb-Quelle Dossier (Etappe 1e, Task 5, Audit A/F1/M4, Entscheid 1): das
+       optionale dritte Argument d ist das geladene Kursdossier. Die Quellenliste
+       ist NIE formular-editierbar — sie kommt ausschliesslich aus d.quellen,
+       damit der Chat sie nicht anders liest als die App sie zeigt (dieselbe
+       Formatierung wie in projektInstruktionen, s. u.). Der Rechtsstand
+       dagegen bleibt ein Formularfeld (werte.rechtsstand, aus BRIEFING_FELDER,
+       ziel:'regulatorik') — der Merge in controller._formularWerteMergen()
+       gibt dem getippten Wert bereits Vorrang vor der Dossier-Basis, hier kommt
+       nur die zusaetzliche Bauanweisung fuers YAML-Feld dazu. Ohne d (kein
+       Dossier geladen, z. B. bestehende Aufrufer/Tests) bleibt das Verhalten
+       exakt wie zuvor — der ganze Block entfaellt. */
+    briefingPromptKopf: function (kurs, werte, d) {
       werte = werte || {};
       var z = [];
       z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
@@ -517,6 +529,30 @@
         z.push(f.label + (f.einheit ? ' (' + f.einheit + ')' : '') + ': ' + fest);
       });
       z.push('');
+      if (d) {
+        var quellen = d.quellen || [];
+        if (d.content_modus === 'quellenfrei') {
+          z.push('MODUS QUELLENFREI: reiner KI-Entwurf ohne Fachquellen — das YAML-Feld ' +
+                 '\'quellen\' bleibt leer; erfinde keine.');
+        } else if (quellen.length) {
+          z.push('FACHQUELLEN (verbindlich — das YAML-Feld \'quellen\' des Briefings ist ' +
+                 'GENAU diese Liste, nichts anderes):');
+          quellen.forEach(function (q) {
+            var kopf = '- ' + q.id + ' · ' + q.titel +
+                       (q.herausgeber ? ' (' + q.herausgeber + ')' : '') +
+                       ' · Stand: ' + q.stand;
+            z.push(q.url
+              ? kopf + ' · Link: ' + q.url + ' (abgerufen ' + q.abgerufen + ')'
+              : kopf + ' · Datei: ' + q.datei);
+          });
+        } else {
+          z.push('FACHQUELLEN: noch keine erfasst — das YAML-Feld \'quellen\' bleibt leer; ' +
+                 'erfinde keine.');
+        }
+        z.push('Das YAML-Feld \'rechtsstand\' ist GENAU aus der Angabe „Rechtsstand" oben zu ' +
+               'bauen, nicht aus einem anderen Datum.');
+        z.push('');
+      }
       if (offen.length) {
         z.push('NICHT ANGEGEBEN: ' + offen.join(', ') + '.');
         z.push('Frage danach — höchstens drei Zeilen — und schreibe auf die Antwort das Briefing.');

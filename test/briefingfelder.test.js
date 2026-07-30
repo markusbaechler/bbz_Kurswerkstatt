@@ -140,6 +140,78 @@ test('bei vollstaendigen Angaben lautet der Auftrag: schreiben, nicht fragen', (
   assert.ok(k.indexOf('Entscheidliste') < 0, 'laedt weiterhin zum Fragensammeln ein');
 });
 
+/* ---------- Erb-Quelle Dossier im Promptkopf (Etappe 1e, Task 5, Audit A/F1/M4) ----------
+   Die Quellenliste ist nie formular-editierbar — sie kommt ausschliesslich aus dem
+   Dossier, nie aus werte. Der Rechtsstand bleibt ein Formularfeld (werte.rechtsstand);
+   hier kommt nur die zusaetzliche Bauanweisung fuers YAML-Feld dazu. */
+
+test('mit Dateiquelle steht die Q-Liste im Kopf, mit dem GENAU-Satz', () => {
+  const d = { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+              regulatorik: { stand: '1.1.2026' },
+              quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025',
+                          datei: 'sspa-map-2025.pdf' }],
+              status: {}, offen: [], entschieden: [] };
+  const k = inhalt.briefingPromptKopf(DBS, VOLL, d);
+  assert.match(k, /FACHQUELLEN \(verbindlich — das YAML-Feld 'quellen' des Briefings ist GENAU diese Liste, nichts anderes\):/);
+  assert.match(k, /- Q-001 · SSPA Map \(SSPA\) · Stand: 2025 · Datei: sspa-map-2025\.pdf/);
+});
+
+test('mit Link-Quelle stehen Link und Abrufdatum in der Q-Liste, keine Datei-Zeile', () => {
+  const d = { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+              regulatorik: {},
+              quellen: [{ id: 'Q-001', titel: 'Ausschreibung', herausgeber: 'SSPA', stand: '2026',
+                          url: 'https://sspa.ch/ausschreibung', abgerufen: '2026-07-30' }],
+              status: {}, offen: [], entschieden: [] };
+  const k = inhalt.briefingPromptKopf(DBS, VOLL, d);
+  assert.match(k, /- Q-001 · Ausschreibung \(SSPA\) · Stand: 2026 · Link: https:\/\/sspa\.ch\/ausschreibung \(abgerufen 2026-07-30\)/);
+  assert.doesNotMatch(k, /Q-001[^\n]*Datei:/);
+});
+
+test('ohne erfasste Quellen im Modus quellengestuetzt: der Leer-Satz, kein Erfinden', () => {
+  const d = { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+              regulatorik: {}, quellen: [], status: {}, offen: [], entschieden: [] };
+  const k = inhalt.briefingPromptKopf(DBS, VOLL, d);
+  assert.match(k, /FACHQUELLEN: noch keine erfasst — das YAML-Feld 'quellen' bleibt leer; erfinde keine\./);
+});
+
+test('im Modus quellenfrei steht der Quellenfrei-Satz, auch wenn Quellen vorhanden waeren', () => {
+  const d = { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellenfrei',
+              regulatorik: {},
+              quellen: [{ id: 'Q-001', titel: 'Irrelevant', stand: '2025', datei: 'x.pdf' }],
+              status: {}, offen: [], entschieden: [] };
+  const k = inhalt.briefingPromptKopf(DBS, VOLL, d);
+  assert.match(k, /MODUS QUELLENFREI: reiner KI-Entwurf ohne Fachquellen — das YAML-Feld 'quellen' bleibt leer; erfinde keine\./);
+  assert.ok(k.indexOf('Q-001') < 0, 'quellenfrei traegt trotzdem eine Quelle mit');
+});
+
+test('die Rechtsstand-Bauanweisung fuers YAML-Feld steht, sobald ein Dossier mitgeht', () => {
+  const d = { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+              regulatorik: { stand: '1.1.2026' }, quellen: [], status: {}, offen: [], entschieden: [] };
+  const k = inhalt.briefingPromptKopf(DBS, VOLL, d);
+  assert.match(k, /Das YAML-Feld 'rechtsstand' ist GENAU aus der Angabe/);
+});
+
+test('ohne drittes Argument bleibt der Promptkopf exakt wie bisher — kein Quellen-Teil', () => {
+  const k = inhalt.briefingPromptKopf(DBS, VOLL);
+  assert.doesNotMatch(k, /FACHQUELLEN/);
+  assert.doesNotMatch(k, /YAML-Feld/);
+});
+
+test('ein getippter Rechtsstand im Formular gewinnt gegen die Dossier-Basis (Merge-Vorrang)', () => {
+  const d = dossier.ausWerten('DBS-001', { rechtsstand: '1.1.2025' }, null, null, inhalt.BRIEFING_FELDER);
+  const basis = inhalt.briefingWerteAusDossier(d);
+  const werte = controller._formularWerteMergen(basis, { rechtsstand: '1.6.2026' });
+  assert.strictEqual(werte.rechtsstand, '1.6.2026', 'der getippte Wert haette gewinnen muessen');
+  const k = inhalt.briefingPromptKopf(DBS, werte, d);
+  assert.match(k, /Rechtsstand: 1\.6\.2026/);
+  assert.ok(k.indexOf('1.1.2025') < 0, 'die alte Dossier-Basis steht faelschlich noch im Kopf');
+});
+
+/* Mutationsprobe fuer den GENAU-Satz: 'GENAU diese Liste' aus dem Quellen-Block entfernt
+   (durchgefuehrt) — der erste Test dieses Abschnitts wurde rot, weil der Regex dann nicht
+   mehr traf. Danach wiederhergestellt. Haelt fest, dass der Test wirklich den Wortlaut
+   prueft, nicht nur "irgendein FACHQUELLEN". */
+
 /* ---------- Ansicht ---------- */
 
 test('Schritt 1 zeigt das Formular, andere Schritte nicht', () => {

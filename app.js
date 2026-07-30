@@ -1677,11 +1677,15 @@
              ueberschreiben ihn — wer tippt und sofort kopiert, bekommt, was er sieht.
              kurs2 kann null sein (Kurs nicht mehr in KWKurse) — briefingPromptKopf
              toleriert das mit '?', der Zugriff aufs Dossier davor nicht (M-1).
-             Die Merge-Regel selbst steht in controller._formularWerteMergen(). */
-          var basis = kurs2 ? root.inhalt.briefingWerteAusDossier(state.data.dossier[kurs2.kursId]) : {};
+             Die Merge-Regel selbst steht in controller._formularWerteMergen().
+             d2 geht zusaetzlich unveraendert an briefingPromptKopf mit (Etappe 1e,
+             Task 5): die Quellenliste im Prompt-Kopf ist Erb-Quelle Dossier, nie
+             formular-editierbar — sie kommt aus d2.quellen, nicht aus werte. */
+          var d2 = kurs2 ? (state.data.dossier[kurs2.kursId] || null) : null;
+          var basis = kurs2 ? root.inhalt.briefingWerteAusDossier(d2) : {};
           var form = controller.briefingFelderAusFormular();
           var werte = controller._formularWerteMergen(basis, form);
-          text2 = root.inhalt.briefingPromptKopf(kurs2, werte) + text2;
+          text2 = root.inhalt.briefingPromptKopf(kurs2, werte, d2) + text2;
         }
         kopieren(text2, t);
         return;
