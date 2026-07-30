@@ -272,6 +272,24 @@ Graph mit 412 fehl, liest `_dossierNeuLesen` einmal frisch nach (`graph.dateiLes
 eTag über eine vorgeschaltete Metadaten-GET, da er im Response-Header von `:/content` nicht
 zuverlässig steht) und wendet den Mutator genau einmal erneut an.
 
+**`controller.render()` überlebt getippte, ungesicherte Eingaben (Etappe 1e, Task 2, Audit
+C2).** Vier asynchrone Pfade rendern nach ihrem Abschluss neu, mitten im Tippen:
+`briefingNachladen`, `dossierNachladen`, `quelleErfassen` (Erfolg) und `contentModus` (Fehler).
+Ohne Erhalt löschte jeder dieser Neuaufbauten, was gerade in `#briefing-felder [data-feld]` oder
+den drei Quellen-Feldern (`quelle-titel`/`-herausgeber`/`-stand`/`-url`) stand. `render` ist
+jetzt ein dünner Wrapper: `controller._formularSnapshot()` sichert Werte und das fokussierte
+Feld VOR dem Neuaufbau (`controller._renderAufbau()`, der bisherige Rumpf von `render`),
+`controller._formularWiederherstellen()` setzt danach zurück, was vom frisch gerenderten Wert
+abweicht **und nicht leer ist** — ein leeres getipptes Feld verliert bewusst gegen einen
+gefüllten Dossier-Stand, denn Leeren gilt erst als geschehen, nachdem gesichert wurde, nicht
+schon durchs Löschen im Formular. Das fokussierte Feld wird per `id` erneut fokussiert, der
+Cursor ans Ende gesetzt (`setSelectionRange`, mit Try/Catch: `type="number"` bei
+Präsenz/Selbstlern kennt keine Selektion). **Der Datei-Input `quelle-datei` bleibt aussen vor**
+— ein Datei-Input lässt sich aus Browser-Sicherheitsgründen nicht programmatisch wiederbefüllen;
+eine laufende Dateiauswahl geht bei einem Neuaufbau weiterhin verloren. `quelleErfassen`
+(Erfolg) braucht deshalb keine eigene Sonderbehandlung mehr — der generelle Mechanismus reicht,
+weil er direkt in `render` sitzt, durch das jeder der vier Pfade ohnehin geht.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht

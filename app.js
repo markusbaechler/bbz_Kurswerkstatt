@@ -611,6 +611,12 @@
      Stellen getippt: quelleErfassen legt hierhin ab, quelleEntfernen loescht von hier. */
   var QUELLEN_ORDNER = '03_content/quellen';
 
+  /* Die drei Quellen-Eingaben, die render() vor jedem Neuaufbau sichert (Audit C2,
+     Etappe 1e Task 2) — Ergaenzung zu den Briefing-Feldern, die schon per data-feld
+     auffindbar sind. quelle-datei (Datei-Input) fehlt bewusst: ein Datei-Input laesst
+     sich aus Sicherheitsgruenden nicht programmatisch wiederbefuellen. */
+  var QUELLEN_FORMULAR_IDS = ['quelle-titel', 'quelle-herausgeber', 'quelle-stand', 'quelle-url'];
+
   /* ---------- controller ---------- */
   var controller = {
     setz: function (html) {
@@ -620,7 +626,76 @@
       if (kopf) kopf.innerHTML = (state.auth.account && state.data.inhalt) ? nav.kopf() : '';
     },
 
+    /* Sichert, was gerade in den Formularfeldern steht, BEVOR render() die Ansicht
+       neu aufbaut (Audit C2, Etappe 1e Task 2). Ohne das loeschte jeder Neuaufbau
+       ungesicherte Eingaben: briefingNachladen, dossierNachladen, quelleErfassen
+       (Erfolg) und contentModus (Fehler) rendern alle nach einem asynchronen
+       Abschluss neu — mitten im Tippen, ohne dass die Person etwas ausgeloest hat.
+       Reine Bestandsaufnahme, kein Fokus-Wechsel. */
+    _formularSnapshot: function () {
+      if (typeof document === 'undefined') return null;
+      var werte = {};
+      Array.prototype.forEach.call(document.querySelectorAll('#briefing-felder [data-feld]'), function (el) {
+        werte['feld:' + el.dataset.feld] = String(el.value == null ? '' : el.value);
+      });
+      QUELLEN_FORMULAR_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) werte['id:' + id] = String(el.value == null ? '' : el.value);
+      });
+      var aktiv = document.activeElement;
+      return { werte: werte, fokusId: (aktiv && aktiv.id) ? aktiv.id : null };
+    },
+
+    /* Setzt nach dem Neuaufbau zurueck, was vorher gesichert wurde — aber nur, wo
+       der gesicherte Wert vom frisch gerenderten abweicht UND nicht leer ist
+       (einfachste tragfaehige Variante, Brief Task 2). Bewusst so: ein geleertes
+       Feld gilt erst als geleert, wenn gesichert wurde — sonst wuerde ein Neuaufbau,
+       der zufaellig waehrend eines Loeschvorgangs laeuft, das Leeren verewigen,
+       bevor die Person es bestaetigt hat; der Dossier-Stand gewinnt dann bewusst.
+       Kein Datei-Input: der laesst sich nicht programmatisch wiederbefuellen — eine
+       akzeptierte Luecke, siehe Task-2-Report. */
+    _formularWiederherstellen: function (snap) {
+      if (!snap || typeof document === 'undefined') return;
+      var feldGeaendert = false;
+      Array.prototype.forEach.call(document.querySelectorAll('#briefing-felder [data-feld]'), function (el) {
+        var alt = snap.werte['feld:' + el.dataset.feld];
+        var neu = String(el.value == null ? '' : el.value);
+        if (alt && alt !== neu) { el.value = alt; feldGeaendert = true; }
+      });
+      QUELLEN_FORMULAR_IDS.forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        var alt = snap.werte['id:' + id];
+        var neu = String(el.value == null ? '' : el.value);
+        if (alt && alt !== neu) el.value = alt;
+      });
+      /* Ohne das steht nach der Wiederherstellung weiter "8 offen" fuer ein
+         Feld, das gerade wieder befuellt wurde (wie beim Tippen, s. briefingFelderZaehlen). */
+      if (feldGeaendert) controller.briefingFelderZaehlen();
+      if (snap.fokusId) {
+        var f = document.getElementById(snap.fokusId);
+        if (f && typeof f.focus === 'function') {
+          f.focus();
+          if (typeof f.setSelectionRange === 'function') {
+            var len = String(f.value == null ? '' : f.value).length;
+            /* type="number" (Praesenz/Selbstlern) unterstuetzt keine Selektion —
+               der Browser wirft dort eine InvalidStateError, kein Bedienfehler. */
+            try { f.setSelectionRange(len, len); } catch (e) { /* keine Selektion moeglich */ }
+          }
+        }
+      }
+    },
+
     render: function () {
+      var snap = controller._formularSnapshot();
+      controller._renderAufbau();
+      controller._formularWiederherstellen(snap);
+    },
+
+    /* Der eigentliche Aufbau — ausgelagert, damit render() aussenherum sichern und
+       wiederherstellen kann (Audit C2, Etappe 1e Task 2), ohne dass sich an den
+       Bedingungen hier unten etwas aendert. */
+    _renderAufbau: function () {
       if (state.fehler) {
         controller.setz('<div class="card meldung"><span class="eyebrow">Fehler</span>' +
           '<h2>Das hat nicht geklappt</h2><p class="lead">' + esc(state.fehler) + '</p>' +
