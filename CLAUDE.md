@@ -261,6 +261,17 @@ sichtbarer Meldung, damit ein bestehendes Dossier nie still durch ein importiert
 ist `undefined` (nie geladen) oder `null` (lädt gerade) nur ein Zwischenzustand; ein Sichern in
 diesem Fenster würde ein leeres Dossier über ein bestehendes schreiben.
 
+**Jedes Schreiben des Dossiers läuft seit Etappe 1e (Task 1, Audit C1/I5/I8) über
+`controller.dossierSchreiben(kursId, mutator, melde?)`** — eine Warteschlange je Kurs, die
+`dossierSpeichern`, `quelleErfassen`, `quelleEntfernen`, `contentModus` und den Schritt-1-Zweig
+von `ablegen` serialisiert, damit zwei überlappende Sicherungen sich nie mehr gegenseitig
+überschreiben (Lost Update): der Mutator bekommt die Dossier-Kopie zum Ausführungszeitpunkt der
+Warteschlange, nie zum Klickzeitpunkt. Geschrieben wird mit `If-Match` gegen den zuletzt
+gemerkten eTag (`state.data.dossierETag[k]`, bewusst nicht im Dossier-Objekt selbst); schlägt
+Graph mit 412 fehl, liest `_dossierNeuLesen` einmal frisch nach (`graph.dateiLesenGenau` holt den
+eTag über eine vorgeschaltete Metadaten-GET, da er im Response-Header von `:/content` nicht
+zuverlässig steht) und wendet den Mutator genau einmal erneut an.
+
 ## Stand 2026-07-22
 
 Live und mit echten Daten verifiziert: stille Anmeldung, Kursliste aus `KWKurse`, Kursansicht

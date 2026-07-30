@@ -72,7 +72,7 @@ test('Dossier laedt noch (null) — dossierSpeichern bricht ebenfalls ab', () =>
   delete global.document;
 });
 
-test('geladenes Dossier — dossierSpeichern legt ab und bewahrt bestehende Quellen', () => {
+test('geladenes Dossier — dossierSpeichern legt ab und bewahrt bestehende Quellen', async () => {
   state.position.kursId = 'DBS-001';
   const bestehend = {
     dossier: 1, kurs: 'DBS-001', stand: null, scope: {}, content_modus: 'quellengestuetzt',
@@ -80,12 +80,17 @@ test('geladenes Dossier — dossierSpeichern legt ab und bewahrt bestehende Quel
     status: {}, offen: [], entschieden: []
   };
   state.data.dossier = { 'DBS-001': bestehend };
+  state.data.dossierETag = {};
   const el = melde();
   let geschrieben = null;
-  graph.ablegen = function (kursId, ordner, datei, text) { geschrieben = { kursId, ordner, datei, text }; return Promise.resolve(); };
+  graph.ablegen = function (kursId, ordner, datei, text) { geschrieben = { kursId, ordner, datei, text }; return Promise.resolve({ eTag: 'W/"1"' }); };
   const knopf = { disabled: false };
 
-  controller.dossierSpeichern(knopf);
+  /* Seit Etappe 1e (Task 1) laeuft das Schreiben ueber die Warteschlange
+     controller.dossierSchreiben — dieselbe Pruefabsicht (ablegen wird aufgerufen,
+     bestehende Quellen bleiben erhalten), aber nicht mehr synchron abgeschlossen:
+     der Mutator wird erst im naechsten Mikrotask der Kette angewandt. */
+  await controller.dossierSpeichern(knopf);
 
   assert.ok(geschrieben, 'graph.ablegen wurde nicht aufgerufen, obwohl das Dossier geladen war');
   assert.strictEqual(geschrieben.kursId, 'DBS-001');

@@ -37,7 +37,7 @@
   /* ---------- state ---------- */
   var state = {
     auth:      { account: null },
-    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {}, dossier: {} },
+    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {}, dossier: {}, dossierETag: {} },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
                  variante: null, weg: null },
     laden:     false,
@@ -320,7 +320,13 @@
       });
     },
 
-    ablegen: function (kursId, ordner, datei, text) {
+    /* eTagWert ist optional (Etappe 1e, Task 1): ohne ihn ein einfaches PUT wie
+       bisher — jeder bestehende Aufrufer bleibt gueltig. Mit ihm traegt der Request
+       "If-Match", und Graph antwortet 412, wenn die Datei inzwischen von woanders
+       geschrieben wurde — das serialisierte Dossier-Schreiben (controller.dossierSchreiben)
+       ist der einzige Aufrufer, der ihn setzt. Der Fehler traegt .status, damit die
+       Warteschlange 412 erkennt, ohne den Meldungstext zu parsen. */
+    ablegen: function (kursId, ordner, datei, text, eTagWert) {
       return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
         var did = r[0], ord = r[1];
         if (!ord) {
@@ -329,15 +335,21 @@
             'Dein Text bleibt im Feld stehen.');
         }
         return auth.token().then(function (t) {
+          var headers = { Authorization: 'Bearer ' + t, 'Content-Type': 'text/plain; charset=utf-8' };
+          if (eTagWert) headers['If-Match'] = eTagWert;
           return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
                 '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content', {
             method: 'PUT',
-            headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'text/plain; charset=utf-8' },
+            headers: headers,
             body: new Blob([text], { type: 'text/plain;charset=utf-8' })
           });
         });
       }).then(function (r) {
-        if (!r.ok) throw new Error('Nicht abgelegt (Graph ' + r.status + ')');
+        if (!r.ok) {
+          var fehler = new Error('Nicht abgelegt (Graph ' + r.status + ')');
+          fehler.status = r.status;
+          throw fehler;
+        }
         delete state.data.dateien[kursId + '/' + ordner];   /* Ordner neu lesen */
         return r.json();
       });
@@ -491,20 +503,36 @@
        ersetzen duerfen, wenn eine Datei fehlt (Briefing). Fuer das Dossier ist das
        falsch: ein Lesefehler darf nie als "fehlt" gelten, sonst ersetzt ein spaeterer
        Import ein Dossier, das nur gerade nicht lesbar war. Drei Faelle:
-       {ok:true, text} · {ok:false, fehlt:true} (404 oder kein Kursordner) ·
-       {ok:false, fehlt:false} (jeder andere Fehler). */
+       {ok:true, text, eTag} · {ok:false, fehlt:true} (404 oder kein Kursordner) ·
+       {ok:false, fehlt:false} (jeder andere Fehler).
+       eTag (Etappe 1e, Task 1): Graph liefert ihn im GET-Response-Header nicht
+       zuverlaessig bei :/content — deshalb vor dem Inhalt einmal die Metadaten holen
+       ($select=eTag). Ein zusaetzlicher Roundtrip, aber die einzige Quelle, die auch
+       beim allerersten Laden funktioniert, ohne dass vorher in dieser Sitzung je
+       geschrieben wurde (die Alternative "eTag aus der letzten PUT-Antwort merken"
+       haette dort noch nichts zu merken). controller.dossierSchreiben braucht den
+       eTag fuer If-Match; jeder andere Aufrufer ignoriert ihn einfach. */
     dateiLesenGenau: function (kursId, ordner, datei) {
       return Promise.all([graph.driveId(), graph.kursOrdner(kursId), auth.token()])
         .then(function (r) {
           var did = r[0], ord = r[1], t = r[2];
           if (!ord) return { ok: false, fehlt: true };
-          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
-                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content',
-                { headers: { Authorization: 'Bearer ' + t } })
-            .then(function (x) {
-              if (x.status === 404) return { ok: false, fehlt: true };
-              if (!x.ok) return { ok: false, fehlt: false };
-              return x.text().then(function (text) { return { ok: true, text: text }; });
+          var basis = 'https://graph.microsoft.com/v1.0/drives/' + did +
+                      '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei));
+          return fetch(basis + '?$select=eTag', { headers: { Authorization: 'Bearer ' + t } })
+            .then(function (m) {
+              if (m.status === 404) return { ok: false, fehlt: true };
+              if (!m.ok) return { ok: false, fehlt: false };
+              return m.json().then(function (meta) {
+                return fetch(basis + ':/content', { headers: { Authorization: 'Bearer ' + t } })
+                  .then(function (x) {
+                    if (x.status === 404) return { ok: false, fehlt: true };
+                    if (!x.ok) return { ok: false, fehlt: false };
+                    return x.text().then(function (text) {
+                      return { ok: true, text: text, eTag: meta.eTag };
+                    });
+                  });
+              });
             });
         })
         .catch(function () { return { ok: false, fehlt: false }; });
@@ -735,7 +763,12 @@
         .then(function (r) {
           if (r.ok) {
             var d = root.dossier.lesen(r.text);
-            if (d) { state.data.dossier[kursId] = d; controller.render(); return; }
+            if (d) {
+              state.data.dossier[kursId] = d;
+              state.data.dossierETag[kursId] = r.eTag;
+              controller.render();
+              return;
+            }
             state.data.dossier[kursId] = null;
             state.hinweis = 'Dossier unlesbar — wird nicht überschrieben.';
             controller.render();
@@ -796,6 +829,76 @@
       });
     },
 
+    /* Warteschlange je Kurs — eine Promise-Kette pro kursId (Etappe 1e, Task 1,
+       Audit C1/I5/I8). Vier Schreibstellen (dossierSpeichern, quelleErfassen,
+       quelleEntfernen, contentModus) plus der Schritt-1-Zweig von ablegen riefen
+       bisher alle unkoordiniert graph.ablegen — zwei ueberlappende Sicherungen
+       konnten sich gegenseitig ueberschreiben (Lost Update). Nicht Teil des
+       exportierten Zustands: die Warteschlange ist Ablaufsteuerung, kein Datum. */
+    _dossierQueue: {},
+
+    /* Liest das Dossier nach einem 412 frisch von Graph und merkt Stand und eTag —
+       kein Import-Fallback hier: ein 412 beweist, dass die Datei existiert, ein
+       Import waere hier immer falsch. Ist die frische Datei nicht lesbar, bricht
+       der Aufrufer ab statt ein kaputtes Dossier stillschweigend zu uebernehmen. */
+    _dossierNeuLesen: function (kursId) {
+      return graph.dateiLesenGenau(kursId, '', root.dossier.DATEI(kursId)).then(function (r) {
+        if (!r.ok) throw new Error('Dossier nach Konflikt nicht lesbar — Seite neu laden.');
+        var d = root.dossier.lesen(r.text);
+        if (!d) throw new Error('Dossier nach Konflikt unlesbar — Seite neu laden.');
+        state.data.dossier[kursId] = d;
+        state.data.dossierETag[kursId] = r.eTag;
+        return d;
+      });
+    },
+
+    /* Ein einzelner Schreibversuch: frische Kopie des JETZIGEN State-Dossiers (nicht
+       die vom Klickzeitpunkt!), Mutator anwenden, mit If-Match schreiben. null vom
+       Mutator heisst Abbruch — kein PUT, State unveraendert. 412 heisst: jemand
+       anderes hat inzwischen geschrieben — einmal frisch lesen und den Mutator ein
+       zweites Mal anwenden (nicht endlos, sonst koennte ein staendig schreibender
+       Zweitnutzer diesen Aufruf nie durchlassen). */
+    _dossierVersuch: function (kursId, mutator, melde, nochmalErlaubt) {
+      var kopie = JSON.parse(JSON.stringify(state.data.dossier[kursId] || root.dossier.neu(kursId)));
+      var neu;
+      try { neu = mutator(kopie); } catch (e) { return Promise.reject(e); }
+      if (neu === null || neu === undefined) return Promise.resolve(null);
+
+      var eTagAlt = state.data.dossierETag[kursId];
+      return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(neu), eTagAlt)
+        .then(function (antwort) {
+          state.data.dossier[kursId] = neu;
+          state.data.dossierETag[kursId] = antwort && antwort.eTag;
+          return neu;
+        })
+        .catch(function (e) {
+          if (e && e.status === 412 && nochmalErlaubt) {
+            if (melde) melde('Zwischenzeitlich geändert — wird neu gelesen …');
+            return controller._dossierNeuLesen(kursId).then(function () {
+              return controller._dossierVersuch(kursId, mutator, melde, false);
+            });
+          }
+          if (melde) melde(String((e && e.message) || e));
+          throw e;
+        });
+    },
+
+    /* controller.dossierSchreiben(kursId, mutator, melde?) — die einzige Stelle, die
+       das Dossier schreiben darf. Aufrufe je Kurs laufen strikt nacheinander: ein
+       neuer Aufruf haengt sich an die laufende Kette, egal ob deren Vorgaenger
+       gescheitert ist (sonst wuerde ein Fehler die Warteschlange fuer immer
+       blockieren). Guards (Dossier nicht geladen, Kursordner fehlt, Bestaetigung)
+       gehoeren VOR diesen Aufruf, beim jeweiligen Aufrufer — eine abgebrochene
+       Aktion darf die Warteschlange nie belegen. */
+    dossierSchreiben: function (kursId, mutator, melde) {
+      var vorher = (controller._dossierQueue[kursId] || Promise.resolve()).then(function () {}, function () {});
+      var eigenes = vorher.then(function () {
+        return controller._dossierVersuch(kursId, mutator, melde, true);
+      });
+      controller._dossierQueue[kursId] = eigenes;
+      return eigenes;
+    },
+
     dossierSpeichern: function (knopf) {
       var kursId = state.position.kursId;
       if (!kursId) return;
@@ -815,14 +918,17 @@
         return;
       }
       var werte = controller.briefingFelderAusFormular();
-      var alt = state.data.dossier[kursId];
-      var d = root.dossier.ausWerten(kursId, werte, alt, new Date().toISOString());
+      var stand = new Date().toISOString();
       if (knopf) knopf.disabled = true;
       if (melde) { melde.hidden = false; melde.textContent = 'Wird gesichert …'; }
 
-      graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d))
+      /* Der Mutator bekommt die Kopie zum AUSFUEHRUNGSZEITPUNKT der Warteschlange,
+         nicht die von hier (Etappe 1e, Task 1) — sonst kaeme das Lost-Update-Risiko
+         durch die Hintertuer zurueck. */
+      return controller.dossierSchreiben(kursId, function (kopie) {
+        return root.dossier.ausWerten(kursId, werte, kopie, stand);
+      }, function (t) { if (melde) melde.textContent = t; })
         .then(function () {
-          state.data.dossier[kursId] = d;
           state.hinweis = 'Dossier gesichert: ' + root.dossier.DATEI(kursId);
           controller.render();
         })
@@ -862,24 +968,34 @@
       if (datei) werte.datei = name;
       if (url) { werte.url = url; werte.abgerufen = new Date().toISOString().slice(0, 10); }
 
-      var d = JSON.parse(JSON.stringify(d0));
-      var q;
+      /* Fruehe Probe gegen den zuletzt bekannten Stand — nur fuer eine sofortige
+         Fehlermeldung, bevor ueberhaupt hochgeladen wird (eine unvollstaendige
+         Quelle darf keinen Upload ausloesen). Die WIRKLICHE Quelle entsteht erst
+         im Mutator unten, gegen den Stand ZUR AUSFUEHRUNGSZEIT der Warteschlange —
+         sonst kaeme das Lost-Update-Risiko (zwei gleichzeitige quelleErfassen
+         vergeben dieselbe Q-Nummer oder verwerfen sich gegenseitig) durch die
+         Hintertuer zurueck. */
       try {
-        q = root.dossier.quelleNeu(d, werte);
+        root.dossier.quelleNeu(JSON.parse(JSON.stringify(d0)), werte);
       } catch (e) { sag(String(e.message || e)); return; }
 
       if (knopf) knopf.disabled = true;
       var nurDatei = datei && !url;
       sag(nurDatei ? 'Wird hochgeladen …' : 'Wird gesichert …');
 
+      var q = null;
+      function mutator(kopie) {
+        q = root.dossier.quelleNeu(kopie, werte);
+        return kopie;
+      }
+
       var vorgang = nurDatei
         ? graph.hochladen(kursId, QUELLEN_ORDNER, name, datei)
-            .then(function () { return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d)); })
-        : graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d));
+            .then(function () { return controller.dossierSchreiben(kursId, mutator, sag); })
+        : controller.dossierSchreiben(kursId, mutator, sag);
 
       return vorgang
         .then(function () {
-          state.data.dossier[kursId] = d;
           state.hinweis = q.id + ' erfasst: ' + (nurDatei ? name : url);
           controller.render();
         })
@@ -907,16 +1023,25 @@
       var id = knopf && knopf.dataset && knopf.dataset.quelle;
       if (!controller._bestaetige('Quelle ' + id + ' wirklich entfernen?')) return;
 
-      var d = JSON.parse(JSON.stringify(d0));
-      var eintrag = root.dossier.quelleEntfernen(d, id);
-      if (!eintrag) { sag('Quelle nicht gefunden.'); return; }
+      /* Fruehe Probe gegen den zuletzt bekannten Stand — nur fuer die sofortige
+         "nicht gefunden"-Meldung. Die wirkliche Entfernung passiert im Mutator,
+         gegen den Stand ZUR AUSFUEHRUNGSZEIT der Warteschlange (kein Lost Update). */
+      if (!(d0.quellen || []).some(function (q) { return q.id === id; })) {
+        sag('Quelle nicht gefunden.'); return;
+      }
 
       if (knopf) knopf.disabled = true;
       sag('Wird entfernt …');
 
-      return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d))
+      var eintrag = null;
+      function mutator(kopie) {
+        eintrag = root.dossier.quelleEntfernen(kopie, id);
+        if (!eintrag) throw new Error('Quelle nicht gefunden.');
+        return kopie;
+      }
+
+      return controller.dossierSchreiben(kursId, mutator, sag)
         .then(function () {
-          state.data.dossier[kursId] = d;
           if (!eintrag.datei) {
             state.hinweis = id + ' entfernt.';
             controller.render();
@@ -940,16 +1065,32 @@
     contentModus: function (el) {
       var kursId = state.position.kursId;
       var d0 = state.data.dossier[kursId];
-      if (!d0) return;
-      var d = JSON.parse(JSON.stringify(d0));
-      d.content_modus = el.value === 'quellenfrei' ? 'quellenfrei' : 'quellengestuetzt';
-      return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(d))
-        .then(function () { state.data.dossier[kursId] = d; })
+      var melde = typeof document !== 'undefined' && document.getElementById('quelle-melde');
+      /* Meldung statt stillem Rueckkehren (Etappe 1e, Task 1) — sonst zeigt das
+         Radio den neuen Wert, ohne dass je etwas gesichert wurde. */
+      if (!d0) {
+        if (melde) { melde.hidden = false; melde.textContent = 'Dossier noch nicht geladen — kurz warten.'; }
+        return;
+      }
+      /* Radios waehrend des Schreibens sperren — sonst kann ein zweiter Klick
+         waehrend der laufenden Sicherung eine zweite Warteschlangen-Runde ausloesen,
+         bevor die erste sichtbar zurueckgemeldet hat. */
+      var radios = typeof document !== 'undefined' ? document.querySelectorAll('[name="content-modus"]') : [];
+      Array.prototype.forEach.call(radios, function (r) { r.disabled = true; });
+      var modus = el.value === 'quellenfrei' ? 'quellenfrei' : 'quellengestuetzt';
+
+      return controller.dossierSchreiben(kursId, function (kopie) {
+        kopie.content_modus = modus;
+        return kopie;
+      }, function (t) { if (melde) { melde.hidden = false; melde.textContent = t; } })
+        .then(function () {
+          Array.prototype.forEach.call(radios, function (r) { r.disabled = false; });
+        })
         .catch(function (e) {
           /* PUT fehlgeschlagen: State/SharePoint tragen weiter den alten Modus, das
              Radio zeigt aber schon den neuen — controller.render() zeichnet aus dem
              echten State neu, damit es wieder zurueckspringt. */
-          var melde = typeof document !== 'undefined' && document.getElementById('quelle-melde');
+          Array.prototype.forEach.call(radios, function (r) { r.disabled = false; });
           if (melde) { melde.hidden = false; melde.textContent = 'Nicht gesichert: ' + (e.message || e); }
           controller.render();
         });
@@ -1040,16 +1181,23 @@
               (ziel.zurueckstufen ? ' · bisherige Fassung ist jetzt ' + ziel.zurueckstufen.nach : '');
             /* Das Briefing steckt in den Projekt-Instruktionen — nach einer neuen
                Fassung muss es dort erneut hinein. */
+            var status = Promise.resolve();
             if (String(n) === '1') {
               state.data.briefing[k.kursId] = undefined;
-              var d = state.data.dossier[k.kursId];
-              if (d) {
-                root.dossier.statusSetzen(d, 'briefing', 'final');
-                graph.ablegen(k.kursId, '', root.dossier.DATEI(k.kursId), root.dossier.text(d))
-                  .catch(function () { /* Ablage war erfolgreich; der Status wird beim naechsten Sichern nachgezogen */ });
+              if (state.data.dossier[k.kursId]) {
+                /* Ueber die Warteschlange (Etappe 1e, Task 1), nicht mehr fire-and-forget
+                   direkt an graph.ablegen — der Fehler wird jetzt gemeldet statt
+                   verschluckt. Die Ablage selbst ist bereits erfolgreich; scheitert nur
+                   der Status, bleibt das sichtbar statt sich als "unverschluckt" zu tarnen. */
+                status = controller.dossierSchreiben(k.kursId, function (kopie) {
+                  root.dossier.statusSetzen(kopie, 'briefing', 'final');
+                  return kopie;
+                }).catch(function (e) {
+                  state.hinweis = 'Abgelegt als ' + ziel.datei + ' — Status nicht aktualisiert: ' + (e.message || e);
+                });
               }
             }
-            controller.render();
+            return status.then(function () { controller.render(); });
           });
         })
         .catch(function (e) {
