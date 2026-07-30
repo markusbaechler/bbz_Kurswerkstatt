@@ -646,3 +646,43 @@ Render und Klick) ist ein erwartbarer, kein fataler Fall; Task 5 baut darauf ein
 Identitäts-Guard. `dossier.offenFuer(d, ziel)` filtert die Liste für die Gate-Box einer Ansicht.
 Eine Mutationsprobe (die `ZIELE.indexOf`-Prüfung in `offenNeu` auskommentiert) hält den S1-Test
 scharf: ohne die Prüfung bleiben die übrigen drei Tests grün, nur der S1-Test schlägt fehl.
+
+**Die Gate-Box (`ansichten.gateBlock`, Schritt-Ansicht) — Prüfliste, Erfassung und Behandlung
+offener Punkte am Gate.** `inhalt.gateAdressat(schrittId)` bildet die feste Zuordnung
+`{2:'gate-1', 4:'sign-off', 7:'gate-2'}` (die Gates der Acht-Schritte-Reform, s. o.) auf einen
+`dossier.ZIELE`-Slug ab — **eine** Stelle statt einer Ableitung an jeder Aufrufstelle.
+`ansichten.gateBlock(inh, kurs, schrittId, ablageDaten)` steht in `einSchritt` unmittelbar vor
+dem `.dod`/`.fuss`-Teil und ist nur sichtbar, wenn `inhalt.ablageVon(...).gate` gesetzt ist UND
+ein Kurs da ist — die Gate-**Bezeichnung** kommt bewusst aus dem Ablage-Kontrakt (`ablage.gate`),
+nicht aus `schritte.json` (`s.gate`, das weiterhin nur die Kopfzeile speist — eine bestehende
+Doppelquelle, die hier nicht angefasst wird). Fehlt der Kursordner oder ist `ablageDaten.dossier`
+kein Objekt (noch nicht geladen), zeigt die Box nur den kurzen Hinweis „Gate braucht das Dossier
+— Schritt 1 zuerst" — dieselbe Kaltstart-Logik wie beim Briefing-Formular (Doppelschutz: die
+Controller-Guards unten bleiben zusätzlich bestehen). Sonst zeigt sie über
+`dossier.offenFuer(d, gateAdressat)` die an dieses Gate adressierten Punkte (jeder Wert durch
+`esc()`, Konvention 4) mit Feldern `wer`/`wann` und einem `data-action="offen-entscheiden"`-Knopf,
+sowie einem `<select id="offen-ziel-{i}">` über `dossier.ZIELE` **ohne das eigene Gate** (schliesst
+No-op-Verschiebungen strukturell aus) plus `begruendung` und `data-action="offen-verschieben"`;
+darunter die Erfassung neuer Punkte (`offen-was`/`offen-wo`/`<select id="offen-fuer">`, Default =
+Adressat dieses Gates, Knopf `data-action="offen-erfassen"`). Der Gate-**Klick**-Knopf (die
+Freigabe selbst) ist nicht Teil dieses Blocks — Task 6 ergänzt ihn in derselben Box.
+
+**`controller.offenErfassen/offenEntscheiden/offenVerschieben` (`app.js`) — Muster wie
+`quelleErfassen`/`quelleEntfernen`: Guard zuerst, dann `dossierSchreiben`, dann Meldung plus
+`render()`.** Der Guard prüft `state.data.dossier[kursId]` auf `undefined`/`null` (noch nicht
+geladen) und meldet lokal am `#offen-melde`-Knoten, ohne zu schreiben — dieselbe Unterscheidung
+wie bei `dossierSpeichern`. Ein S1-Verstoss aus `dossier.offenNeu` (was/wo fehlt, `fuer` kein
+gültiges Ziel) läuft über den `dossierSchreiben`-Mutator, scheitert dort und landet zusätzlich in
+`state.fehlerHinweis` (nicht nur am lokalen Meldeknoten) — derselbe Grund wie bei
+`quelleErfassen`-I10: ein Zwischen-Render kann den Knoten aushängen, bevor die Person die Meldung
+liest. **Identitäts-Guard (Pflicht, Audit-Hinweis aus Task 4): der Index eines offenen Punkts
+kann sich zwischen Render und Ausführung der Warteschlange verschoben haben** (ein zweiter Klick,
+ein 412-Retry, ein weiterer Schreiber). Der Knopf trägt deshalb `data-was` mit dem `was` des
+Eintrags zur Render-Zeit; der Mutator vergleicht das beim Ausführen erneut gegen
+`kopie.offen[index].was` und bricht mit `return null` ab (kein PUT), sobald es nicht mehr passt —
+die Meldung „Liste hat sich geändert — bitte neu laden" ersetzt einen sonst stillen
+Falsch-Anwendungs-Fehler. Eine Mutationsprobe (`test/gate.test.js`, beide Identitäts-Guard-Zeilen
+auskommentiert) hält das fest: ohne sie bleiben alle anderen Tests grün, nur die beiden
+Guard-Tests schlagen fehl (Kommando `node --test`, Beleg im Task-Report). Click-Kette in `app.js`
+nach `quelle-entfernen`: `offen-erfassen` → `controller.offenErfassen(t)`, `offen-entscheiden` →
+`controller.offenEntscheiden(t)`, `offen-verschieben` → `controller.offenVerschieben(t)`.

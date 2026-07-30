@@ -736,6 +736,14 @@
       return l.sort();
     },
 
+    /* Die Gates liegen seit der Acht-Schritte-Reform (2026-07-29) bei 2, 4 und 7
+       (s. CLAUDE.md "Kein `_final` auf Nicht-Gate-Schritten"). Die Slugs sind
+       die Adressaten der offen[]-Punkte (dossier.ZIELE) — EINE Stelle statt
+       einer Ableitung an jeder Aufrufstelle. */
+    gateAdressat: function (schrittId) {
+      return ({ '2': 'gate-1', '4': 'sign-off', '7': 'gate-2' })[String(schrittId)] || null;
+    },
+
     /* Wohin Fachquellen kommen (Schritt 1) — EINE Stelle statt drei getippter
        (Audit I3). Vorher stand '03_content/quellen' woertlich in app.js
        (QUELLEN_ORDNER), im UI-Hinweistext von ansichten.js und im

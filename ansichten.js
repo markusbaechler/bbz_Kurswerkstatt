@@ -512,6 +512,70 @@
     return h;
   }
 
+  /* ---------- Die Gate-Box (Schritt 2, 4, 7) ----------
+     offen[]/entschieden[] sitzen im Dossier, nicht im Dokument-Steckbrief
+     (Meta-Spec §3.2, Entscheid Markus 2026-07-30) — dieser Block ist die
+     Prüfliste je Gate: was noch offen ist, adressiert an GENAU dieses Gate
+     (dossier.offenFuer + inhalt.gateAdressat), plus die Erfassung neuer Punkte.
+     Sichtbar nur an einem Gate-Schritt (ablage.gate gesetzt) mit Kurs; ohne
+     geladenes Dossier oder ohne Kursordner steht nur der kurze Hinweis — die
+     Knoepfe waeren ohnehin am Guard in controller.offenErfassen/... gescheitert
+     (Doppelschutz wie beim Briefing-Kaltstart, s. briefingFormular oben).
+     Der Gate-KLICK-Knopf selbst ist Task 6 — hier steht nur Pruefliste plus
+     Erfassung/Behandlung, damit Task 6 daneben ergaenzen kann. */
+  function gateBlock(inh, kurs, schrittId, ablageDaten) {
+    ablageDaten = ablageDaten || {};
+    if (!kurs) return '';
+    var ablage = I().ablageVon(inh, schrittId, kurs.kursId);
+    if (!ablage || !ablage.gate) return '';
+
+    var h = '<div class="box gate-block" id="gate-block"><h3>&#9873; ' + esc(ablage.gate) + '</h3>';
+
+    var d = ablageDaten.dossier;
+    if (ablageDaten.ordnerFehlt || !d || typeof d !== 'object') {
+      h += '<p class="hinweis-leise">Gate braucht das Dossier &mdash; Schritt 1 zuerst.</p></div>';
+      return h;
+    }
+
+    var adressat = I().gateAdressat(schrittId);
+    var ziele = root.dossier.ZIELE.filter(function (z) { return z !== adressat; });
+    var offen = root.dossier.offenFuer(d, adressat);
+
+    if (!offen.length) {
+      h += '<p class="hinweis-leise">Keine offenen Punkte an dieses Gate adressiert.</p>';
+    } else {
+      h += '<ul class="gate-liste">' + offen.map(function (e, i) {
+        return '<li><span>' + esc(e.was) + ' &mdash; ' + esc(e.wo) + '</span>' +
+          '<div class="arow">' +
+            '<input type="text" id="offen-wer-' + i + '" placeholder="wer">' +
+            '<input type="date" id="offen-wann-' + i + '">' +
+            '<button class="knopf still" data-action="offen-entscheiden" data-index="' + i +
+              '" data-was="' + esc(e.was) + '">Entscheiden</button>' +
+          '</div>' +
+          '<div class="arow">' +
+            '<select id="offen-ziel-' + i + '">' + ziele.map(function (z) {
+              return '<option value="' + esc(z) + '">' + esc(z) + '</option>';
+            }).join('') + '</select>' +
+            '<input type="text" id="offen-begruendung-' + i + '" placeholder="Begr&uuml;ndung">' +
+            '<button class="knopf still" data-action="offen-verschieben" data-index="' + i +
+              '" data-was="' + esc(e.was) + '">Verschieben</button>' +
+          '</div></li>';
+      }).join('') + '</ul>';
+    }
+
+    h += '<div class="formular gate-erfassung">' +
+      '<input type="text" id="offen-was" placeholder="was">' +
+      '<input type="text" id="offen-wo" placeholder="wo (Modul, LZ/EK-ID oder Blatt)">' +
+      '<select id="offen-fuer">' + root.dossier.ZIELE.map(function (z) {
+        return '<option value="' + esc(z) + '"' + (z === adressat ? ' selected' : '') + '>' + esc(z) + '</option>';
+      }).join('') + '</select>' +
+      '<button class="knopf" data-action="offen-erfassen">Punkt erfassen</button>' +
+      '<span class="hinweis-leise" id="offen-melde" hidden></span>' +
+      '</div>';
+
+    return h + '</div>';
+  }
+
   /* ---------- Ansicht: ein Schritt ---------- */
   function einSchritt(inh, kurs, schrittId, offenesWerkzeug, ablageDaten) {
     ablageDaten = ablageDaten || {};
@@ -770,6 +834,8 @@
     if (kurs && +schrittId === 1 && !ablageDaten.ordnerFehlt) {
       h += instruktionenBlock(inh, kurs, ablageDaten.briefing, ablageDaten.ordnerName, ablageDaten.dossier);
     }
+
+    h += gateBlock(inh, kurs, schrittId, ablageDaten);
 
     if (anleitung && anleitung.dod) {
       h += '<div class="dod"><span class="h">Fertig, wenn</span>' + esc(anleitung.dod) + '</div>';

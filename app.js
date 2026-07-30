@@ -1396,6 +1396,124 @@
         });
     },
 
+    /* ---------- Gate-Box (Etappe 2, Task 5): offen[] erfassen und behandeln ----------
+       offen[]/entschieden[] sitzen im Dossier (Meta-Spec §3.2, Entscheid Markus
+       2026-07-30): S1 (offenErfassen) haengt einen Punkt an ein Gate oder einen
+       Schritt, S2 setzt ihn um — entscheiden (offenEntscheiden) oder begruendet
+       verschieben (offenVerschieben). Guard und Muster wie quelleErfassen/
+       dossierSpeichern: Dossier noch nicht geladen (undefined/null) heisst nicht
+       bereit, sonst wuerde dossier.ausWerten... — hier root.dossier.offenNeu —
+       gegen ein leeres dossier.neu() statt gegen den echten Stand laufen. */
+    offenErfassen: function (t) {
+      var k = nav.kurs(); if (!k) return;
+      var kursId = k.kursId;
+      var melde = typeof document !== 'undefined' && document.getElementById('offen-melde');
+      function sag(txt) { if (melde) { melde.hidden = false; melde.textContent = txt; } }
+      if (state.data.dossier[kursId] === undefined || state.data.dossier[kursId] === null) {
+        sag('Dossier noch nicht geladen — kurz warten.');
+        return;
+      }
+      var was = (document.getElementById('offen-was') || {}).value;
+      var wo = (document.getElementById('offen-wo') || {}).value;
+      var fuer = (document.getElementById('offen-fuer') || {}).value;
+      return controller.dossierSchreiben(kursId, function (kopie) {
+        root.dossier.offenNeu(kopie, { was: was, wo: wo, fuer: fuer });
+        return kopie;
+      }, sag)
+        .then(function () {
+          state.hinweis = 'Offener Punkt erfasst.';
+          controller.render();
+        })
+        .catch(function (e) {
+          var text = 'Nicht erfasst: ' + (e.message || e);
+          sag(text);
+          state.fehlerHinweis = text;
+          controller.render();
+        });
+    },
+
+    /* Identitaets-Guard (Brief, Pflicht): der Index kann sich zwischen Render und
+       Ausfuehrung der Warteschlange verschoben haben (ein anderer Klick, ein
+       412-Retry). Der Knopf traegt das `was` des Eintrags zur Render-Zeit als
+       data-was; stimmt es beim Ausfuehren nicht mehr mit d.offen[index].was
+       ueberein, bricht der Mutator mit null ab (kein Schreiben) statt am
+       falschen Eintrag zu aendern — die Meldung sagt ausdruecklich, dass die
+       Liste sich geaendert hat, statt einen falschen Erfolg zu behaupten. */
+    offenEntscheiden: function (t) {
+      var k = nav.kurs(); if (!k) return;
+      var kursId = k.kursId;
+      var melde = typeof document !== 'undefined' && document.getElementById('offen-melde');
+      function sag(txt) { if (melde) { melde.hidden = false; melde.textContent = txt; } }
+      if (state.data.dossier[kursId] === undefined || state.data.dossier[kursId] === null) {
+        sag('Dossier noch nicht geladen — kurz warten.');
+        return;
+      }
+      var index = parseInt(t.dataset.index, 10);
+      var wasErwartet = t.dataset.was;
+      var wer = (document.getElementById('offen-wer-' + index) || {}).value;
+      var wann = (document.getElementById('offen-wann-' + index) || {}).value;
+      return controller.dossierSchreiben(kursId, function (kopie) {
+        var eintrag = kopie.offen[index];
+        if (!eintrag || eintrag.was !== wasErwartet) return null;
+        if (!root.dossier.offenEntscheiden(kopie, index, { wer: wer, wann: wann })) return null;
+        return kopie;
+      }, sag)
+        .then(function (ergebnis) {
+          if (ergebnis === null) {
+            var text = 'Liste hat sich geändert — bitte neu laden.';
+            sag(text);
+            state.fehlerHinweis = text;
+          } else {
+            state.hinweis = 'Entschieden.';
+          }
+          controller.render();
+        })
+        .catch(function (e) {
+          var text = 'Nicht entschieden: ' + (e.message || e);
+          sag(text);
+          state.fehlerHinweis = text;
+          controller.render();
+        });
+    },
+
+    /* Derselbe Identitaets-Guard wie offenEntscheiden — s. dort. */
+    offenVerschieben: function (t) {
+      var k = nav.kurs(); if (!k) return;
+      var kursId = k.kursId;
+      var melde = typeof document !== 'undefined' && document.getElementById('offen-melde');
+      function sag(txt) { if (melde) { melde.hidden = false; melde.textContent = txt; } }
+      if (state.data.dossier[kursId] === undefined || state.data.dossier[kursId] === null) {
+        sag('Dossier noch nicht geladen — kurz warten.');
+        return;
+      }
+      var index = parseInt(t.dataset.index, 10);
+      var wasErwartet = t.dataset.was;
+      var neuesZiel = (document.getElementById('offen-ziel-' + index) || {}).value;
+      var begruendung = (document.getElementById('offen-begruendung-' + index) || {}).value;
+      return controller.dossierSchreiben(kursId, function (kopie) {
+        var eintrag = kopie.offen[index];
+        if (!eintrag || eintrag.was !== wasErwartet) return null;
+        if (!root.dossier.offenVerschieben(kopie, index, neuesZiel, begruendung)) return null;
+        return kopie;
+      }, sag)
+        .then(function (ergebnis) {
+          if (ergebnis === null) {
+            var text = 'Liste hat sich geändert — bitte neu laden.';
+            sag(text);
+            state.fehlerHinweis = text;
+          } else {
+            state.hinweis = 'Verschoben.';
+          }
+          controller.render();
+        })
+        .catch(function (e) {
+          var text = 'Nicht verschoben: ' + (e.message || e);
+          sag(text);
+          state.fehlerHinweis = text;
+          controller.render();
+        });
+    },
+
     /* Die Wahl steht fuer sich, ohne Formular und ohne Knopf — sie wird direkt
        beim Umschalten des Radios abgelegt. */
     contentModus: function (el) {
@@ -1722,6 +1840,9 @@
       if (a === 'briefing-felder-speichern') { controller.dossierSpeichern(t); return; }
       if (a === 'quelle-erfassen') { controller.quelleErfassen(t); return; }
       if (a === 'quelle-entfernen') { controller.quelleEntfernen(t); return; }
+      if (a === 'offen-erfassen') { controller.offenErfassen(t); return; }
+      if (a === 'offen-entscheiden') { controller.offenEntscheiden(t); return; }
+      if (a === 'offen-verschieben') { controller.offenVerschieben(t); return; }
 
       /* Werkzeug auf- und zuklappen — ohne Seitenwechsel, ohne Neuaufbau. */
       if (a === 'werkzeug') {

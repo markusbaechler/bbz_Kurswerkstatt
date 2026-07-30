@@ -736,3 +736,65 @@ test('die Schrittansicht haelt einen Platz fuer die Fehlermeldung bereit', () =>
   assert.ok(/id="ablegefehler"/.test(h), 'kein Platz fuer die Meldung');
   assert.ok(/id="ablegefehler" hidden/.test(h), 'Meldung ist nicht von Anfang an versteckt');
 });
+
+/* ---------- Etappe 2, Task 5: Gate-Box ---------- */
+
+test('Schritt 2 mit Dossier und einem offenen Punkt fuer gate-1 zeigt Text, Eingabefeld und Knoepfe', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [{ was: 'Bloom-Stufe 3 pruefen', wo: 'LZ-004', fuer: 'gate-1' }],
+    entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /Bloom-Stufe 3 pruefen/, 'der Punkt-Text fehlt (escaped)');
+  assert.match(html, /id="offen-was"/);
+  assert.match(html, /data-action="offen-erfassen"/);
+  assert.match(html, /data-action="offen-entscheiden"[^>]*data-index="0"/);
+  assert.match(html, /data-action="offen-verschieben"[^>]*data-index="0"/);
+});
+
+test('Schritt 3 (kein Gate im Kontrakt) zeigt keine Gate-Box', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, DBS, 3, null, props);
+  assert.doesNotMatch(html, /id="gate-block"/);
+});
+
+test('ein Fremdwert in einem offenen Punkt erscheint escaped, nicht als Markup', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [{ was: '<img src=x>', wo: 'LZ-001', fuer: 'gate-1' }],
+    entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.doesNotMatch(html, /<img src=x>/);
+  assert.match(html, /&lt;img src=x&gt;/);
+});
+
+test('Gate-Box ohne Dossier zeigt den kurzen Hinweis statt der Pruefliste', () => {
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, {});
+  assert.match(html, /id="gate-block"/);
+  assert.match(html, /Gate braucht das Dossier/);
+  assert.doesNotMatch(html, /id="offen-was"/);
+});
+
+test('Gate-Box bleibt aussen vor, solange der Kursordner fehlt', () => {
+  const props = { ordnerFehlt: true, dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /Gate braucht das Dossier/);
+  assert.doesNotMatch(html, /id="offen-was"/);
+});
+
+test('Gate-Box ohne offene Punkte zeigt den Leerfall-Text', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /Keine offenen Punkte an dieses Gate adressiert/);
+});
