@@ -344,16 +344,27 @@
      Acht generische Angaben plus die Scope-Quelle. Sie werden hier gefragt, weil
      sie kein Urteil brauchen — und weil ein Chat, der sie erfragt, Rueckfragen
      ohne Erkenntnis erzeugt (Markus, 2026-07-29). */
-  function briefingFormular(kurs, ablageDaten) {
+  function briefingFormular(inh, kurs, ablageDaten) {
     var I2 = I();
     var werte = (ablageDaten && ablageDaten.briefingFelder) || {};
     var gelesen = ablageDaten && ablageDaten.briefingFelderGelesen;
     var fehlend = I2.briefingFehlend(werte);
+    var ordnerFehlt = !!(ablageDaten && ablageDaten.ordnerFehlt);
+
+    /* Kaltstart (Audit I7): fehlt der Kursordner noch, ist der ganze Block hier
+       unten Attrappe — Erfassen und Sichern wuerden ohnehin an den Guards in
+       app.js scheitern (Doppelschutz, die Guards bleiben). Bevor jemand Angaben
+       eintippt, die nirgends hinkoennen, steht das hier zuerst und deutlich —
+       ueber dem Quellen-Block UND dem Formular, die beide gleich folgen. */
+    var h = ordnerFehlt
+      ? '<div class="box achtung"><span class="bt">Zuerst die Ablage anlegen</span>' +
+        'Ohne Kursordner kann nichts gesichert werden.</div>'
+      : '';
 
     /* Quellen VOR den Leitplanken (Entscheid Markus 2026-07-30): erst sammeln,
        was hereinkommt, dann daraus die Leitplanken formulieren — scope_quelle
        kann anschliessend auf die hier erfassten Q-IDs verweisen. */
-    var h = quellenBlock(ablageDaten);
+    h += quellenBlock(inh, ablageDaten);
 
     h += '<h2 class="tun">Die Leitplanken' +
             '<span class="tun-sub">was der Kurs voraussetzt und was er abdeckt &mdash; ' +
@@ -400,7 +411,8 @@
     });
 
     h += '<div class="formular-fuss">';
-    h += '<button class="knopf" data-action="briefing-felder-speichern">Angaben sichern</button>';
+    h += '<button class="knopf" data-action="briefing-felder-speichern"' +
+         (ordnerFehlt ? ' disabled' : '') + '>Angaben sichern</button>';
     h += fehlend.length
       ? '<span class="offen-zahl">' + fehlend.length + ' offen: ' + esc(fehlend.join(', ')) + '</span>'
       : '<span class="offen-zahl gut">&#10003; vollst&auml;ndig &mdash; der Chat muss nichts mehr abfragen</span>';
@@ -426,7 +438,7 @@
      mit true und bekommt je Zeile den Entfernen-Knopf; Kursansicht und Schritt 3
      bleiben ohne Parameter, also lesend — rueckwaertskompatibel, weil undefined
      falsy ist. */
-  function quellenVerzeichnis(d, mitEntfernen) {
+  function quellenVerzeichnis(d, mitEntfernen, entfernenGesperrt) {
     var ql = (d && d.quellen) || [];
     if (!ql.length) return '<p class="hinweis-leise">Noch keine Quellen erfasst.</p>';
     var h = '<div class="tblwrap"><table class="tbl"><tr><th>ID</th><th>Titel</th><th>Stand</th><th>Quelle</th>' +
@@ -439,7 +451,8 @@
            (q.herausgeber ? ' (' + esc(q.herausgeber) + ')' : '') + '</td><td>' +
            esc(q.stand) + '</td><td>' + quelle + '</td>' +
            (mitEntfernen ? '<td><button class="knopf still" data-action="quelle-entfernen" ' +
-             'data-quelle="' + esc(q.id) + '">Entfernen</button></td>' : '') +
+             'data-quelle="' + esc(q.id) + '"' + (entfernenGesperrt ? ' disabled' : '') +
+             '>Entfernen</button></td>' : '') +
            '</tr>';
     });
     h += '</table></div>';
@@ -456,12 +469,18 @@
   /* ---------- Der Quellen-Block (Schritt 1) ----------
      Ablegen und Dossier-Eintrag sind EIN Vorgang (Spec §5.6) — hier steht nur die
      Erfassung dafuer, die Aktion selbst macht controller.quelleErfassen in app.js. */
-  function quellenBlock(ablageDaten) {
+  function quellenBlock(inh, ablageDaten) {
     var d = ablageDaten && ablageDaten.dossier;
+    var ordnerFehlt = !!(ablageDaten && ablageDaten.ordnerFehlt);
+    /* Der Ordnerpfad kommt von inhalt.quellenOrdner() — EINE Stelle statt einem
+       hier fest getippten Namen (Audit I3). Aendert sich der Schritt-3-Ordner im
+       Ablage-Kontrakt, geht dieser Hinweistext automatisch mit. */
+    var quellenOrdner = I().quellenOrdner(inh);
     var h = '<div class="box formular" id="quellen">';
     h += '<h3>Fachquellen</h3>';
-    h += '<p class="hinweis-leise">Massgebende Quellen &mdash; sie werden nach 03_content/quellen/ ' +
-         'gelegt und im Dossier eingetragen, in einem Zug. Altmaterial geh&ouml;rt nach 00_input, nicht hierher.</p>';
+    h += '<p class="hinweis-leise">Massgebende Quellen &mdash; sie werden nach ' +
+         esc(quellenOrdner) + '/ gelegt und im Dossier eingetragen, in einem Zug. ' +
+         'Altmaterial geh&ouml;rt nach 00_input, nicht hierher.</p>';
     h += '<ul class="hinweis-leise">' +
          '<li><b>Kursausschreibung</b> &mdash; das Leistungsversprechen, meist als Link</li>' +
          '<li><b>Massgebende Systematik oder Standard</b> mit Jahrgang (z.&nbsp;B. eine Branchen-Map) &mdash; als Datei</li>' +
@@ -471,7 +490,7 @@
          '<li><b>Nicht hierher:</b> Altmaterial (bisherige Kursunterlagen) &mdash; das geh&ouml;rt nach 00_input</li>' +
          '<li><b>Gibt es keine validen Quellen:</b> Modus &laquo;quellenfrei&raquo; setzen, nicht raten</li>' +
          '</ul>';
-    h += quellenVerzeichnis(d, true);
+    h += quellenVerzeichnis(d, true, ordnerFehlt);
     h += '<label>Titel <input id="quelle-titel" type="text"></label>';
     h += '<label>Herausgeber <input id="quelle-herausgeber" type="text"></label>';
     h += '<label>Stand <input id="quelle-stand" type="text" placeholder="z. B. 2025 oder 2026-01-01"></label>';
@@ -479,13 +498,16 @@
     h += '<label>Link (URL) <input id="quelle-url" type="text"></label>';
     h += '<p class="hinweis-leise">Datei ODER Link — massgebende Rechtstexte als Datei (PDF), ' +
          'Links für Ausschreibungen und Referenzseiten.</p>';
-    h += '<button class="knopf" data-action="quelle-erfassen">Quelle erfassen</button>';
+    h += '<button class="knopf" data-action="quelle-erfassen"' + (ordnerFehlt ? ' disabled' : '') +
+         '>Quelle erfassen</button>';
     h += '<span class="hinweis-leise" id="quelle-melde" hidden></span>';
     var modus = (d && d.content_modus) || 'quellengestuetzt';
     h += '<p><label><input type="radio" name="content-modus" value="quellengestuetzt" data-action="content-modus"' +
-         (modus === 'quellengestuetzt' ? ' checked' : '') + '> quellengest&uuml;tzt</label> ' +
+         (modus === 'quellengestuetzt' ? ' checked' : '') + (ordnerFehlt ? ' disabled' : '') +
+         '> quellengest&uuml;tzt</label> ' +
          '<label><input type="radio" name="content-modus" value="quellenfrei" data-action="content-modus"' +
-         (modus === 'quellenfrei' ? ' checked' : '') + '> quellenfrei (reiner KI-Entwurf)</label></p>';
+         (modus === 'quellenfrei' ? ' checked' : '') + (ordnerFehlt ? ' disabled' : '') +
+         '> quellenfrei (reiner KI-Entwurf)</label></p>';
     h += '</div>';
     return h;
   }
@@ -564,7 +586,7 @@
        Sie brauchen kein Urteil, nur Wissen — ein Prompt, der sie erfragt, erzeugt
        Rueckfragen ohne Erkenntnis. Was ausgefuellt ist, geht mit dem Masterprompt
        mit; was leer bleibt, landet dort als offener Entscheid. */
-    if (String(schrittId) === '1') h += briefingFormular(kurs, ablageDaten);
+    if (String(schrittId) === '1') h += briefingFormular(inh, kurs, ablageDaten);
 
     /* Erfasst wird nur in Schritt 1 — sichtbar auch in Schritt 3, damit hier
        geprueft werden kann, was die Positivliste des Auftrags enthaelt. */

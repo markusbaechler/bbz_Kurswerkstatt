@@ -612,9 +612,13 @@
     }
   };
 
-  /* Wohin Fachquellen-Dateien kommen (Spec §5.6) — eine Konstante, nicht an zwei
-     Stellen getippt: quelleErfassen legt hierhin ab, quelleEntfernen loescht von hier. */
-  var QUELLEN_ORDNER = '03_content/quellen';
+  /* Wohin Fachquellen-Dateien kommen (Spec §5.6) — abgeleitet, nicht als Konstante
+     getippt (Audit I3): quelleErfassen legt hierhin ab, quelleEntfernen loescht von
+     hier, und inhalt.quellenOrdner() ist die EINE Stelle, die dafuer den
+     Schritt-3-Ordner aus dem Ablage-Kontrakt liest — aendert er sich dort, geht
+     dieser Pfad mit, statt an drei Stellen (hier, ansichten.js, inhalt.js) von
+     Hand nachgezogen werden zu muessen. */
+  function quellenOrdner() { return root.inhalt.quellenOrdner(state.data.inhalt); }
 
   /* Die drei Quellen-Eingaben, die render() vor jedem Neuaufbau sichert (Audit C2,
      Etappe 1e Task 2) — Ergaenzung zu den Briefing-Feldern, die schon per data-feld
@@ -1232,7 +1236,7 @@
 
       /* Merkt, ob der Upload schon durch ist, BEVOR der Dossier-Schreibvorgang
          beginnt (I10, Etappe 1e Task 4) — scheitert danach nur noch der
-         Dossier-Eintrag, liegt die Datei bereits in QUELLEN_ORDNER, ohne dass
+         Dossier-Eintrag, liegt die Datei bereits im Quellen-Ordner, ohne dass
          das Dossier von ihr weiss ("Waise"). Ohne diese Unterscheidung nennt die
          Fehlermeldung nur den Graph-Fehler, nicht die Datei — wer dann blind
          nochmals klickt, weiss nicht, ob ein zweiter Upload gefahrlos ist. Der
@@ -1240,7 +1244,7 @@
          deterministisch bereinigten Namen ab (Ueberschreiben, kein Konflikt). */
       var hochgeladen = false;
       var vorgang = nurDatei
-        ? graph.hochladen(kursId, QUELLEN_ORDNER, name, datei)
+        ? graph.hochladen(kursId, quellenOrdner(), name, datei)
             .then(function () {
               hochgeladen = true;
               return controller.dossierSchreiben(kursId, mutator, sag);
@@ -1319,13 +1323,14 @@
             controller.render();
             return;
           }
-          return graph.dateiLoeschen(kursId, QUELLEN_ORDNER, eintrag.datei)
+          var ordner = quellenOrdner();
+          return graph.dateiLoeschen(kursId, ordner, eintrag.datei)
             .then(function () {
               state.hinweis = id + ' entfernt.';
               controller.render();
             })
             .catch(function () {
-              sag('Eintrag entfernt; Datei liegt noch in ' + QUELLEN_ORDNER + '/ — von Hand löschen.');
+              sag('Eintrag entfernt; Datei liegt noch in ' + ordner + '/ — von Hand löschen.');
               controller.render();
             });
         })

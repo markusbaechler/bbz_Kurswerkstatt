@@ -116,6 +116,23 @@ test('ablageVon liefert die zulaessigen Wege', () => {
                          ['claude-code', 'hand', 'hochladen']);
 });
 
+/* --- quellenOrdner (Audit I3): EINE Stelle statt drei getippter --- */
+
+test('quellenOrdner liest den Schritt-3-Ordner aus dem Kontrakt und haengt /quellen an', () => {
+  assert.strictEqual(inhalt.quellenOrdner(INHALT), '03_content/quellen');
+});
+
+test('quellenOrdner folgt einem geaenderten Schritt-3-Ordner', () => {
+  const anders = kopie();
+  anders['ablage-kontrakt'].schritte['3'].ordner = '99_anders';
+  assert.strictEqual(inhalt.quellenOrdner(anders), '99_anders/quellen');
+});
+
+test('quellenOrdner faellt ohne Kontrakt/Schritt-3-Ordner auf 03_content/quellen zurueck', () => {
+  assert.strictEqual(inhalt.quellenOrdner(null), '03_content/quellen');
+  assert.strictEqual(inhalt.quellenOrdner({}), '03_content/quellen');
+});
+
 /* --- Laden --- */
 
 test('laden meldet fehlende Pflichtdateien beim Namen', async () => {

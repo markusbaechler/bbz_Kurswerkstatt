@@ -10,6 +10,7 @@ const assert = require('node:assert');
 
 const { controller, state, graph, auth } = require('../app.js');
 require('../dossier.js');
+require('../inhalt.js');   /* app.js liest den Quellen-Ordner jetzt ueber root.inhalt.quellenOrdner() (Audit I3) */
 
 /* ---------- graph.dateiLoeschen ---------- */
 

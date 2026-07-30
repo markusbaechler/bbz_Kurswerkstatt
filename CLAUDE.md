@@ -148,6 +148,14 @@ ihm entfallen — kein Ordner der neuen Acht führt es mehr, `inhalt.manifest()`
 entfernt worden. Der Knopf „Ablage anlegen" fasst `Schritt`/`Status` **nicht** an: den Stand
 rückt das Ablegen (`standNachAblage`) oder der Erledigt-Haken.
 
+**Solange der Kursordner fehlt, sagt Schritt 1 das zuerst und deutlich** (Audit I7): ein Kasten
+„Zuerst die Ablage anlegen — ohne Kursordner kann nichts gesichert werden" steht über dem
+Quellen-Block und dem Briefing-Formular, und die Knöpfe Quelle erfassen/entfernen, Angaben
+sichern sowie die beiden Modus-Radios sind `disabled`. Die bestehenden Guards in `app.js`
+(`state.data.ordner[kursId] === null`) bleiben unverändert als Doppelschutz — vorher liessen
+sich Formular und Quellen-Block ganz normal ausfüllen, und erst der Klick auf Sichern/Erfassen
+scheiterte am Guard.
+
 ## Projekt-Instruktionen (Schritt 1)
 
 `inhalt.projektInstruktionen()` erzeugt den Anweisungstext für die beiden KI-Projekte —
@@ -223,11 +231,18 @@ nach. Das Ablegen des Briefings rückt `status.briefing` selbst auf `final`, ohn
 Schritt 1 hat kein Gate (s. „Kein `_final` auf Nicht-Gate-Schritten" oben); massgebend ist allein
 die höchste bzw. `_final`-Fassung im Ordner, das Dossier trägt den Stand nur nach.
 
-**Fachquellen entstehen als ein Vorgang, nie als zwei.** Die Erfassung legt die Datei nach
-`03_content/quellen/` **und** schreibt den Dossier-Eintrag (`id`, `titel`, `stand`, `datei`) in
-einem Zug — eine Positivliste (`dossier.positivliste`), die genau die Dateien nennt, die ein
-Auftrag lesen darf. Der Dateiname wird wie beim Weg Hochladen von der App bereinigt
+**Fachquellen entstehen als ein Vorgang, nie als zwei.** Die Erfassung legt die Datei in den
+Quellen-Ordner **und** schreibt den Dossier-Eintrag (`id`, `titel`, `stand`, `datei`) in einem
+Zug — eine Positivliste (`dossier.positivliste`), die genau die Dateien nennt, die ein Auftrag
+lesen darf. Der Dateiname wird wie beim Weg Hochladen von der App bereinigt
 (`dossier.quellenDateiname`), nie vom Menschen getippt.
+
+**Der Quellen-Ordner wird an EINER Stelle abgeleitet, nie getippt** (`inhalt.quellenOrdner(i)`,
+Audit I3): Ordner von Schritt 3 aus dem Ablage-Kontrakt plus `/quellen`, Rückfall
+`03_content/quellen`. `app.js` (Hoch-/Herunterladen der Quellen-Datei), `ansichten.js`
+(Hinweistext im Quellen-Block) und der Instruktionstext (`inhalt.projektInstruktionenTeile`)
+lesen alle von dort — vorher stand `03_content/quellen` wortwörtlich an allen drei Stellen;
+ändert sich der Schritt-3-Ordner im Kontrakt, wäre nur eine davon mitgezogen.
 
 **Eine Quelle ist Datei ODER Link, nie beides** (Entscheid Markus, 2026-07-30): ein Link trägt
 Abrufdatum statt Datei und wird nicht hochgeladen, eine Kopie ist keine Pflicht. Das

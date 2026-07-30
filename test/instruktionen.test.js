@@ -205,6 +205,25 @@ test('aendert sich der Kontrakt, aendern sich die Instruktionen mit', () => {
   assert.ok(t.indexOf('04_validierung') < 0, 'traegt den alten Ordner weiter');
 });
 
+/* Der Waechter-Test fuer I3: der Fachquellen-Pfad ('Dateien in .../quellen/')
+   stand bis jetzt woertlich als '03_content/quellen' im Quelltext von
+   inhalt.js — genau die Art Staleness-Falle wie bei den alten Ordnern oben,
+   nur unentdeckt, weil kein Test je einen abweichenden Schritt-3-Ordner
+   probierte. inhalt.quellenOrdner() liest ihn jetzt aus dem Kontrakt; dieser
+   Test aendert Schritt 3 und verlangt, dass '03_content' NIRGENDS mehr im
+   erzeugten Text steht — nicht nur, dass der neue Ordner zusaetzlich auftaucht. */
+test('aendert sich der Schritt-3-Ordner, folgt der Fachquellen-Pfad mit — 03_content taucht nirgends mehr auf (Audit I3)', () => {
+  const anders = JSON.parse(JSON.stringify(INHALT));
+  anders['ablage-kontrakt'].schritte['3'].ordner = '99_anders';
+  const d = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+              quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025',
+                          datei: 'sspa-map.pdf' }],
+              status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(anders, AFL, BRIEFING, 'claude', 'AFL-001_x', d);
+  assert.ok(t.indexOf('99_anders/quellen') >= 0, 'folgt dem geaenderten Schritt-3-Ordner nicht');
+  assert.ok(t.indexOf('03_content') < 0, 'traegt den alten Ordner trotzdem noch — die v0.2-Falle');
+});
+
 /* sdd Schritt 4 (Kuerzung): das genaue Ablageziel je Schritt (Ordner/Dateiname,
    inkl. Variantenzerlegung mit {variante}) und die Erklaerung der Varianten-
    Doppelung ("NEBENEINANDER") sind aus der Projekt-Instruktion herausgenommen —

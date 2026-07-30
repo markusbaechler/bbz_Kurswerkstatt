@@ -219,6 +219,33 @@ test('der Quellen-Block nennt, was als Fachquelle verlangt bzw. sinnvoll ist', (
   assert.match(html, /Nicht hierher/);
 });
 
+/* ---------- Der Quellen-Ordnerpfad kommt aus dem Kontrakt (Audit I3) ----------
+   Waechter-Test: aendert sich der Schritt-3-Ordner im Ablage-Kontrakt, muss der
+   UI-Hinweistext mitgehen — und '03_content' darf danach nirgends mehr in der
+   Ansicht stehen. Genau das haette die alte, fest getippte Fassung nicht
+   gefangen: sie hiess ueberall '03_content/quellen', egal was im Kontrakt stand. */
+
+test('der Quellen-Hinweistext nennt den Ordner aus dem Kontrakt', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /nach 03_content\/quellen\//);
+});
+
+test('aendert sich der Schritt-3-Ordner, folgt der UI-Hinweistext mit — 03_content taucht nirgends mehr auf', () => {
+  const anders = JSON.parse(JSON.stringify(INHALT));
+  anders['ablage-kontrakt'].schritte['3'].ordner = '99_anders';
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(anders, AFL, 1, null, props);
+  assert.match(html, /nach 99_anders\/quellen\//);
+  assert.doesNotMatch(html, /03_content/, 'traegt den alten Ordner trotzdem noch — die v0.2-Falle');
+});
+
 /* ---------- Entfernen-Knopf (Etappe 1c) ---------- */
 
 test('Schritt 1 traegt je Quelle einen Entfernen-Knopf mit der richtigen id', () => {
@@ -243,6 +270,56 @@ test('die Kursansicht zeigt keinen Entfernen-Knopf — lesend', () => {
   } };
   const h = ansichten.einKurs(INHALT, DBS, props);
   assert.doesNotMatch(h, /data-action="quelle-entfernen"/);
+});
+
+/* ---------- Kaltstart-Hinweis in Schritt 1, wenn der Kursordner fehlt (Audit I7) ----------
+   Vorher liessen Quellen-Block und Briefing-Formular sich ganz normal ausfuellen,
+   auch ohne Kursordner — Sichern/Erfassen scheiterten erst beim Klick an den
+   Guards in app.js (state.data.ordner[kursId] === null). Jetzt steht VORHER ein
+   deutlicher Kasten da, und die Knoepfe/der Modus sind gleich disabled — die
+   Controller-Guards bleiben unveraendert als Doppelschutz. */
+
+test('fehlt der Kursordner, zeigt Schritt 1 den Kaltstart-Kasten vor Quellen und Formular', () => {
+  const props = { ordnerFehlt: true, dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /Zuerst die Ablage anlegen/);
+  assert.match(html, /Ohne Kursordner kann nichts gesichert werden/);
+  const posKasten = html.indexOf('Zuerst die Ablage anlegen');
+  const posQuellen = html.indexOf('id="quellen"');
+  const posFormular = html.indexOf('id="briefing-felder"');
+  assert.ok(posKasten >= 0 && posKasten < posQuellen, 'Kasten steht nicht vor dem Quellen-Block');
+  assert.ok(posKasten < posFormular, 'Kasten steht nicht vor dem Formular');
+});
+
+test('fehlt der Kursordner, sind Erfassen, Entfernen, Sichern und der Modus disabled', () => {
+  const props = { ordnerFehlt: true, dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: '', stand: '2025', datei: 'sspa.pdf' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.match(html, /data-action="quelle-erfassen" disabled/, 'Erfassen-Knopf nicht disabled');
+  assert.match(html, /data-action="quelle-entfernen" data-quelle="Q-001" disabled/, 'Entfernen-Knopf nicht disabled');
+  assert.match(html, /data-action="briefing-felder-speichern" disabled/, 'Sichern-Knopf nicht disabled');
+  assert.strictEqual((html.match(/name="content-modus"[^>]*disabled/g) || []).length, 2,
+    'beide Modus-Radios muessten disabled sein');
+});
+
+test('mit Kursordner bleiben Kasten und disabled weg', () => {
+  const props = { ordnerFehlt: false, dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: '', stand: '2025', datei: 'sspa.pdf' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 1, null, props);
+  assert.doesNotMatch(html, /Zuerst die Ablage anlegen/);
+  assert.doesNotMatch(html, /data-action="quelle-erfassen" disabled/);
+  assert.doesNotMatch(html, /data-action="quelle-entfernen" data-quelle="Q-001" disabled/);
+  assert.doesNotMatch(html, /data-action="briefing-felder-speichern" disabled/);
+  assert.doesNotMatch(html, /data-action="content-modus"[^>]*disabled/);
 });
 
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {

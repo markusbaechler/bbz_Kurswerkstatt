@@ -678,6 +678,19 @@
       return l.sort();
     },
 
+    /* Wohin Fachquellen kommen (Schritt 1) — EINE Stelle statt drei getippter
+       (Audit I3). Vorher stand '03_content/quellen' woertlich in app.js
+       (QUELLEN_ORDNER), im UI-Hinweistext von ansichten.js und im
+       Instruktionstext hier — geaendert haette sich nur einer davon, wenn der
+       Schritt-3-Ordner im Kontrakt sich aendert. Jetzt lesen alle drei von
+       hier: der Ordner aus schritte['3'] plus '/quellen'. Fallback
+       '03_content/quellen', falls der Kontrakt (noch) keinen Schritt 3 fuehrt. */
+    quellenOrdner: function (i) {
+      var k = (i && i['ablage-kontrakt']) || {};
+      var s3 = (k.schritte || {})['3'] || {};
+      return (s3.ordner || '03_content') + '/quellen';
+    },
+
     /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 1) ---
        Uebernommen aus dem Generator des abgeloesten Cockpits v0.2 — aber die
        Ablage-Angaben werden ABGELEITET statt abgeschrieben. Die alte Fassung trug
@@ -768,9 +781,9 @@
                  'vor, der Content entsteht als reiner KI-Entwurf und wird in Schritt 4 ' +
                  'entsprechend strenger validiert. Erfinde keine Quellenangaben.');
         } else if ((d.quellen || []).length) {
-          z.push('Massgebend sind AUSSCHLIESSLICH diese Quellen (Dateien in 03_content/quellen/, ' +
-                 'Links direkt aufrufen). Keine anderen Quellen beiziehen, keine erfinden; jede ' +
-                 'gehört in die Leseliste:');
+          z.push('Massgebend sind AUSSCHLIESSLICH diese Quellen (Dateien in ' +
+                 inhalt.quellenOrdner(i) + '/, Links direkt aufrufen). Keine anderen Quellen ' +
+                 'beiziehen, keine erfinden; jede gehört in die Leseliste:');
           d.quellen.forEach(function (q) {
             var kopf = '- ' + q.id + ' · ' + q.titel +
                        (q.herausgeber ? ' (' + q.herausgeber + ')' : '') +

@@ -8,6 +8,7 @@ const assert = require('node:assert');
 
 const { controller, state, graph } = require('../app.js');
 require('../dossier.js');
+require('../inhalt.js');   /* app.js liest den Quellen-Ordner jetzt ueber root.inhalt.quellenOrdner() (Audit I3) */
 
 function els(werte) {
   const melde = { hidden: true, textContent: '' };
