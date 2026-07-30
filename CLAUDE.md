@@ -98,7 +98,10 @@ Trigger: Push auf `main`. Workflow `.github/workflows/deploy.yml`:
 
 **Genau EIN Pages-Workflow.** Ein zweiter kollidiert beim Artefakt-Upload.
 
-**Lokal:** `python -m http.server 8080`. `http://localhost:8080/` ist als Redirect-URI registriert.
+**Lokal:** irgendein statischer Server auf Port 8080 — auf dem Arbeitsrechner gibt es seit dem
+2026-07-30 kein Python mehr, ein Node-Einzeiler tut es auch. `http://localhost:8080/` ist als
+Redirect-URI registriert, und die App **wählt** die Redirect-URI nach Hostname (lokal localhost,
+deployt Pages) — fest auf Pages verdrahtet war die Anmeldung lokal unmöglich.
 
 ## ⚠ Fallen
 
@@ -262,8 +265,16 @@ Schrittnummer. `test/fixture.js` bildet die neue Zählung ab, `CLAUDE.md` ist na
 
 Modul `dossier.js` mit reinen Funktionen, Schritt-1-Formular schreibt `{K}_dossier.json` statt
 `{K}_briefing-felder.md`, Status- und Banner-Modell, Fachquellen-Erfassung als ein Vorgang,
-Projekt-Instruktionen und Briefing-Prompt-Kopf generiert aus dem Dossier. **325 Tests grün.**
-Live-Probe am echten Kurs steht noch aus (Task 9, Abnahmekriterium Etappe 1).
+Projekt-Instruktionen und Briefing-Prompt-Kopf generiert aus dem Dossier. **332 Tests grün.**
+
+**Live-Probe an VL-001 bestanden (2026-07-30, alle 10 Punkte):** Dossier in der Kursordner-Wurzel
+geschrieben und per Graph zurückgelesen · Graph legt `03_content/quellen/` beim Hochladen
+**implizit an** · Dateinamen-Bereinigung greift live · Modus persistiert · Import-Rückfall zeigt
+Altwerte vor dem ersten Sichern · Briefing-Ablage stuft die bestehende `_final` zu `_v2` zurück
+(erster Live-Beweis für `graph.umbenennen`) und rückt `status.briefing` auf `final`.
+Nebenbefunde auf der Offen-Liste: Anleitungstexte in SharePoint (`schritte.json`/`werkzeuge.json`)
+nennen noch `briefing-felder.md` · es gibt **kein UI zum Entfernen einer erfassten Quelle** —
+die Probe-Quelle wurde von Hand über Graph bereinigt.
 
 ## Offen
 
