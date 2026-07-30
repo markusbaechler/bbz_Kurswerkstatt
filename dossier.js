@@ -184,6 +184,56 @@
       return '[ENTWURF — unvalidiert]';
     },
 
+    /* offen[]/entschieden[] werden AM GATE erfasst (Entscheid Markus 2026-07-30);
+       Traeger ist das Dossier, nicht mehr der Dokument-Steckbrief (Meta-Spec §3.2).
+       S1: jeder Punkt adressiert ein Gate ODER einen Schritt. S2 setzt das Gate um:
+       entscheiden (Person+Datum) oder begruendet verschieben — nie stilles Liegenlassen. */
+    ZIELE: ['gate-1', 'sign-off', 'gate-2', 'schritt-3', 'schritt-4', 'schritt-5',
+            'schritt-6', 'schritt-7', 'schritt-8'],
+
+    offenNeu: function (d, p) {
+      p = p || {};
+      var was = String(p.was || '').trim();
+      var wo = String(p.wo || '').trim();
+      var fuer = String(p.fuer || '').trim();
+      if (!was) throw new Error('Offener Punkt: was fehlt');
+      if (!wo) throw new Error('Offener Punkt: wo fehlt (Modul, LZ/EK-ID oder Blatt)');
+      if (dossier.ZIELE.indexOf(fuer) < 0) {
+        throw new Error('Offener Punkt: fuer muss ein Gate oder Schritt sein (' + dossier.ZIELE.join(', ') + ')');
+      }
+      var e = { was: was, wo: wo, fuer: fuer };
+      d.offen.push(e);
+      return e;
+    },
+
+    offenFuer: function (d, ziel) {
+      return ((d && d.offen) || []).filter(function (e) { return e.fuer === ziel; });
+    },
+
+    offenEntscheiden: function (d, index, p) {
+      p = p || {};
+      if (!d.offen[index]) return null;
+      var wer = String(p.wer || '').trim();
+      var wann = String(p.wann || '').trim();
+      if (!wer) throw new Error('Entscheid: wer fehlt');
+      if (!wann) throw new Error('Entscheid: wann fehlt');
+      var alt = d.offen.splice(index, 1)[0];
+      var e = { was: alt.was, wo: alt.wo, wer: wer, wann: wann };
+      d.entschieden.push(e);
+      return e;
+    },
+
+    offenVerschieben: function (d, index, neuesZiel, begruendung) {
+      if (!d.offen[index]) return null;
+      if (dossier.ZIELE.indexOf(String(neuesZiel || '').trim()) < 0) {
+        throw new Error('Verschieben: Ziel muss ein Gate oder Schritt sein');
+      }
+      if (!String(begruendung || '').trim()) throw new Error('Verschieben: Begruendung fehlt (S2)');
+      d.offen[index].fuer = String(neuesZiel).trim();
+      d.offen[index].begruendung = String(begruendung).trim();
+      return d.offen[index];
+    },
+
     naechsteQuellenId: function (d) {
       var max = 0;
       ((d && d.quellen) || []).forEach(function (q) {

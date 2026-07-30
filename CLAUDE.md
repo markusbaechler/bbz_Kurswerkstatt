@@ -626,3 +626,23 @@ bereits als Wortlaut-Vertrag hält. Da bestehende Tests unverändert grün bleib
 Prompt-Köpfe denselben Zeilen-Builder teilen sollen, wurden die neuen Tests in
 `test/lernzielekopf.test.js` auf den tatsächlichen, bestehenden Wortlaut abgestimmt (Doppelpunkt
 erhalten, Quellenfrei-Prüfung case-insensitiv), statt den Wortlaut für diese Task zu ändern.
+
+**`dossier.offen[]`/`entschieden[]` — offene Punkte werden AM GATE erfasst, nicht mehr im
+Dokument-Steckbrief (Entscheid Markus 2026-07-30, Meta-Spec §3.2).** `dossier.ZIELE` listet die
+gültigen Adressaten — die drei Gates der Acht-Schritte-Reform (`gate-1`, `sign-off`, `gate-2` bei
+Schritt 2/4/7) plus die Schritte, die kein eigenes Gate haben (`schritt-3` … `schritt-8`) für den
+Fall, dass ein Punkt dorthin statt an ein Gate zeigt. **S1 (Prozess-Spec §3): jeder offene Punkt
+adressiert ein Gate ODER einen Schritt** — `dossier.offenNeu(d, {was, wo, fuer})` verlangt `was`
+und `wo` als Pflichtfelder und weist ein `fuer` ausserhalb von `ZIELE` zurück, statt einen Punkt
+ins Leere zeigen zu lassen. **S2: ein Gate schliesst seine Punkte, statt sie stillschweigend
+liegen zu lassen** — `dossier.offenEntscheiden(d, index, {wer, wann})` verschiebt einen Punkt nach
+`entschieden` (Person und Datum sind Pflicht, sonst liesse sich ein Entscheid nicht mehr
+nachvollziehen); `dossier.offenVerschieben(d, index, neuesZiel, begruendung)` verlegt ihn
+stattdessen an ein anderes gültiges Ziel, aber nur begründet — eine leere Begründung wird
+abgewiesen, weil ein Verschieben ohne Grund vom stillen Liegenlassen nicht zu unterscheiden wäre.
+Beide Funktionen liefern bei einem Index ausserhalb der Liste `null` und lassen das Dossier
+unverändert, statt eine Ausnahme zu werfen — ein verschobener Index (Nebenläufigkeit zwischen
+Render und Klick) ist ein erwartbarer, kein fataler Fall; Task 5 baut darauf einen
+Identitäts-Guard. `dossier.offenFuer(d, ziel)` filtert die Liste für die Gate-Box einer Ansicht.
+Eine Mutationsprobe (die `ZIELE.indexOf`-Prüfung in `offenNeu` auskommentiert) hält den S1-Test
+scharf: ohne die Prüfung bleiben die übrigen drei Tests grün, nur der S1-Test schlägt fehl.
