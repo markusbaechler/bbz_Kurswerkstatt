@@ -180,3 +180,46 @@ test('naechsteQuellenId() zaehlt nach dem Entfernen weiter hoch statt Luecken zu
   dossier.quelleEntfernen(d, 'Q-001');
   assert.equal(dossier.naechsteQuellenId(d), 'Q-003');
 });
+
+/* ---------- Etappe 1e Haertung, Task 3: quellePruefe() gemeinsam, Duplikatschutz (C3, I6) ----------
+   Audit I6: quelleNeu() (Schreibweg) und pruefe() (Leseweg) pruefen jetzt beide ueber
+   dieselbe interne quellePruefe() — vorher war die Schreibseite laxer (url case-sensitiv,
+   abgerufen nicht verlangt). Migration ist kein Thema: pruefe() verlangte abgerufen schon
+   vorher, alles heute lesbare bleibt lesbar (bestaetigt: VL-001 in SharePoint hat 0 Quellen). */
+
+test('quelleNeu() akzeptiert HTTPS:// gross beim Schreiben, pruefe() akzeptiert es beim Lesen', () => {
+  const d = dossier.neu('X');
+  const q = dossier.quelleNeu(d, {
+    titel: 'X', stand: '2026', url: 'HTTPS://X.CH/seite', abgerufen: '2026-07-30'
+  });
+  assert.equal(q.url, 'HTTPS://X.CH/seite');
+  assert.deepEqual(dossier.pruefe(d), []);
+});
+
+test('quelleNeu() wirft bei einer URL ohne abgerufen — auch beim Schreiben Pflicht (I6)', () => {
+  const d = dossier.neu('X');
+  assert.throws(
+    () => dossier.quelleNeu(d, { titel: 'X', stand: '2026', url: 'https://x.ch' }),
+    /abgerufen/
+  );
+});
+
+test('quelleNeu() weist eine doppelte Datei ab und nennt die bestehende Q-ID (C3)', () => {
+  const d = dossier.neu('X');
+  dossier.quelleNeu(d, { titel: 'A', stand: '2025', datei: 'a.pdf' });  /* Q-001 */
+  assert.throws(
+    () => dossier.quelleNeu(d, { titel: 'B', stand: '2026', datei: 'A.PDF' }),  /* case-insensitiv */
+    /Q-001/
+  );
+  assert.equal(d.quellen.length, 1, 'die doppelte Datei wurde trotzdem angehaengt');
+});
+
+test('quelleNeu() weist eine doppelte URL ab und nennt die bestehende Q-ID (C3)', () => {
+  const d = dossier.neu('X');
+  dossier.quelleNeu(d, { titel: 'A', stand: '2025', url: 'https://sspa.ch/seite', abgerufen: '2026-07-30' });  /* Q-001 */
+  assert.throws(
+    () => dossier.quelleNeu(d, { titel: 'B', stand: '2026', url: 'HTTPS://SSPA.CH/seite', abgerufen: '2026-07-30' }),
+    /Q-001/
+  );
+  assert.equal(d.quellen.length, 1, 'die doppelte URL wurde trotzdem angehaengt');
+});

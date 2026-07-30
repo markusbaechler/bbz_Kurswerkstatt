@@ -53,6 +53,34 @@
       return dossier.pruefe(d).length ? null : d;
     },
 
+    /* Eine Quelle pro Begriff (CLAUDE.md Konvention 9): quelleNeu (Schreibweg) und
+       pruefe (Leseweg, u.a. fuer von Hand editierte dossier.json) muessen dieselbe
+       Regel pruefen, sonst entsteht genau die Asymmetrie, die Audit I6 fand — pruefe
+       verlangte abgerufen und akzeptierte die URL nur case-insensitiv, quelleNeu
+       verlangte abgerufen NICHT und prüfte die URL case-sensitiv. url-Vergleich ist
+       case-insensitiv (/i), weil https:// und HTTPS:// dieselbe Quelle sind. */
+    quellePruefe: function (q, n) {
+      var p = [];
+      var praefix = 'Quelle' + (n == null ? '' : ' ' + n) + ': ';
+      ['titel', 'stand'].forEach(function (f) {
+        if (!q || !String(q[f] || '').trim()) p.push(praefix + f + ' fehlt');
+      });
+      var hatDatei = !!(q && String(q.datei || '').trim());
+      var hatUrl = !!(q && String(q.url || '').trim());
+      if (hatDatei === hatUrl) {
+        p.push(praefix + 'entweder datei oder url');
+      } else if (hatUrl) {
+        if (!/^https?:\/\//i.test(String(q.url).trim())) {
+          p.push(praefix + 'url muss mit http:// oder https:// beginnen');
+        }
+        /* abgerufen ist bei einer URL immer Pflicht, auch beim Schreiben — die App
+           liefert es ohnehin mit (app.js: new Date().toISOString()), aber ein von
+           Hand editiertes dossier.json muss genauso abgewiesen werden. */
+        if (!String((q || {}).abgerufen || '').trim()) p.push(praefix + 'abgerufen fehlt');
+      }
+      return p;
+    },
+
     pruefe: function (d) {
       var p = [];
       if (!d || typeof d !== 'object') return ['kein Objekt'];
@@ -62,23 +90,8 @@
       if (dossier.MODI.indexOf(d.content_modus) < 0) p.push('content_modus unbekannt: ' + d.content_modus);
       if (!Array.isArray(d.quellen)) p.push('quellen ist keine Liste');
       else d.quellen.forEach(function (q, n) {
-        ['id', 'titel', 'stand'].forEach(function (f) {
-          if (!q || !String(q[f] || '').trim()) p.push('Quelle ' + (n + 1) + ': ' + f + ' fehlt');
-        });
-        var hatDatei = !!(q && String(q.datei || '').trim());
-        var hatUrl = !!(q && String(q.url || '').trim());
-        if (hatDatei === hatUrl) {
-          p.push('Quelle ' + (n + 1) + ': entweder datei oder url');
-        } else if (hatUrl) {
-          if (!String((q || {}).abgerufen || '').trim()) p.push('Quelle ' + (n + 1) + ': abgerufen fehlt');
-          /* Dieselbe Schema-Pruefung wie in quelleNeu (Schreibweg) — ein von Hand
-             editiertes dossier.json geht nie durch quelleNeu, muss aber genauso
-             abgewiesen werden. esc() beim Rendern filtert kein Schema; javascript:
-             waere sonst ein klickbarer <a href> in drei Ansichten. */
-          if (!/^https?:\/\//i.test(String(q.url).trim())) {
-            p.push('Quelle ' + (n + 1) + ': url muss mit http:// oder https:// beginnen');
-          }
-        }
+        if (!q || !String(q.id || '').trim()) p.push('Quelle ' + (n + 1) + ': id fehlt');
+        p.push.apply(p, dossier.quellePruefe(q, n + 1));
       });
       if (!d.status || typeof d.status !== 'object') p.push('status fehlt');
       else Object.keys(d.status).forEach(function (k) {
@@ -121,17 +134,45 @@
        hochgeladen wird. Eine Quelle ist Datei ODER Link (Entscheid Markus,
        2026-07-30): Links tragen statt datei ein url-Feld plus das Abrufdatum
        (abgerufen kommt fertig herein — kein Date in dossier.js), eine Kopie ist
-       keine Pflicht. */
+       keine Pflicht.
+       Das Gate ist quellePruefe() — dieselbe Funktion wie in pruefe() (Audit I6:
+       vorher war die Schreibseite hier laxer als die Leseseite: url case-sensitiv,
+       abgerufen nicht verlangt). Ist die Quelle gueltig, folgt der Duplikatschutz
+       (Audit C3): dieselbe Datei oder derselbe Link darf nicht zweimal erfasst
+       werden — die Meldung nennt die bestehende Q-ID, statt den Datensatz
+       stillschweigend zu verdoppeln. */
     quelleNeu: function (d, q) {
       q = q || {};
       var hatDatei = !!String(q.datei || '').trim();
       var hatUrl = !!String(q.url || '').trim();
-      if (hatDatei && hatUrl) throw new Error('Quelle: entweder Datei oder Link, nicht beides');
-      if (!hatDatei && !hatUrl) throw new Error('Quelle: Datei oder Link angeben');
-      var fehlt = ['titel', 'stand'].filter(function (f) {
-        return !String(q[f] || '').trim();
-      });
-      if (fehlt.length) throw new Error('Quelle unvollständig: ' + fehlt.join(', ') + ' fehlt');
+      if (dossier.quellePruefe(q).length) {
+        if (hatDatei === hatUrl) {
+          throw new Error(hatDatei
+            ? 'Quelle: entweder Datei oder Link, nicht beides'
+            : 'Quelle: Datei oder Link angeben');
+        }
+        var fehlt = ['titel', 'stand'].filter(function (f) {
+          return !String(q[f] || '').trim();
+        });
+        if (fehlt.length) throw new Error('Quelle unvollständig: ' + fehlt.join(', ') + ' fehlt');
+        if (!/^https?:\/\//i.test(String(q.url || '').trim())) {
+          throw new Error('Link muss mit http:// oder https:// beginnen');
+        }
+        throw new Error('Quelle: abgerufen fehlt');
+      }
+      if (hatDatei) {
+        var dateiNeu = String(q.datei).trim().toLowerCase();
+        var glDatei = (d.quellen || []).find(function (e2) {
+          return String(e2.datei || '').trim().toLowerCase() === dateiNeu;
+        });
+        if (glDatei) throw new Error('Datei bereits als ' + glDatei.id + ' erfasst');
+      } else {
+        var urlNeu = String(q.url).trim().toLowerCase();
+        var glUrl = (d.quellen || []).find(function (e2) {
+          return String(e2.url || '').trim().toLowerCase() === urlNeu;
+        });
+        if (glUrl) throw new Error('Link bereits als ' + glUrl.id + ' erfasst');
+      }
       var e = {
         id: dossier.naechsteQuellenId(d),
         titel: String(q.titel).trim(),
@@ -139,9 +180,7 @@
         stand: String(q.stand).trim()
       };
       if (hatUrl) {
-        var url = String(q.url).trim();
-        if (!/^https?:\/\//.test(url)) throw new Error('Link muss mit http:// oder https:// beginnen');
-        e.url = url;
+        e.url = String(q.url).trim();
         e.abgerufen = String(q.abgerufen || '').trim();
       } else {
         e.datei = String(q.datei).trim();

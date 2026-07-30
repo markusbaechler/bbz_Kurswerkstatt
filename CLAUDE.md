@@ -272,6 +272,17 @@ Graph mit 412 fehl, liest `_dossierNeuLesen` einmal frisch nach (`graph.dateiLes
 eTag über eine vorgeschaltete Metadaten-GET, da er im Response-Header von `:/content` nicht
 zuverlässig steht) und wendet den Mutator genau einmal erneut an.
 
+**Eine Quelle wird an genau einer Stelle geprüft** (Etappe 1e, Task 3, Audit C3/I6):
+`dossier.quellePruefe(q, n?)` trägt die Regel für titel/stand Pflicht, datei XOR url, url
+case-insensitiv (`/^https?:\/\//i`) und bei url `abgerufen` Pflicht — **auch beim Schreiben**.
+Vorher prüfte `quelleNeu` (Schreibweg) laxer als `pruefe` (Leseweg): url case-sensitiv,
+`abgerufen` nicht verlangt, obwohl der Kommentar dort fälschlich „dieselbe Schema-Prüfung wie in
+quelleNeu" behauptete. Kein Migrationsthema: `pruefe`/`lesen` verlangten `abgerufen` schon vorher,
+alles heute lesbare Dossier bleibt lesbar — nur die Schreibseite ist strenger geworden, und
+`app.js` liefert `abgerufen` bei jedem Link ohnehin mit. `quelleNeu` weist zusätzlich ab, wenn die
+(bereits bereinigte) Datei oder die URL — case-insensitiv, getrimmt — schon in `d.quellen`
+vorkommt; die Meldung nennt die bestehende Q-ID („Datei bereits als Q-001 erfasst").
+
 **`controller.render()` überlebt getippte, ungesicherte Eingaben (Etappe 1e, Task 2, Audit
 C2).** Der Schutz sitzt zentral in `render()` selbst und deckt damit **jeden** Render-Aufruf ab
 — nicht nur eine feste Liste von Auslösern. Beispiele für Aufrufe, die mitten im Tippen neu
