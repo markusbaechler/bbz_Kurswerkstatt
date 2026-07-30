@@ -592,44 +592,71 @@
       '<span class="hinweis-leise" id="offen-melde" hidden></span>' +
       '</div>';
 
-    h += gateFreigabe(inh, kurs, schrittId, ablage, offen, ablageDaten);
+    h += gateFreigabe(inh, kurs, schrittId, ablage, offen, ablageDaten, d);
 
     return h + '</div>';
   }
 
-  /* ---------- Der Freigabe-Teil der Gate-Box (Etappe 2, Task 6) ----------
+  /* ---------- Der Freigabe-Teil der Gate-Box (Etappe 2, Task 6, Fix-Runde 1) ----------
      Unterhalb der Pruefliste: der eigentliche Gate-KLICK. Zeigt, wohin die
      geltende Fassung umbenannt wird (Vorschau, nur wenn eine versionierte
      Datei bereits gelesen ist — ablageDaten.dateien kommt asynchron), und
-     sperrt den Knopf mit einer Begruendungszeile fuer jeden der drei Faelle,
-     die controller.gateKlick sonst erst nach einem Netzzugriff ablehnen
-     wuerde: (a) offene Punkte an GENAU diesem Gate (S2 — dieselbe Liste, die
-     die Pruefliste darueber schon zeigt), (b) es liegt schon eine _final,
-     (c) es gibt noch keine versionierte Datei ueberhaupt. Ohne geladene
-     Dateien (dateien noch nicht Array) bleibt nur (a) pruefbar — (b)/(c)
-     wuerden sonst faelschlich "gesperrt" zeigen, obwohl nur die Anzeige noch
-     nichts weiss; controller.gateKlick liest beim Klick ohnehin frisch. */
-  function gateFreigabe(inh, kurs, schrittId, ablage, offen, ablageDaten) {
+     sperrt den Knopf mit einer Begruendungszeile fuer die Faelle, die
+     controller.gateKlick sonst erst nach einem Netzzugriff ablehnen wuerde:
+     (a) offene Punkte an GENAU diesem Gate (S2), (b) die Freigabe ist bereits
+     VOLLSTAENDIG abgeschlossen, (c) es gibt noch keine versionierte Datei
+     ueberhaupt, (d) ein Lauf ist gerade aktiv (Lauf-Merker, s. u.).
+
+     F1 (Fix-Runde 1, Review-Finding): "bereits freigegeben" sperrte bisher
+     schon, sobald `_final` ueberhaupt existierte — genau dort leben aber die
+     Wiedereinstiegs-Zweige von controller.gateKlick (Teilfehler: Umbenennung
+     ist durch, Protokoll/Status fehlen noch). Eine Sperre allein auf `_final`
+     haette den Knopf fuer immer zugesperrt, sobald `_final` einmal liegt, ohne
+     dass die Reise je ueber die UI abgeschlossen werden koennte. "Vollstaendig
+     abgeschlossen" heisst deshalb jetzt: `_final` UND das Protokoll UND
+     `dossier.statusVon(d, lief) === 'final'` — erst wenn alle drei stimmen,
+     ist wirklich nichts mehr zu tun. Fehlt eines davon, bleibt der Knopf offen,
+     aber mit der Beschriftung "Freigabe abschliessen" statt "Gate durchlaufen
+     — _final setzen", weil keine neue Datei mehr entsteht, nur der Rest wird
+     nachgezogen. */
+  function gateFreigabe(inh, kurs, schrittId, ablage, offen, ablageDaten, d) {
     var dateien = Array.isArray(ablageDaten.dateien) ? ablageDaten.dateien : null;
     var lief = I().lieferobjektVon(inh, schrittId, ablageDaten.variante);
     var geltend = (dateien && lief) ? I().geltendeDatei(dateien, kurs.kursId, lief) : null;
     var final = (dateien && lief) ? I().finalVorhanden(dateien, kurs.kursId, lief) : null;
     var endung = I().erwarteteEndung(inh, schrittId);
     var nach = (lief && endung) ? I().finalName(kurs.kursId, lief, endung) : null;
+    var gateDateiName = I().gateDatei(inh);
+    var protokollDa = !!(dateien && dateien.some(function (x) { return x.name === gateDateiName; }));
+    var statusFinal = !!(lief && root.dossier.statusVon(d, lief) === 'final');
+    var vollstaendig = !!(dateien && final && protokollDa && statusFinal);
+    var nochOffenTrotzFinal = !!(dateien && final && !vollstaendig);
 
+    /* F3 (Fix-Runde 1): der Lauf-Merker (state.gateLaeuft, gesetzt/geloescht von
+       controller.gateKlick) sperrt hier zusaetzlich zum knopf.disabled im DOM —
+       ein Render mitten im Lauf (z. B. ein auslaufendes ordnerNachladen) baut
+       die Box sonst mit einem wieder aktivierten Knopf neu auf. */
     var grund = null;
-    if (offen.length) {
+    if (ablageDaten.gateLaeuft) {
+      grund = 'Gate läuft …';
+    } else if (offen.length) {
       grund = offen.length + ' offene Punkte an ' + ablage.gate +
               ' — erst entscheiden oder begründet verschieben';
-    } else if (dateien && final) {
+    } else if (vollstaendig) {
       grund = 'bereits freigegeben: ' + final;
     } else if (dateien && !geltend) {
       grund = 'keine versionierte Datei vorhanden';
     }
 
+    var beschriftung = nochOffenTrotzFinal ? 'Freigabe abschliessen' : 'Gate durchlaufen &mdash; _final setzen';
+
     var h = '<div class="gate-freigabe">';
     if (geltend && !final && nach) {
       h += '<p>Freigegeben wird: <code>' + esc(geltend) + '</code> &rarr; <code>' + esc(nach) + '</code></p>';
+    } else if (nochOffenTrotzFinal) {
+      h += '<p class="dim"><code>' + esc(final) + '</code> liegt bereits, die Freigabe ist aber ' +
+           'noch nicht vollstaendig (Protokoll oder Status fehlen) &mdash; ein weiterer Klick ' +
+           'zieht das nach, ohne etwas erneut umzubenennen.</p>';
     } else if (!dateien) {
       h += '<p class="dim">Ordner wird gelesen &hellip;</p>';
     }
@@ -638,7 +665,7 @@
     h += '<label>Gepr&uuml;ft (optional, eine Zeile je Punkt) ' +
          '<textarea id="gate-geprueft" data-gate-feld rows="3"></textarea></label>';
     h += '<button class="knopf" data-action="gate-klick" data-schritt="' + esc(schrittId) + '"' +
-         (grund ? ' disabled' : '') + '>Gate durchlaufen &mdash; _final setzen</button>';
+         (grund ? ' disabled' : '') + '>' + beschriftung + '</button>';
     if (grund) h += '<p class="dim">' + esc(grund) + '</p>';
     h += '<span class="hinweis-leise" id="gate-melde" hidden></span>';
     return h + '</div>';

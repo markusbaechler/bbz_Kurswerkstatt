@@ -47,7 +47,13 @@
        Aktion (gruen, Haekchen), fehlerHinweis eine fehlgeschlagene (rot, .klemmt-
        Optik) — beide werden in _renderAufbau in EINEM Block vor der Ansicht
        gerendert und dort je einzeln konsumiert (auf null gesetzt). */
-    fehlerHinweis: null
+    fehlerHinweis: null,
+    /* Lauf-Merker fuer den Gate-Klick (Etappe 2, Task 6, Fix-Runde 1, F3) —
+       Schluessel kursId+'/'+schrittId, waehrend controller.gateKlick laeuft.
+       Lebt in state (nicht am DOM-Knopf), damit ein Render mitten im Lauf
+       (z. B. ein auslaufendes ordnerNachladen) den Knopf nicht wieder aktiviert
+       und einen zweiten, ueberlappenden Lauf zulaesst — s. ansichten.gateFreigabe. */
+    gateLaeuft: {}
   };
 
   /* ---------- helpers ---------- */
@@ -301,7 +307,8 @@
        Ablage-Kontrakt, nicht von der Person. */
     /* Eine Datei im selben Ordner umbenennen. Gebraucht, um eine bisherige
        _final auf ihre Versionsnummer zurueckzustufen, bevor die neue Fassung
-       _final heisst — nur so gibt es nie zwei geltende Fassungen nebeneinander. */
+       _final heisst — nur so gibt es nie zwei geltende Fassungen nebeneinander.
+       Auch der Gate-Klick (Etappe 2, Task 6) benennt hierueber _vN auf _final um. */
     umbenennen: function (kursId, ordner, alt, neu) {
       return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
         var did = r[0], ord = r[1];
@@ -321,6 +328,18 @@
                             r.status + '): ' + b.slice(0, 200));
           });
         }
+        /* Cache invalidieren wie graph.ablegen/graph.dateiLoeschen (Etappe 2, Task 6,
+           Fix-Runde 1, F2): eine Umbenennung aendert den Ordnerinhalt genauso wie ein
+           Schreiben oder Loeschen. Vorher fehlte das hier — maskiert in jedem bisherigen
+           Aufrufer (controller.ablegen-Zurueckstufen, controller.gateKlick), weil dort
+           IMMER ein direkt folgendes graph.ablegen denselben Ordner ohnehin invalidierte.
+           Der Gate-Wiedereinstiegsfall "_final UND Protokoll liegen schon" (b) ruft nach
+           einer Umbenennung aber NIE mehr graph.ablegen fuer diesen Ordner auf (nur noch
+           den Dossier-Schreiber, ein anderer Ordner) — ohne diese Zeile zeigte die Ansicht
+           danach weiterhin die alte _vN-Datei. Zentral hier statt an jeder Aufrufstelle:
+           eine Quelle fuer die Invalidierungsregel, konsistent mit den beiden
+           Geschwisterfunktionen. */
+        delete state.data.dateien[kursId + '/' + ordner];
         return neu;
       });
     },
@@ -932,7 +951,10 @@
              Projekt-Instruktionen ein und darf dort kein Platzhalter sein. */
           ordnerName: (k && state.data.ordner[k.kursId]) ? state.data.ordner[k.kursId].name : null,
           variante: p.variante,
-          weg: p.weg
+          weg: p.weg,
+          /* F3, Fix-Runde 1: der Lauf-Merker fuer GENAU diesen Kurs+Schritt —
+             s. state.gateLaeuft oben. */
+          gateLaeuft: k ? !!state.gateLaeuft[k.kursId + '/' + p.schrittId] : false
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         /* Auf Schritt 1 stehen die Projekt-Instruktionen, und die tragen das
@@ -1580,37 +1602,64 @@
         });
     },
 
-    /* ---------- Gate-KLICK (Etappe 2, Task 6): _final, _gate.md, Dossier-Status final ----------
-       Ablauf: S2-Sperre (offene Punkte an GENAU dieses Gate, aus dem bereits geladenen
-       Dossier — kein Netzzugriff dafuer noetig) · Zweitpruefung (Pflicht, Gate 1 ist 4-Augen,
-       ebenfalls vor jedem Netzzugriff geprueft) · Ordner frisch lesen · umbenennen (_vN ->
-       _final) · Protokoll schreiben (Kontraktfeld gate_datei, Default _gate.md, gelesen ueber
-       inhalt.gateDatei) · Dossier-Status des Lieferobjekts auf final — der FUENFTE Schreiber
-       durch controller.dossierSchreiben, kein eigener graph.ablegen-Pfad. KWKurse
-       (Schritt/Status) fasst dieser Klick NICHT an: das bleibt beim Erledigt-Haken (Abgrenzung
-       KWKurse=Programmstand, Dossier=Lieferobjektstatus, Meta-Spec §3).
+    /* ---------- Gate-KLICK (Etappe 2, Task 6, Fix-Runde 1): _final, _gate.md, Dossier-Status final ----------
+       Ablauf: Lauf-Merker-Sperre (F3, s. u.) · S2-Sperre (offene Punkte an GENAU dieses
+       Gate, aus dem bereits geladenen Dossier — kein Netzzugriff dafuer noetig) ·
+       Zweitpruefung (Pflicht, Gate 1 ist 4-Augen, ebenfalls vor jedem Netzzugriff geprueft)
+       · Ordner frisch lesen · Protokoll schreiben (Kontraktfeld gate_datei, Default
+       _gate.md, gelesen ueber inhalt.gateDatei) · umbenennen (_vN -> _final) · Dossier-
+       Status des Lieferobjekts auf final — der FUENFTE Schreiber durch
+       controller.dossierSchreiben, kein eigener graph.ablegen-Pfad. KWKurse
+       (Schritt/Status) fasst dieser Klick NICHT an: das bleibt beim Erledigt-Haken
+       (Abgrenzung KWKurse=Programmstand, Dossier=Lieferobjektstatus, Meta-Spec §3).
+
+       Reihenfolge Protokoll-VOR-Umbenennen (Fix-Runde 1, Review-Empfehlung — vorher war es
+       umgekehrt): der Protokoll-Inhalt (gate, von, nach, Zweitpruefung, Geprueft, offen) ist
+       zum Zeitpunkt des Lesens bereits vollstaendig bekannt, eine Umbenennung liefert nichts
+       Neues dafuer. Mit dieser Reihenfolge ist "von" in JEDEM Wiedereinstiegsfall VOR dem
+       Umbenennen bekannt — der fruehere Platzhalter 'unbekannt (Wiedereinstieg)' war noetig,
+       weil die alte Reihenfolge (umbenennen -> Protokoll) den von-Namen nach einem
+       Teilfehler vor dem Protokoll-Schreiben bereits vernichtet hatte. Er bleibt nur noch als
+       Randfall-Fallback stehen (s. Fall (a) unten), wenn eine _final ganz ohne Protokoll
+       vorgefunden wird (z. B. von Hand geloescht, oder ein Dossier von vor dieser Task).
 
        Idempotenz ist Pflicht (Wiedereinstieg nach einem Teilfehler darf nichts verdoppeln).
-       Sobald der Ordner gelesen ist, unterscheidet gateKlick drei Faelle:
-       (a) _final liegt schon, das Protokoll fehlt noch  -> Umbenennung ueberspringen,
-           Protokoll UND Status nachziehen. Der "von"-Name ist hier nicht mehr rekonstruierbar
-           — die _vN-Datei heisst ja bereits _final, geltendeDatei() liefert nur noch den
-           _final-Namen zurueck. Das Protokoll traegt deshalb NUR in diesem Fall den
-           Platzhalter 'unbekannt (Wiedereinstieg)' als von-Wert (das Protokoll wird neu
-           geschrieben UND der geltende v-Name existiert nicht mehr).
-       (b) _final UND das Protokoll liegen schon        -> nur noch der Dossier-Status, kein
-           Schreiben von Datei oder Protokoll mehr (der zweite Klick fuegt sonst kein zweites
-           Mal dieselbe Zeile hinzu — es gibt nichts, was verdoppelt werden koennte).
-       (c) nichts davon liegt                           -> voller Durchlauf: umbenennen,
-           Protokoll schreiben, Status setzen. */
+       Sobald der Ordner gelesen ist, unterscheidet gateKlick:
+       (a) _final liegt schon, das Protokoll fehlt (Randfall)  -> Umbenennung entfaellt (schon
+           geschehen), das "von" ist nicht mehr rekonstruierbar — Platzhalter
+           'unbekannt (Wiedereinstieg)', dann Status.
+       (b) _final UND Protokoll liegen schon        -> nur noch der Dossier-Status.
+       (c) _final fehlt noch (voller Durchlauf ODER Wiedereinstieg NACH einem Teilfehler VOR
+           dem Umbenennen) -> das Protokoll wird IMMER frisch geschrieben, NIE uebersprungen
+           (F2, Fix-Runde 1 — R7-Schutz): eine bereits vorhandene _gate.md koennte von einem
+           frueheren, per Hand zurueckgestuften Zyklus stammen (CLAUDE.md, "Wer nach der
+           Freigabe weiterarbeiten muss, setzt _final von Hand zurueck") und die FALSCHE,
+           veraltete Version nennen — ihre blosse Anwesenheit darf ein neues Protokoll
+           deshalb nie unterdruecken. graph.ablegen ueberschreibt deterministisch (kein
+           Duplikat), also ist ein wiederholtes Schreiben harmlos. Danach umbenennen, danach
+           Status. */
     gateKlick: function (n, knopf) {
       var k = nav.kurs(); if (!k) return;
       var kursId = k.kursId;
+      var laufSchluessel = kursId + '/' + n;
       var inh = state.data.inhalt;
-      var d = state.data.dossier[kursId];
       var melde = typeof document !== 'undefined' && document.getElementById('gate-melde');
       function sag(txt) { if (melde) { melde.hidden = false; melde.textContent = txt; } }
 
+      /* F3 (Fix-Runde 1): der Lauf-Merker ist die ERSTE Pruefung, noch vor dem
+         Dossier-Guard — ein zweiter, ueberlappender Klick darf unter keinen Umstaenden
+         einen zweiten Graph-Aufruf ausloesen, egal was sonst im State steht. Ein Render
+         mitten im Lauf (z. B. ein auslaufendes ordnerNachladen) baut die Gate-Box neu auf:
+         der frisch gezeichnete Knopf zeigt wieder enabled (der Dateien-Cache traegt ja noch
+         die alte Version), und der Formular-Erhalt stellt #gate-zweitpruefung wieder her —
+         ohne diesen State-Merker koennte ein zweiter Klick einen zweiten Lauf ausloesen, der
+         das korrekte Ergebnis des ersten ueberschreibt. */
+      if (state.gateLaeuft[laufSchluessel]) {
+        sag('Gate läuft bereits — bitte warten.');
+        return;
+      }
+
+      var d = state.data.dossier[kursId];
       if (!d || typeof d !== 'object') {
         var keinDossier = 'Dossier nicht geladen — Gate nicht durchlaufen.';
         sag(keinDossier);
@@ -1641,8 +1690,11 @@
       var ABGEBROCHEN = {};
 
       delete state.data.dateien[schl];
+      state.gateLaeuft[laufSchluessel] = true;
       if (knopf) knopf.disabled = true;
       sag('Wird durchgeführt …');
+
+      function laufBeenden() { delete state.gateLaeuft[laufSchluessel]; }
 
       return graph.ordnerInhalt(kursId, ablage.ordner).then(function (dateien) {
         var lief = root.inhalt.lieferobjektVon(inh, n, ablage.variante);
@@ -1651,51 +1703,57 @@
         var gateDateiName = root.inhalt.gateDatei(inh);
         var protokollDa = (dateien || []).some(function (x) { return x.name === gateDateiName; });
 
-        /* Schreibt (wo noetig) das Protokoll und setzt danach den Dossier-Status —
-           der Dossier-Schreiber ist immer der fuenfte Schreiber durch die Warteschlange,
-           auch im Wiedereinstiegsfall (b), wo gar nichts mehr geschrieben wird ausser dem
-           Status. */
-        function protokollUndStatus(von, nach) {
-          var schreiben = protokollDa ? Promise.resolve() : Promise.resolve().then(function () {
-            var md = root.inhalt.gateProtokoll({
-              gate: ablage.gate, kursId: kursId, von: von, nach: nach,
-              datum: new Date().toISOString().slice(0, 10),
-              person: (state.auth.account && state.auth.account.name) || '',
-              zweitpruefung: zweit, geprueft: geprueft, offen: (d.offen || [])
-            });
-            return graph.ablegen(kursId, ablage.ordner, gateDateiName, md);
-          });
-          return schreiben.then(function () {
-            return controller.dossierSchreiben(kursId, function (kopie) {
-              root.dossier.statusSetzen(kopie, lief, 'final');
-              return kopie;
-            });
+        function statusSchreiben() {
+          return controller.dossierSchreiben(kursId, function (kopie) {
+            root.dossier.statusSetzen(kopie, lief, 'final');
+            return kopie;
           });
         }
 
         if (final) {
-          /* Wiedereinstieg (a)/(b): die Umbenennung ist bereits geschehen — geltendeDatei()
-             liefert ab hier nur noch final selbst, der urspruengliche _vN-Name ist nicht
-             mehr da. */
-          return protokollUndStatus('unbekannt (Wiedereinstieg)', final);
+          /* (b): Protokoll liegt bereits (der Normalfall unter dieser Reihenfolge, da es
+             VOR dem Umbenennen entstand) -> nur noch der Status.
+             (a, Randfall): Protokoll fehlt trotzdem — 'von' ist nicht mehr rekonstruierbar,
+             geltendeDatei() liefert ab hier nur noch final selbst zurueck. */
+          if (protokollDa) return statusSchreiben();
+          var mdRandfall = root.inhalt.gateProtokoll({
+            gate: ablage.gate, kursId: kursId, von: 'unbekannt (Wiedereinstieg)', nach: final,
+            datum: new Date().toISOString().slice(0, 10),
+            person: (state.auth.account && state.auth.account.name) || '',
+            zweitpruefung: zweit, geprueft: geprueft, offen: (d.offen || [])
+          });
+          return graph.ablegen(kursId, ablage.ordner, gateDateiName, mdRandfall).then(statusSchreiben);
         }
 
         var geltend = root.inhalt.geltendeDatei(dateien, kursId, lief);
         if (!geltend) throw new Error('keine versionierte Datei in ' + ablage.ordner);
         var nach = root.inhalt.finalName(kursId, lief, endung);
         if (!controller._bestaetige('Gate durchlaufen?\n' + geltend + ' → ' + nach)) {
-          if (knopf) knopf.disabled = false;
-          sag('');
           return ABGEBROCHEN;
         }
-        return graph.umbenennen(kursId, ablage.ordner, geltend, nach).then(function () {
-          return protokollUndStatus(geltend, nach);
+
+        /* (c): das Protokoll wird IMMER frisch geschrieben (F2) — von ist bekannt, solange
+           final noch fehlt, egal ob voller Durchlauf oder Wiedereinstieg. */
+        var md = root.inhalt.gateProtokoll({
+          gate: ablage.gate, kursId: kursId, von: geltend, nach: nach,
+          datum: new Date().toISOString().slice(0, 10),
+          person: (state.auth.account && state.auth.account.name) || '',
+          zweitpruefung: zweit, geprueft: geprueft, offen: (d.offen || [])
         });
+        return graph.ablegen(kursId, ablage.ordner, gateDateiName, md).then(function () {
+          return graph.umbenennen(kursId, ablage.ordner, geltend, nach);
+        }).then(statusSchreiben);
       }).then(function (ergebnis) {
-        if (ergebnis === ABGEBROCHEN) return;
+        laufBeenden();
+        if (ergebnis === ABGEBROCHEN) {
+          if (knopf) knopf.disabled = false;
+          sag('');
+          return;
+        }
         state.hinweis = 'Gate durchlaufen — Protokoll geschrieben, Status final.';
         controller.render();
       }).catch(function (e) {
+        laufBeenden();
         if (knopf) knopf.disabled = false;
         var text = 'Gate nicht (vollständig) durchlaufen: ' + (e.message || e) +
           ' — erneuter Klick setzt fort, was fehlt.';

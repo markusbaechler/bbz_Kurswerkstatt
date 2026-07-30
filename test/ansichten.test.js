@@ -827,12 +827,55 @@ test('offene Punkte an diesem Gate sperren den Gate-Knopf (S2) mit Begruendungsz
   assert.match(html, /entscheiden oder begr.ndet verschieben/);
 });
 
-test('liegt bereits eine _final, ist der Gate-Knopf gesperrt', () => {
-  const props = { dossier: dossierOhneOffen(),
-    dateien: [{ name: 'DBS-001_lernziele-drehbuch_final.xlsx' }] };
+/* F1 (Fix-Runde 1, Review-Finding): "bereits freigegeben" darf den Knopf nur sperren, wenn
+   die Freigabe WIRKLICH vollstaendig ist — _final UND Protokoll UND Dossier-Status final.
+   Vorher sperrte schon `finalVorhanden` allein, und genau dort leben die Wiedereinstiegs-
+   Zweige von controller.gateKlick (Teilfehler: Umbenennung durch, Rest fehlt) — der Knopf
+   waere dann fuer immer zu gewesen, ohne dass die Reise je ueber die UI abgeschlossen
+   werden koennte. */
+function dossierVollstaendigFreigegeben() {
+  const d = dossierOhneOffen();
+  d.status = { 'lernziele-drehbuch': 'final' };
+  return d;
+}
+
+test('_final, Protokoll UND Dossier-Status final liegen vor — jetzt ist der Gate-Knopf wirklich gesperrt', () => {
+  const props = { dossier: dossierVollstaendigFreigegeben(),
+    dateien: [
+      { name: 'DBS-001_lernziele-drehbuch_final.xlsx' },
+      { name: '_gate.md' }
+    ] };
   const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
   assert.match(html, /data-action="gate-klick"[^>]*disabled/);
   assert.match(html, /bereits freigegeben: DBS-001_lernziele-drehbuch_final\.xlsx/);
+});
+
+test('F1: _final liegt, aber der Dossier-Status ist noch nicht final -> der Knopf bleibt offen ("Freigabe abschliessen")', () => {
+  const props = { dossier: dossierOhneOffen(),   // status: {} — noch nicht final
+    dateien: [
+      { name: 'DBS-001_lernziele-drehbuch_final.xlsx' },
+      { name: '_gate.md' }
+    ] };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.doesNotMatch(html, /data-action="gate-klick"[^>]*disabled/,
+    'der Knopf ist gesperrt, obwohl die Freigabe noch nicht vollstaendig ist — Wiedereinstieg waere ueber die UI unerreichbar');
+  assert.match(html, /data-action="gate-klick"[^>]*>Freigabe abschliessen</);
+});
+
+test('F1: _final liegt, das Protokoll fehlt noch -> der Knopf bleibt ebenfalls offen', () => {
+  const props = { dossier: dossierVollstaendigFreigegeben(),
+    dateien: [{ name: 'DBS-001_lernziele-drehbuch_final.xlsx' }] };   /* kein _gate.md */
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.doesNotMatch(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.match(html, /data-action="gate-klick"[^>]*>Freigabe abschliessen</);
+});
+
+test('F3: waehrend ein Lauf aktiv ist (state.gateLaeuft), ist der Knopf gesperrt mit "Gate läuft"', () => {
+  const props = { dossier: dossierOhneOffen(), dateien: [{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }],
+    gateLaeuft: true };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.match(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.match(html, /Gate läuft/);
 });
 
 test('ohne jede versionierte Datei ist der Gate-Knopf gesperrt', () => {

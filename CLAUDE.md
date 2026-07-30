@@ -534,6 +534,13 @@ Mechanismus für jeden Gate-Schritt gebaut (s. „Gate-Ablauf" oben) — an Schr
 Tests belegt, an Schritt 4 (Sign-off) und Schritt 7 (Gate 2) noch nicht live geprüft.
 Steckbrief-Auswertung bleibt offen.
 
+**`graph.umbenennen` läuft ohne `If-Match`.** Klicken zwei Personen das Gate gleichzeitig, kann
+die zweite Umbenennung auf eine bereits umbenannte Datei zielen und mit 404 scheitern
+(`controller.gateKlick` zeigt das als Fehler, „erneuter Klick setzt fort" greift dann) — kein
+Datenverlust, nur eine kurze Verwirrung. Bewusst vertagt: der Lauf-Merker (`state.gateLaeuft`)
+schützt nur gegen einen zweiten Klick INNERHALB derselben Sitzung, nicht gegen zwei Sitzungen
+zweier Personen.
+
 **Die Navigation ist nicht abgenommen.** Eine Zoom-Achse über fünf Ebenen wurde als Mockup
 gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →
 ein Schritt, Werkzeuge inline) und *Nachschlagen*. Wird an der laufenden App beurteilt, nicht
@@ -748,11 +755,11 @@ statt A-Werte zu übernehmen (plus Gegenprobe: bleibt derselbe Eintrag am selben
 das Restore weiterhin). Mutationsprobe (der `data-was`-Vergleich auskommentiert): genau dieser
 eine Test fiel rot (36 grün/1 rot von 37), danach wiederhergestellt, komplette Suite wieder grün.
 
-## Gate-Ablauf (Task 6): der Gate-Klick — `_final`, `_gate.md`, Dossier-Status `final`
+## Gate-Ablauf (Task 6, Fix-Runde 1): der Gate-Klick — `_final`, `_gate.md`, Dossier-Status `final`
 
 Der Freigabe-Teil ergänzt die Gate-Box aus Task 5 (Prüfliste, Erfassung/Behandlung offener
 Punkte) um den eigentlichen Klick: `ansichten.gateFreigabe(inh, kurs, schrittId, ablage, offen,
-ablageDaten)` wird von `gateBlock` unmittelbar nach der Erfassungs-Zeile gerendert und zeigt,
+ablageDaten, d)` wird von `gateBlock` unmittelbar nach der Erfassungs-Zeile gerendert und zeigt,
 sobald `ablageDaten.dateien` als Array vorliegt (asynchron geladen wie überall sonst), eine
 Vorschau „Freigegeben wird: `{geltend}` → `{final}`" (`I().geltendeDatei`/`I().finalName`), ein
 Pflichtfeld `#gate-zweitpruefung` (Gate 1 ist 4-Augen), eine optionale Textarea
@@ -760,29 +767,32 @@ Pflichtfeld `#gate-zweitpruefung` (Gate 1 ist 4-Augen), eine optionale Textarea
 `data-action="gate-klick" data-schritt="{n}"`. Beide neuen Felder tragen `data-gate-feld` wie
 alle übrigen Gate-Box-Felder (Task 5) — der bestehende, generische Formular-Erhalt-Mechanismus
 (`controller._formularSnapshot`/`_formularWiederherstellen`, `[data-gate-feld]`) deckt sie ohne
-Sonderfall ab. Der Knopf ist `disabled` mit Begründungszeile in drei Fällen: (a) unbehandelte
-Punkte an GENAU dieses Gate (`dossier.offenFuer` — dieselbe Liste, die die Prüfliste darüber
-zeigt), (b) es liegt schon eine `_final` (Begründung nennt den Namen), (c) es gibt noch keine
-versionierte Datei überhaupt. Ohne geladene `dateien` bleibt nur (a) prüfbar — (b)/(c) würden
-sonst fälschlich „gesperrt" zeigen, obwohl nur die Anzeige noch nichts weiss;
-`controller.gateKlick` liest beim Klick ohnehin frisch nach.
+Sonderfall ab.
 
 **`controller.gateKlick(n, knopf)`** ist die Aktion hinter dem Knopf (Click-Kette in `app.js`
 nach `offen-verschieben`: `gate-klick` → `controller.gateKlick(t.dataset.schritt, t)`). Ablauf:
-S2-Sperre zuerst (`dossier.offenFuer(d, inhalt.gateAdressat(n))` gegen das bereits geladene
-Dossier — **kein Netzzugriff**, wenn hier schon Punkte offen sind) · Zweitprüfung-Pflichtfeld
-(ebenfalls vor jedem Netzzugriff geprüft, Gate 1 ist 4-Augen) · Ordner frisch lesen
-(`graph.ordnerInhalt`, mit vorherigem Cache-Invalidieren wie bei `controller.ablegen`) ·
-umbenennen (`graph.umbenennen`, `_vN` → `_final`, Bestätigung über `controller._bestaetige` —
-Muster `quelleEntfernen`, damit der Dialog in Tests ersetzbar bleibt) · Protokoll schreiben
-(`inhalt.gateProtokoll(...)`, abgelegt unter dem Kontraktfeld `gate_datei`, gelesen über den
-neuen Helfer `inhalt.gateDatei(i)` — Default `_gate.md`; `projektInstruktionenTeile` liest
-seither denselben Helfer statt des bisherigen Inline-Literals) · Dossier-Status des
-Lieferobjekts auf `final` (`dossier.statusSetzen`) über **`controller.dossierSchreiben`** — der
-**fünfte** Schreiber durch dieselbe Warteschlange wie `dossierSpeichern`/`quelleErfassen`/
-`quelleEntfernen`/`contentModus`, kein eigener `graph.ablegen`-Pfad. `KWKurse`
-(`Schritt`/`Status`) fasst der Gate-Klick **nicht** an — das bleibt beim Erledigt-Haken
-(Abgrenzung KWKurse=Programmstand, Dossier=Lieferobjektstatus, Meta-Spec §3).
+Lauf-Merker-Sperre zuerst (`state.gateLaeuft`, F3 unten) · S2-Sperre (`dossier.offenFuer(d,
+inhalt.gateAdressat(n))` gegen das bereits geladene Dossier — **kein Netzzugriff**, wenn hier
+schon Punkte offen sind) · Zweitprüfung-Pflichtfeld (ebenfalls vor jedem Netzzugriff geprüft,
+Gate 1 ist 4-Augen) · Ordner frisch lesen (`graph.ordnerInhalt`, mit vorherigem
+Cache-Invalidieren wie bei `controller.ablegen`) · **Protokoll schreiben** (`inhalt.gateProtokoll(...)`,
+abgelegt unter dem Kontraktfeld `gate_datei`, gelesen über den Helfer `inhalt.gateDatei(i)` —
+Default `_gate.md`; `projektInstruktionenTeile` liest seither denselben Helfer statt des
+bisherigen Inline-Literals) · **umbenennen** (`graph.umbenennen`, `_vN` → `_final`, Bestätigung
+über `controller._bestaetige` — Muster `quelleEntfernen`, damit der Dialog in Tests ersetzbar
+bleibt) · Dossier-Status des Lieferobjekts auf `final` (`dossier.statusSetzen`) über
+**`controller.dossierSchreiben`** — der **fünfte** Schreiber durch dieselbe Warteschlange wie
+`dossierSpeichern`/`quelleErfassen`/`quelleEntfernen`/`contentModus`, kein eigener
+`graph.ablegen`-Pfad. `KWKurse` (`Schritt`/`Status`) fasst der Gate-Klick **nicht** an — das
+bleibt beim Erledigt-Haken (Abgrenzung KWKurse=Programmstand, Dossier=Lieferobjektstatus,
+Meta-Spec §3).
+
+**Reihenfolge Protokoll-VOR-Umbenennen** (Fix-Runde 1 — ursprünglich war es umgekehrt): der
+Protokoll-Inhalt (`gate`, `von`, `nach`, Zweitprüfung, Geprüft, offene Punkte) steht vollständig
+fest, sobald der Ordner gelesen ist — eine Umbenennung liefert nichts Neues dafür. Mit dieser
+Reihenfolge ist `von` in jedem Wiedereinstiegsfall bekannt, solange `_final` noch fehlt; der
+Platzhalter `'unbekannt (Wiedereinstieg)'` bleibt nur noch ein Randfall-Fallback (s. u.), statt
+der Regelfall zu sein.
 
 **`inhalt.gateProtokoll(p)`** ist eine reine Funktion (kein `Date` darin — `datum` kommt als
 Parameter herein, `controller.gateKlick` ruft `new Date()`, `inhalt.js` nie) und folgt dem
@@ -791,29 +801,86 @@ Ablage-Kontrakt §5 wortwörtlich, inklusive der echten Umlaute „Zweitprüfung
 ausdrücklich `- keine` unter „Offene Punkte:" — nie eine leere Liste ohne Erklärung.
 
 **Idempotenz ist Pflicht — ein Wiedereinstieg nach einem Teilfehler darf nichts verdoppeln.**
-Sobald der Ordner gelesen ist, unterscheidet `gateKlick` drei Fälle über `finalVorhanden` und
-ob die Protokoll-Datei schon im gelesenen Ordner liegt:
-- **(a) `_final` liegt schon, das Protokoll fehlt noch** — die Umbenennung entfällt, Protokoll
-  UND Status werden nachgezogen. Der „von"-Name ist an dieser Stelle nicht mehr rekonstruierbar
-  (die `_vN`-Datei heisst ja bereits `_final`, `geltendeDatei()` liefert ab hier nur noch den
-  `_final`-Namen selbst zurück) — das Protokoll trägt deshalb **nur in diesem Fall** den
-  Platzhalter `'unbekannt (Wiedereinstieg)'` als von-Wert.
-- **(b) `_final` UND Protokoll liegen schon** — nur noch der Dossier-Status wird geschrieben,
-  kein zweites Protokoll, keine zweite Umbenennung.
-- **(c) nichts davon liegt** — voller Durchlauf wie beim ersten Versuch.
+Sobald der Ordner gelesen ist, unterscheidet `gateKlick` über `finalVorhanden` und ob die
+Protokoll-Datei schon im gelesenen Ordner liegt:
+- **`_final` fehlt noch** (voller Durchlauf ODER Wiedereinstieg NACH einem Teilfehler VOR dem
+  Umbenennen) — das Protokoll wird **immer frisch geschrieben, nie übersprungen** (F2, s. u.),
+  danach umbenennen, danach Status.
+- **`_final` UND Protokoll liegen schon** — nur noch der Dossier-Status wird geschrieben, kein
+  zweites Protokoll, keine zweite Umbenennung.
+- **`_final` liegt, das Protokoll fehlt (Randfall)** — die Umbenennung entfällt (schon
+  geschehen), aber `von` ist nicht mehr rekonstruierbar (`geltendeDatei()` liefert ab hier nur
+  noch `_final` selbst zurück): das Protokoll trägt hier den Platzhalter
+  `'unbekannt (Wiedereinstieg)'`. Dieser Fall entsteht unter der neuen Reihenfolge nur noch,
+  wenn eine `_gate.md` von Hand gelöscht wurde oder ein Dossier von vor dieser Task vorliegt —
+  im Normalbetrieb erzeugt der volle Durchlauf das Protokoll immer, bevor überhaupt umbenannt
+  wird.
 
 Ein Abbruch am Bestätigungs-Dialog (`controller._bestaetige` liefert `false`) schreibt nichts
 und zeigt keine Erfolgsmeldung — ein interner Sentinel in der Promise-Kette unterscheidet den
 Abbruch von einem echten Erfolg, damit der äussere `.then` nicht fälschlich `state.hinweis`
 setzt. Scheitert ein Netzaufruf, landet die Meldung in `state.fehlerHinweis` mit dem Hinweis
-„erneuter Klick setzt fort, was fehlt" — genau das beschreibt die drei Wiedereinstiegsfälle
-oben.
+„erneuter Klick setzt fort, was fehlt".
 
-Tests: `test/inhalt.test.js` (Wortlaut-Vertrag für `gateProtokoll`, inkl. Leerfall „- keine"),
-`test/ansichten.test.js` (Vorschau-Zeile, die drei Sperr-Begründungen, `data-gate-feld` an den
-neuen Feldern), `test/gate.test.js` (S2-Sperre und fehlende Zweitprüfung blockieren ohne jeden
-Graph-Aufruf, voller Durchlauf in der Reihenfolge umbenennen → Protokoll ablegen → Dossier-Status,
-Abbruch am Bestätigungs-Dialog, beide Wiedereinstiegsfälle (a)/(b)). Mutationsprobe (die
-S2-Sperre `if (root.dossier.offenFuer(d, adressat).length)` in `gateKlick` auf `if (false && ...)`
-gesetzt): `node --test test/gate.test.js` fiel genau beim S2-Test rot (14 grün/1 rot von 15),
-danach wiederhergestellt, komplette Suite wieder grün (510 Tests).
+### Fix-Runde 1 (unabhängiger Review, 3 Important-Findings)
+
+**F1 — Wiedereinstieg über die UI unerreichbar.** `ansichten.gateFreigabe` sperrte den Knopf
+bisher, sobald `finalVorhanden` griff („bereits freigegeben") — aber genau dort leben die
+Wiedereinstiegs-Zweige, und `controller.gateKlick` ist der einzige Aufrufer von
+`statusSetzen(lief, 'final')`. Nach einem Teilfehler (Umbenennung ok, Rest weg) plus frischem
+Ordner-Lesen: `_final` liegt, der Status bleibt `entwurf`, der Knopf wäre für immer zu gewesen.
+**Fix:** „vollständig freigegeben" heisst jetzt `_final` UND Protokoll UND
+`dossier.statusVon(d, lief) === 'final'` — nur wenn alle drei stimmen, sperrt der Knopf mit
+„bereits freigegeben: …". Fehlt eines davon, bleibt der Knopf offen, aber mit der Beschriftung
+„Freigabe abschliessen" statt „Gate durchlaufen — _final setzen" (es entsteht keine neue Datei
+mehr, nur der Rest wird nachgezogen).
+
+**F2 — eine alte `_gate.md` unterdrückte ein neues Protokoll, und `graph.umbenennen`
+invalidierte den Dateien-Cache nicht.** `protokollDa` wurde bisher unabhängig von `_final`
+berechnet: lag irgendeine `_gate.md` im Ordner (z. B. von einem früheren, per Hand
+zurückgestuften Zyklus — CLAUDE.md dokumentiert diesen Ablauf ausdrücklich), wurde zwar
+umbenannt, aber KEIN neues Protokoll geschrieben — das liegende `_gate.md` nannte dann die
+falsche, veraltete Version. Zusätzlich invalidierte `graph.umbenennen` den `dateien`-Cache
+nicht; entfiel das Ablegen (weil `protokollDa` fälschlich `true` war), zeigte die Ansicht nach
+dem Gate weiter die alte `_vN`-Datei. **Fix:** mit der Reihenfolge Protokoll-VOR-Umbenennen wird
+das Protokoll immer geschrieben, solange `_final` noch fehlt (kein `protokollDa`-Kurzschluss
+mehr in diesem Zweig) — `graph.ablegen` überschreibt deterministisch, ein wiederholtes Schreiben
+ist harmlos. Zusätzlich bekommt `graph.umbenennen` selbst dieselbe Cache-Invalidierung wie
+`graph.ablegen`/`graph.dateiLoeschen` (`delete state.data.dateien[kursId + '/' + ordner]`) —
+zentral in der einen Funktion statt an jeder Aufrufstelle einzeln, konsistent mit den beiden
+Geschwisterfunktionen. Das behebt nebenbei eine latente, bisher durch einen stets folgenden
+`graph.ablegen`-Aufruf maskierte Lücke im Zurückstufungs-Pfad von `controller.ablegen`.
+
+**F3 — der In-Flight-Schutz hing nur am DOM-Knopf.** Ein `render()` mitten im Lauf (z. B. ein
+auslaufendes `ordnerNachladen`) baute die Box neu: der Knopf zeigte wieder enabled (der Cache
+trug ja noch die alte Version), der Formular-Erhalt stellte `#gate-zweitpruefung` wieder her —
+ein zweiter, überlappender Lauf war möglich, der das korrekte Ergebnis des ersten hätte
+überschreiben können. **Fix:** `state.gateLaeuft` (Schlüssel `kursId + '/' + n`) — gesetzt direkt
+vor dem ersten Netzzugriff, gelöscht in JEDEM Ausgang (Erfolg, Fehler, Abbruch am
+Bestätigungs-Dialog). Die Prüfung darauf ist die ALLERERSTE in `gateKlick`, noch vor dem
+Dossier-Guard — ein zweiter Klick löst dadurch garantiert keinen zweiten Graph-Aufruf aus, egal
+was sonst im State steht. `ansichten.gateFreigabe` liest denselben Merker
+(`ablageDaten.gateLaeuft`) als zusätzlichen Sperrgrund („Gate läuft …") für die Anzeige.
+
+**Tests:** `test/inhalt.test.js` (Wortlaut-Vertrag für `gateProtokoll`), `test/ansichten.test.js`
+(F1: `_final` ohne vollständigen Status hält den Knopf offen mit „Freigabe abschliessen", volle
+Freigabe sperrt ihn wirklich; F3: `gateLaeuft` sperrt mit „Gate läuft"), `test/gate.test.js` (F2:
+eine stale `_gate.md` unterdrückt kein neues Protokoll, `graph.umbenennen` — echte
+Implementierung — leert den Dateien-Cache; F3: ein zweiter Klick während eines laufenden Gates
+löst keinen zweiten `graph.ordnerInhalt`-Aufruf aus; voller Durchlauf jetzt in der Reihenfolge
+Protokoll ablegen → umbenennen → Dossier-Status; beide bestehenden Wiedereinstiegsfälle
+unverändert grün).
+
+**Mutationsprobe (Lauf-Merker):** die Zeile `state.gateLaeuft[laufSchluessel] = true;` in
+`controller.gateKlick` auskommentiert, `node --test test/gate.test.js`:
+```
+ℹ tests 18
+ℹ pass 17
+ℹ fail 1
+
+✖ F3: ein zweiter Klick waehrend ein Lauf noch aktiv ist loest keinen zweiten Graph-Aufruf aus
+  AssertionError [ERR_ASSERTION]: ein zweiter, ueberlappender Lauf hat einen zweiten Graph-Aufruf ausgeloest
+  2 !== 1
+```
+Genau der eine neue F3-Test fiel rot, danach die Zeile wiederhergestellt, komplette Suite
+erneut geprüft: `node --test` → 516/516 grün.

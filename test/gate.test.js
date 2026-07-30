@@ -14,10 +14,17 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { controller, state, graph } = require('../app.js');
+const { controller, state, graph, auth } = require('../app.js');
 require('../dossier.js');
 require('../inhalt.js');
 const { INHALT } = require('./fixture.js');
+
+/* graph ist ein einziges, geteiltes Objekt ueber die ganze Datei — jeder Test, der
+   graph.umbenennen durch eine Fake-Funktion ersetzt (Muster ueberall unten), ueberschreibt
+   sie fuer JEDEN folgenden Test, bis sie explizit zurueckgesetzt wird. Die echte
+   Implementierung wird deshalb hier, vor dem ersten ueberschreibenden Test, gesichert —
+   der F2-Cache-Test unten braucht genau sie. */
+const echteUmbenennen = graph.umbenennen;
 
 function dossierMit(offen) {
   return { dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
@@ -52,6 +59,10 @@ function setzeKursMitInhalt() {
   setzeKurs();
   state.data.inhalt = JSON.parse(JSON.stringify(INHALT));
   state.data.dateien = {};
+  /* Der Lauf-Merker (F3, Fix-Runde 1) lebt in state, nicht pro Test — ohne diesen
+     Reset koennte ein Merker aus einem vorigen Test (z. B. bei einer geworfenen
+     Assertion) den naechsten Test faelschlich als "laeuft schon" blockieren. */
+  state.gateLaeuft = {};
 }
 
 function elsGate(werte) {
@@ -110,7 +121,7 @@ test('gateKlick ohne Zweitpruefung blockiert, kein Graph-Aufruf (Gate 1 ist 4-Au
   delete global.document;
 });
 
-test('voller Durchlauf: umbenennen -> Protokoll ablegen -> Dossier-Status final, genau in dieser Reihenfolge', async () => {
+test('voller Durchlauf: Protokoll ablegen -> umbenennen -> Dossier-Status final, genau in dieser Reihenfolge (Fix-Runde 1: Reihenfolge umgekehrt)', async () => {
   setzeKursMitInhalt();
   state.data.dossier = { 'DBS-001': dossierMit([]) };
   state.data.dossierETag = {};
@@ -134,17 +145,17 @@ test('voller Durchlauf: umbenennen -> Protokoll ablegen -> Dossier-Status final,
 
   await controller.gateKlick('2', { disabled: false });
 
-  assert.strictEqual(rufe.length, 3, 'erwartet: umbenennen, Protokoll ablegen, Dossier ablegen — ' + JSON.stringify(rufe));
-  assert.strictEqual(rufe[0].art, 'umbenennen');
+  assert.strictEqual(rufe.length, 3, 'erwartet: Protokoll ablegen, umbenennen, Dossier ablegen — ' + JSON.stringify(rufe));
+  assert.strictEqual(rufe[0].art, 'ablegen', 'das Protokoll muss VOR der Umbenennung geschrieben werden (Fix-Runde 1)');
   assert.strictEqual(rufe[0].ordner, '02_lernziele');
-  assert.strictEqual(rufe[0].von, 'DBS-001_lernziele-drehbuch_v3.xlsx');
-  assert.strictEqual(rufe[0].nach, 'DBS-001_lernziele-drehbuch_final.xlsx');
-  assert.strictEqual(rufe[1].art, 'ablegen');
+  assert.strictEqual(rufe[0].datei, '_gate.md');
+  assert.match(rufe[0].text, /^# Gate 1 · 4-Augen — DBS-001/);
+  assert.match(rufe[0].text, /Freigegeben:  DBS-001_lernziele-drehbuch_v3\.xlsx/);
+  assert.match(rufe[0].text, /Umbenannt in: DBS-001_lernziele-drehbuch_final\.xlsx/);
+  assert.strictEqual(rufe[1].art, 'umbenennen');
   assert.strictEqual(rufe[1].ordner, '02_lernziele');
-  assert.strictEqual(rufe[1].datei, '_gate.md');
-  assert.match(rufe[1].text, /^# Gate 1 · 4-Augen — DBS-001/);
-  assert.match(rufe[1].text, /Freigegeben:  DBS-001_lernziele-drehbuch_v3\.xlsx/);
-  assert.match(rufe[1].text, /Umbenannt in: DBS-001_lernziele-drehbuch_final\.xlsx/);
+  assert.strictEqual(rufe[1].von, 'DBS-001_lernziele-drehbuch_v3.xlsx');
+  assert.strictEqual(rufe[1].nach, 'DBS-001_lernziele-drehbuch_final.xlsx');
   assert.strictEqual(rufe[2].art, 'ablegen');
   assert.strictEqual(rufe[2].ordner, '', 'der Dossier-Schreiber legt in der Kursordner-Wurzel ab');
   const dossierGeschrieben = JSON.parse(rufe[2].text);
@@ -152,6 +163,99 @@ test('voller Durchlauf: umbenennen -> Protokoll ablegen -> Dossier-Status final,
   assert.strictEqual(state.data.dossier['DBS-001'].status['lernziele-drehbuch'], 'final',
     'der State wurde nach dem Schreiben nicht aktualisiert');
   assert.match(state.hinweis || '', /Gate durchlaufen/);
+  delete global.document;
+});
+
+/* ---------- Fix-Runde 1: F2 — eine stale _gate.md unterdrueckt nie ein neues Protokoll ---------- */
+
+test('F2: eine stale _gate.md von einem frueheren, von Hand zurueckgestuften Zyklus wird NICHT als bereits erledigt gewertet — das Protokoll wird neu geschrieben', async () => {
+  setzeKursMitInhalt();
+  /* Szenario aus CLAUDE.md ("Wer nach der Freigabe weiterarbeiten muss, setzt _final von
+     Hand zurueck"): die Person hat _final manuell auf _v4 zurueckgestuft und weitergearbeitet.
+     Die ALTE _gate.md vom vorigen, bereits abgeschlossenen Zyklus liegt unveraendert noch im
+     Ordner — sie nennt die falsche, veraltete Version. */
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  controller._bestaetige = function () { return true; };
+  const rufe = [];
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_lernziele-drehbuch_v4.xlsx' },
+      { name: '_gate.md' }   /* stale, vom vorigen Zyklus */
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) {
+    rufe.push({ art: 'umbenennen', von: von, nach: nach });
+    return Promise.resolve(nach);
+  };
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    rufe.push({ art: 'ablegen', ordner: ordner, datei: datei, text: text });
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  const protokollAufrufe = rufe.filter(function (r) { return r.art === 'ablegen' && r.datei === '_gate.md'; });
+  assert.strictEqual(protokollAufrufe.length, 1,
+    'die stale _gate.md haette NICHT dazu fuehren duerfen, dass ein neues Protokoll uebersprungen wird — ' +
+    JSON.stringify(rufe));
+  assert.match(protokollAufrufe[0].text, /Freigegeben:  DBS-001_lernziele-drehbuch_v4\.xlsx/,
+    'das neue Protokoll muss die AKTUELLE Version nennen, nicht die alte');
+  assert.strictEqual(rufe.filter(function (r) { return r.art === 'umbenennen'; }).length, 1);
+  delete global.document;
+});
+
+test('F2: graph.umbenennen (echte Implementierung) leert den Dateien-Cache wie graph.ablegen/dateiLoeschen', async () => {
+  graph.umbenennen = echteUmbenennen;   /* frueheren Test-Fakes zum Trotz die echte Funktion */
+  graph.driveId = function () { return Promise.resolve('DID'); };
+  graph.kursOrdner = function () { return Promise.resolve({ id: 'ORD' }); };
+  auth.token = function () { return Promise.resolve('TOKEN'); };
+  global.fetch = function () { return Promise.resolve({ ok: true }); };
+  state.data.dateien['DBS-001/02_lernziele'] = ['irgendwas'];
+
+  const neu = await graph.umbenennen('DBS-001', '02_lernziele', 'alt.xlsx', 'neu.xlsx');
+
+  assert.strictEqual(neu, 'neu.xlsx');
+  assert.strictEqual('DBS-001/02_lernziele' in state.data.dateien, false,
+    'der Dateien-Cache fuer diesen Ordner haette nach der Umbenennung geleert werden muessen');
+  delete global.fetch;
+});
+
+/* ---------- Fix-Runde 1: F3 — Lauf-Merker gegen einen zweiten, ueberlappenden Klick ---------- */
+
+test('F3: ein zweiter Klick waehrend ein Lauf noch aktiv ist loest keinen zweiten Graph-Aufruf aus', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  controller._bestaetige = function () { return true; };
+  let ordnerInhaltAufrufe = 0;
+  let geloest;
+  graph.ordnerInhalt = function () {
+    ordnerInhaltAufrufe++;
+    return new Promise(function (resolve) { geloest = resolve; });
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) { return Promise.resolve(nach); };
+  graph.ablegen = function () { return Promise.resolve({ eTag: 'W/"1"' }); };
+
+  const erster = controller.gateKlick('2', { disabled: false });
+  /* Ein zweiter Klick, waehrend der erste noch auf graph.ordnerInhalt wartet — genau die
+     Szene aus dem Review-Finding: ein Zwischen-Render koennte den Knopf wieder enabled
+     zeigen, bevor der erste Lauf fertig ist. */
+  const melde2 = elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(ordnerInhaltAufrufe, 1,
+    'ein zweiter, ueberlappender Lauf hat einen zweiten Graph-Aufruf ausgeloest');
+  assert.match(melde2.textContent, /Gate läuft/);
+
+  geloest([{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }]);
+  await erster;
+  assert.strictEqual(state.gateLaeuft['DBS-001/2'], undefined,
+    'der Lauf-Merker wurde nach Abschluss nicht wieder geloescht');
   delete global.document;
 });
 
