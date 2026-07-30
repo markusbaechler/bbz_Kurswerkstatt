@@ -692,9 +692,23 @@
          Ansicht generierte id). Kritisch, weil offenErfassen/offenEntscheiden/
          offenVerschieben selbst render() aufrufen: wer "Entscheiden" auf einem
          bestehenden Punkt klickt, waehrend in der Erfassung (offen-was/-wo)
-         schon getippt ist, darf diesen Text nicht verlieren. */
+         schon getippt ist, darf diesen Text nicht verlieren.
+
+         Zusaetzlich data-was mitsichern (Fix-Runde 2, Review-Finding "Restore
+         verfaelscht Daten nach Listenverschiebung"): eine Positions-id wie
+         offen-wer-0 ist NICHT stabil — sobald der Eintrag an Index 0 nach einem
+         Entscheiden/Verschieben eines anderen (nicht-letzten) Eintrags entfernt
+         wird, rueckt der naechste Eintrag auf Index 0 nach und traegt DIESELBE
+         id, zeigt aber einen ANDEREN Punkt. data-was (ansichten.js gateBlock,
+         dieselbe Kennung wie am Entscheiden/Verschieben-Knopf) ist die einzige
+         stabile Kennung des Eintrags, den ein indiziertes Feld gerade zeigt —
+         nur diese vier Feldtypen tragen es, die Erfassungsfelder
+         (offen-was/-wo/-fuer) nicht, weil die immer denselben "neuer Punkt
+         wird entworfen"-Zustand meinen, unabhaengig von jeder Listenposition. */
       Array.prototype.forEach.call(document.querySelectorAll('[data-gate-feld]'), function (el) {
-        if (el.id) werte['gate:' + el.id] = String(el.value == null ? '' : el.value);
+        if (!el.id) return;
+        werte['gate:' + el.id] = String(el.value == null ? '' : el.value);
+        if (el.dataset && el.dataset.was !== undefined) werte['gate-was:' + el.id] = el.dataset.was;
       });
       var aktiv = document.activeElement;
       return {
@@ -780,9 +794,31 @@
          "nicht leer"-Bedingung ist fuer ihn also nie der einschraenkende Teil,
          nur die Abweichung selbst zaehlt praktisch. Dieselbe Code-Zeile deckt
          damit Text- und Select-Felder gleich ab, ohne eine Typ-Fallunterscheidung
-         einzufuehren, die es fuer Selects gar nicht braucht. */
+         einzufuehren, die es fuer Selects gar nicht braucht.
+
+         data-was-Wächter (Fix-Runde 2, Review-Finding "Restore verfaelscht Daten
+         nach Listenverschiebung"): Positions-ids (offen-wer-N usw.) sind NACH
+         splice() auf offen[] nicht stabil — entscheidet/verschiebt man einen
+         nicht-letzten Eintrag, ruecken alle folgenden Eintraege eine Position
+         nach und tragen danach dieselbe id wie zuvor ein ANDERER Eintrag. Ohne
+         diesen Waechter wuerde ein hier gesicherter Wert (z. B. das getippte
+         "wer" fuer Punkt A) dem an derselben id frisch gerenderten, aber
+         INHALTLICH ANDEREN Punkt B untergeschoben — Datenverfaelschung im
+         Audit-Trail, kein blosser Datenverlust. Deshalb: ist das Feld an einen
+         Eintrag gebunden (gate-was-Schluessel vorhanden, s. _formularSnapshot),
+         wird nur restauriert, wenn das JETZT an dieser id gerenderte Feld noch
+         dasselbe data-was traegt wie beim Snapshot — weicht es ab, gilt der
+         Eintrag als verschoben/ersetzt, und der gesicherte Wert wird verworfen
+         (derselbe sichere Fehlschlag wie vor Fix-Runde 1, nur gezielt auf den
+         betroffenen Eintrag begrenzt). Die Erfassungsfelder (offen-was/-wo/-fuer)
+         kennen keinen gate-was-Schluessel und sind von dieser Pruefung unberuehrt. */
       Array.prototype.forEach.call(document.querySelectorAll('[data-gate-feld]'), function (el) {
         if (!el.id) return;
+        var altWas = snap.werte['gate-was:' + el.id];
+        if (altWas !== undefined) {
+          var neuWas = (el.dataset && el.dataset.was !== undefined) ? el.dataset.was : undefined;
+          if (altWas !== neuWas) return;
+        }
         var alt = snap.werte['gate:' + el.id];
         var neu = String(el.value == null ? '' : el.value);
         if (alt && alt !== neu) el.value = alt;

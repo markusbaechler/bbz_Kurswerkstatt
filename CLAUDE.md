@@ -716,3 +716,31 @@ komplette Suite wieder grün.
 
 **Dieselbe Asymmetrie wie beim Quellen-Duplikatschutz gilt für `offen[]`/`entschieden[]`:**
 `dossier.pruefe()` (Leseweg) validiert nur `Array`, nicht strukturell — s. „## Offen" unten.
+
+**Fix-Runde 2 (Review des Fix-Diffs selbst): id-basiertes Restore der indizierten Gate-Felder
+verfälschte Daten nach einer Listenverschiebung.** Positions-ids wie `offen-wer-0` sind NICHT
+stabil — entscheidet oder verschiebt man einen nicht letzten Punkt, verlässt er `offen[]`
+(`splice()`), und der nächste Punkt rückt auf denselben Index nach: dieselbe id zeigt danach
+einen ANDEREN Eintrag. Die id-basierte Restaurierung aus Fix-Runde 1 hätte dem nachgerückten
+Eintrag die getippten Werte des vorherigen untergeschoben — Datenverfälschung im Audit-Trail
+(wer/wann bzw. ziel/begründung inhaltlich falsch vorbefüllt), und zwar im Normalfall bei jedem
+erfolgreichen Entscheiden/Verschieben eines nicht letzten Eintrags, nicht nur bei einer Race
+Condition. Schlimmer als der ursprüngliche Datenverlust vor Fix-Runde 1. Der `data-was`-Guard
+beim Schreiben (`controller.offenEntscheiden`/`offenVerschieben`) schützt hiervor nicht — er
+prüft nur Index→Eintrag beim Klick, nicht die Herkunft der angezeigten Feldwerte.
+
+Fix: jedes indizierte Feld (`offen-wer-N`, `offen-wann-N`, `offen-ziel-N`,
+`offen-begruendung-N`) trägt in `ansichten.js` `gateBlock` zusätzlich `data-was` — dieselbe,
+bereits vorhandene Kennung wie am Entscheiden-/Verschieben-Knopf. `controller._formularSnapshot`
+sichert diese Kennung parallel unter einem eigenen Schlüssel (`gate-was:<id>`);
+`_formularWiederherstellen` restauriert ein indiziertes Feld nur noch, wenn das JETZT an dieser
+id gerenderte Feld noch dasselbe `data-was` trägt wie beim Snapshot — weicht es ab, gilt der
+Eintrag als verschoben/ersetzt und der gesicherte Wert wird verworfen (derselbe sichere
+Fehlschlag wie vor Fix-Runde 1, aber gezielt nur für den betroffenen Eintrag). Die
+Erfassungsfelder (`offen-was`/`-wo`/`-fuer`) kennen keinen `data-was` und bleiben unberührt —
+sie meinen immer denselben „neuer Punkt wird entworfen"-Zustand, unabhängig von jeder
+Listenposition. Test in `test/formularerhalt.test.js` stellt die gemeldete Szene nach: Punkt A
+entschieden bei getipptem `wer`/`wann`, Punkt B rückt auf denselben Index nach — B bleibt leer,
+statt A-Werte zu übernehmen (plus Gegenprobe: bleibt derselbe Eintrag am selben Index, greift
+das Restore weiterhin). Mutationsprobe (der `data-was`-Vergleich auskommentiert): genau dieser
+eine Test fiel rot (36 grün/1 rot von 37), danach wiederhergestellt, komplette Suite wieder grün.

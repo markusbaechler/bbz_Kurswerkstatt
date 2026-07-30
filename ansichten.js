@@ -544,19 +544,30 @@
     if (!offen.length) {
       h += '<p class="hinweis-leise">Keine offenen Punkte an dieses Gate adressiert.</p>';
     } else {
+      /* Jedes indizierte Feld traegt zusaetzlich data-was — dieselbe Kennung wie
+         am Entscheiden/Verschieben-Knopf (Fix-Runde 2, Review-Finding "Restore
+         verfaelscht Daten nach Listenverschiebung"): eine Positions-id
+         (offen-wer-0 usw.) ist NICHT stabil, sobald ein anderer Punkt an diesem
+         Index nachrueckt (splice() nach Entscheiden/Verschieben eines
+         nicht-letzten Eintrags). data-was gibt controller._formularWiederherstellen
+         eine stabile Kennung, gegen die es pruefen kann, ob das Feld an dieser id
+         noch denselben Eintrag zeigt wie beim Snapshot — sonst verwirft es den
+         Wert, statt ihn dem falschen Eintrag zu unterschieben. */
       h += '<ul class="gate-liste">' + offen.map(function (e, i) {
         return '<li><span>' + esc(e.was) + ' &mdash; ' + esc(e.wo) + '</span>' +
           '<div class="arow">' +
-            '<input type="text" id="offen-wer-' + i + '" data-gate-feld placeholder="wer">' +
-            '<input type="date" id="offen-wann-' + i + '" data-gate-feld>' +
+            '<input type="text" id="offen-wer-' + i + '" data-gate-feld data-was="' + esc(e.was) +
+              '" placeholder="wer">' +
+            '<input type="date" id="offen-wann-' + i + '" data-gate-feld data-was="' + esc(e.was) + '">' +
             '<button class="knopf still" data-action="offen-entscheiden" data-index="' + i +
               '" data-was="' + esc(e.was) + '">Entscheiden</button>' +
           '</div>' +
           '<div class="arow">' +
-            '<select id="offen-ziel-' + i + '" data-gate-feld>' + ziele.map(function (z) {
+            '<select id="offen-ziel-' + i + '" data-gate-feld data-was="' + esc(e.was) + '">' + ziele.map(function (z) {
               return '<option value="' + esc(z) + '">' + esc(z) + '</option>';
             }).join('') + '</select>' +
-            '<input type="text" id="offen-begruendung-' + i + '" data-gate-feld placeholder="Begr&uuml;ndung">' +
+            '<input type="text" id="offen-begruendung-' + i + '" data-gate-feld data-was="' + esc(e.was) +
+              '" placeholder="Begr&uuml;ndung">' +
             '<button class="knopf still" data-action="offen-verschieben" data-index="' + i +
               '" data-was="' + esc(e.was) + '">Verschieben</button>' +
           '</div></li>';

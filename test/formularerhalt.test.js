@@ -549,6 +549,66 @@ test('Fix-Runde 1: ein leeres Gate-Box-Feld verliert gegen einen gefuellten fris
   delete global.document;
 });
 
+/* ---------- Fix-Runde 2: Restore an data-was gebunden, nicht an die Positions-id ----------
+   Review-Finding (Important, gefunden im Fix-Diff von Fix-Runde 1): Positions-ids wie
+   offen-wer-0 sind NICHT stabil. Entscheidet/verschiebt man einen nicht-letzten Punkt,
+   verschwindet er aus offen[] (splice), und der naechste Punkt rueckt auf denselben
+   Index — dieselbe id offen-wer-0 zeigt danach einen ANDEREN Eintrag. Die alte
+   id-Wiederherstellung (Fix-Runde 1) haette dem nachgerueckten Eintrag die getippten
+   Werte des VORHERIGEN untergeschoben — Datenverfaelschung im Audit-Trail, schlimmer
+   als der urspruengliche Datenverlust vor Fix-Runde 1.
+
+   Fix: jedes indizierte Feld traegt zusaetzlich data-was (dieselbe Kennung wie am
+   Entscheiden/Verschieben-Knopf, s. ansichten.js gateBlock). _formularWiederherstellen
+   restauriert ein indiziertes Feld nur noch, wenn das JETZT an dieser id gerenderte
+   Feld noch dasselbe data-was traegt wie beim Snapshot — weicht es ab, wird der
+   gesicherte Wert verworfen (sicherer Fehlschlag, kein falscher Wert). */
+
+test('Fix-Runde 2: Restore verwirft indizierte Gate-Feld-Werte, wenn nach einer Listenverschiebung ' +
+  'ein ANDERER Eintrag an derselben id/demselben Index steht (Punkt A entschieden, Punkt B rueckt nach)', () => {
+  /* Snapshot-Zeitpunkt: Index 0 zeigt Punkt A, wer/wann sind bereits getippt. */
+  const wer0 = gateFeld('offen-wer-0', 'Markus');
+  wer0.dataset = { was: 'Punkt A' };
+  const wann0 = gateFeld('offen-wann-0', '2026-07-30');
+  wann0.dataset = { was: 'Punkt A' };
+  global.document = baueDocumentMitGateFeldern([wer0, wann0]);
+  const snap = controller._formularSnapshot();
+
+  /* "Entscheiden" auf Punkt A loest render() aus: Punkt A verlaesst offen[] (splice),
+     Punkt B rueckt auf Index 0 nach — dieselbe id, ein ANDERER Eintrag, frische
+     (leere) Felder, wie es ein echter Neuaufbau zeichnen wuerde. */
+  wer0.dataset = { was: 'Punkt B' };
+  wer0.value = '';
+  wann0.dataset = { was: 'Punkt B' };
+  wann0.value = '';
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(wer0.value, '',
+    'der wer-Wert von Punkt A wurde Punkt B untergeschoben — genau die im Review gemeldete Datenverfaelschung');
+  assert.strictEqual(wann0.value, '',
+    'der wann-Wert von Punkt A wurde Punkt B untergeschoben — genau die im Review gemeldete Datenverfaelschung');
+  delete global.document;
+});
+
+test('Fix-Runde 2 Gegenprobe: Restore greift weiterhin, wenn derselbe Eintrag (gleiches data-was) am selben Index bleibt', () => {
+  const wer0 = gateFeld('offen-wer-0', 'Markus');
+  wer0.dataset = { was: 'Punkt A' };
+  global.document = baueDocumentMitGateFeldern([wer0]);
+  const snap = controller._formularSnapshot();
+
+  /* Ein Zwischen-Render OHNE Listenverschiebung (z. B. ein spaetes dossierNachladen):
+     derselbe Eintrag steht weiterhin an Index 0, data-was bleibt unveraendert. */
+  wer0.value = '';
+  wer0.dataset = { was: 'Punkt A' };
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(wer0.value, 'Markus',
+    'der data-was-Waechter hat auch den Normalfall (kein Listen-Shift) blockiert — das darf er nicht');
+  delete global.document;
+});
+
 test('controller.render() bewahrt einen getippten Gate-Box-Wert ueber den Neuaufbau hinweg (Integrationstest zum Finding)', () => {
   state.auth.account = { name: 'Test' };
   state.data.inhalt = INHALT;
