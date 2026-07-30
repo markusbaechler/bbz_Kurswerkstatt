@@ -120,6 +120,13 @@ Content fachlich fertig wird, und ist mit der Reform auf 4 gerutscht). Der Conte
 (Schritt 3, vormals „Green-field") wird nie freigegeben. Maschinenregel für alle:
 gibt es `_final`, gilt sie; sonst die höchste Versionsnummer.
 
+**Ausnahme Schritt 1 (Audit 2026-07-30):** Schritt 1 hat kein Gate, trotzdem heisst dort jede
+Ablage sofort `_final` — nicht, weil ein Mensch freigibt, sondern weil `letzteGiltAlsFinal: true`
+im Kontrakt genau das erzwingt (`inhalt.letzteGiltAlsFinal()`, geprüft in
+`test/briefingversion.test.js`). Der Satz „kein `_final` auf Nicht-Gate-Schritten" gilt also nur
+für die Schritte 3, 5, 6 und 8 — Schritt 1 ist die eine, kontraktgetriebene Ausnahme. Details
+dazu unter „Das Kursdossier" unten.
+
 ## Der Kursordner
 
 Er heisst `{Kurs-ID}_{kurzname}`. **Bindend ist allein das Präfix `{Kurs-ID}_`** — nur danach
