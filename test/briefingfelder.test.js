@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-require('../app.js');
+const { controller } = require('../app.js');
 const { inhalt } = require('../inhalt.js');
 const { ansichten } = require('../ansichten.js');
 const { dossier } = require('../dossier.js');
@@ -222,6 +222,81 @@ test('briefingWerteAusDossier() ohne Dossier ergibt ein leeres Formular, kein Cr
   assert.strictEqual(werte.zielgruppe, undefined);
   assert.strictEqual(werte.saq_rezert, 'false', 'ein fehlendes Haken-Feld muss dennoch false sein, nie undefined');
 });
+
+/* ---------- Fix-Runde 1, C-1: controller._formularWerteMergen() ----------
+   Vorher inline im "kopieren"-Click-Handler: `if (String(form[k] || '').trim())`
+   verwarf ein explizites false schon am `|| ''` (false ist falsy, wird durch ''
+   ersetzt, bleibt '' nach trim()) — ein sichtbar abgehaktes, aber auf false
+   gesetztes SAQ-Haekchen liess den alten, aus der Basis kopierten Wert (z. B.
+   true) unangetastet, der Prompt behauptete dann das Gegenteil von dem, was im
+   Formular stand. Ausgelagert in eine eigene, DOM-freie Funktion, damit genau
+   das direkt testbar ist. */
+
+test('C-1: _formularWerteMergen uebernimmt ein explizites false aus dem Formular, nicht den alten Basis-Wert', () => {
+  const werte = controller._formularWerteMergen(
+    { saq_rezert: 'true', zielgruppe: 'Alte Zielgruppe' },
+    { saq_rezert: false, zielgruppe: '' }
+  );
+  assert.strictEqual(werte.saq_rezert, false, 'ein explizites false wurde verworfen — Basis (true) gewann faelschlich');
+  assert.strictEqual(werte.zielgruppe, 'Alte Zielgruppe', 'ein leeres Textfeld hat faelschlich die Basis ueberschrieben');
+});
+
+test('C-1 Gegenprobe: ein explizites true aus dem Formular gewinnt ebenso gegen eine Basis von false', () => {
+  const werte = controller._formularWerteMergen({ saq_rezert: 'false' }, { saq_rezert: true });
+  assert.strictEqual(werte.saq_rezert, true);
+});
+
+test('C-1: ein getipptes, nicht-leeres Textfeld ueberschreibt die Basis weiterhin (unveraendertes Verhalten)', () => {
+  const werte = controller._formularWerteMergen({ zielgruppe: 'Alt' }, { zielgruppe: 'Neu' });
+  assert.strictEqual(werte.zielgruppe, 'Neu');
+});
+
+test('C-1: ohne form-Wert (leer) bleibt die Basis stehen', () => {
+  const werte = controller._formularWerteMergen({ zielgruppe: 'Alt' }, { zielgruppe: '' });
+  assert.strictEqual(werte.zielgruppe, 'Alt');
+});
+
+/* Mutationsprobe (durchgefuehrt, Fix-Runde 1): den Bool-Zweig in _formularWerteMergen
+   entfernt (`if (typeof v === 'boolean' || String(v || '').trim())` zurueck auf
+   `if (String(v || '').trim())`) — `node --test` wurde rot an genau dem ersten Test
+   dieses Abschnitts (explizites false wird verworfen); die Gegenprobe mit true blieb
+   gruen, weil true ohnehin ueber `String(true)` = 'true' (nicht-leer) durchkam — das
+   war ja schon vorher der asymmetrische Fehler: true ueberlebte, false nicht. Danach
+   wiederhergestellt, wieder 437/437 gruen. */
+
+/* ---------- Fix-Runde 1, M-1: briefingFelderZaehlen behandelt ein Haekchen nie als offen ----------
+   Dieselbe Frage wie in inhalt.briefingFehlend() (Task 6) und der ansichten.js-Renderer —
+   hier an einer dritten Stelle beantwortet, weil sie am lebendigen DOM-Element haengt statt
+   am Formularwerte-Objekt oder am gerenderten HTML (Konvention 9: dieselbe ANTWORT ueberall,
+   nicht dieselbe FUNKTION — die drei Stellen lesen unvermeidbar unterschiedliche Werte).
+   saq_rezert ist heute pflicht:false, wuerde also auch ohne die Ausnahme nie als offen
+   markiert — dieser Test haengt das Feld testweise auf pflicht:true um, um die Ausnahme
+   selbst zu pruefen, nicht nur ihre zufaellige Folgenlosigkeit. */
+
+test('M-1: ein (testweise) pflichtiges Haekchen wird von briefingFelderZaehlen nie als offen markiert', () => {
+  const original = inhalt.briefingFeld;
+  inhalt.briefingFeld = function (id) {
+    return (id === 'saq_rezert') ? { id: 'saq_rezert', form: 'haken', pflicht: true } : original(id);
+  };
+  const anzeige = { textContent: '', classList: { toggle: function () {} } };
+  const feld = { dataset: { feld: 'saq_rezert' }, value: '', type: 'checkbox', checked: false };
+  let offenGesetzt = null;
+  feld.parentNode = { classList: { toggle: function (cls, an) { if (cls === 'offen') offenGesetzt = an; } } };
+  global.document = {
+    querySelector: function (s) { return s.indexOf('offen-zahl') >= 0 ? anzeige : null; },
+    querySelectorAll: function (sel) { return sel === '#briefing-felder [data-feld]' ? [feld] : []; }
+  };
+
+  controller.briefingFelderZaehlen();
+
+  assert.strictEqual(offenGesetzt, false, 'ein Pflicht-Haekchen wurde trotzdem als offen markiert');
+  delete global.document;
+  inhalt.briefingFeld = original;
+});
+
+/* Mutationsprobe (durchgefuehrt, Fix-Runde 1): `f.form !== 'haken' &&` aus der
+   leer-Berechnung in briefingFelderZaehlen entfernt — `node --test` wurde rot an
+   genau diesem einen Test. Danach wiederhergestellt, wieder 437/437 gruen. */
 
 test('Fremdtext in den Werten wird maskiert', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 1, null,

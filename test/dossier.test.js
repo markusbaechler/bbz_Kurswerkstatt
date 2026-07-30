@@ -322,11 +322,22 @@ test('lesen() eines bereits migrierten Dossiers (regulatorik vorhanden) laesst e
   assert.deepEqual(d.regulatorik, { zusatz: 'X', stand: '1.1.2026', saq_rezert: true });
 });
 
-/* Mutationsprobe (dokumentiert statt automatisiert, wie im Task-6-Auftrag verlangt):
-   entfernt man in dossier.lesen() den Migrationsblock (die drei Zeilen, die
-   d.regulatorik = {} setzen und scope.reg_zusatz uebernehmen), schlaegt der erste
-   der drei Tests oben fehl — dossier.pruefe() wuerde "regulatorik fehlt" melden und
-   lesen() gaebe null zurueck: ein echtes, altes VL-001-Dossier waere ab diesem
-   Commit nicht mehr lesbar. Von Hand nachvollzogen (nicht Teil des Testlaufs): den
-   Migrationsblock auskommentieren, `node --test` laufen lassen — die drei Tests in
-   diesem Abschnitt werden rot, alle anderen bleiben gruen. */
+/* Mutationsprobe (Fix-Runde 1, I-1: tatsaechlich ausgefuehrt, nicht nur behauptet —
+   der urspruengliche Kommentar hier nannte "drei rote Tests" ohne den Lauf wirklich
+   gemacht zu haben; das war falsch). Migrationsblock in dossier.lesen() entfernt
+   (die Zeilen, die d.regulatorik = {} setzen und scope.reg_zusatz uebernehmen),
+   `node --test` ausgefuehrt: **5 Tests rot**, nicht 3 — dossier.pruefe() meldet
+   "regulatorik fehlt" fuer jedes Dossier-Objekt ohne den Schluessel, und dieses
+   Muster (rohe JSON-Fixtures im Testcode, ohne regulatorik, so wie ein echtes
+   Alt-Dossier) kommt an mehr Stellen vor als in diesem Abschnitt:
+   - die zwei Migrations-Tests direkt oben in dieser Datei
+   - `test/dossiernachladen.test.js`: "nach einem Fehler ruft ein zweiter Aufruf
+     von dossierNachladen tatsaechlich erneut ab" (rohes JSON im Mock von
+     graph.dateiLesenGenau)
+   - `test/dossierschreiben.test.js`: die zwei 412-Retry-Tests ("frisch lesen,
+     Mutator einmal erneut anwenden, dann Erfolg" und "zwei 412 in Folge …") —
+     ebenfalls rohes JSON ohne regulatorik im Mock.
+   Wieder hergestellt: `node --test` erneut gruen, 428/428. Die Lehre, nicht nur
+   fuer diesen Kommentar: eine Mutationsprobe ist nur so viel wert wie der
+   tatsaechlich ausgefuehrte Lauf — eine plausibel klingende Zahl ohne echten
+   Testlauf ist eine Behauptung, kein Beleg. */

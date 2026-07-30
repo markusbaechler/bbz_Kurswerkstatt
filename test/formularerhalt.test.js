@@ -292,6 +292,82 @@ test('ohne zuvor fokussiertes Feld wird nichts fokussiert', () => {
   delete global.document;
 });
 
+/* ---------- Fix-Runde 1, C-2: Checkboxen (form:'haken') im Formular-Erhalt ----------
+   Vorher (Etappe 1e Task 6, Erstfassung) kannten _formularSnapshot/_formularWiederherstellen
+   nur .value — ein angehaktes, noch nicht gesichertes SAQ-Haekchen ging bei einem
+   Zwischen-Render verloren (dieselbe Fehlerklasse wie C2 in Task 2, nur fuer den neuen
+   Feldtyp nicht mitgezogen). Jetzt: .checked wird als eigener (boolescher) Werttyp
+   gesichert und restauriert.
+
+   ANDERE Regel als bei Text, bewusst (s. CLAUDE.md): bei Text gewinnt der Snapshot nur,
+   wenn er NICHT LEER ist, weil eine leere Zeichenkette zweideutig ist (noch nichts
+   getippt vs. bewusst geloescht). Eine Checkbox kennt diese Zweideutigkeit nicht — beide
+   Zustaende sind immer eine bewusste Antwort — deshalb gewinnt hier jede Abweichung vom
+   frisch gerenderten Stand, in BEIDE Richtungen. Die beiden folgenden Tests belegen genau
+   diese Symmetrie (angehakt gewinnt gegen unangehakt gerendert, UND umgekehrt).
+
+   Mutationsprobe (durchgefuehrt, Fix-Runde 1): die checkbox-Zweige in beiden Funktionen
+   entfernt (zurueck auf den reinen .value-Pfad von vorher) — `node --test` wurde rot an
+   genau den drei Checkbox-Tests dieses Abschnitts (Snapshot-Test + beide Richtungen), der
+   vierte ("bleibt unangetastet") blieb gruen, weil dort ohnehin nichts restauriert werden
+   muss. Danach wiederhergestellt, wieder 437/437 gruen. */
+
+function hakenElement(id, checked) {
+  return { dataset: { feld: id }, type: 'checkbox', checked: checked,
+    focus: function () { this._fokussiert = true; } };
+}
+
+test('C-2: _formularSnapshot sichert bei einer Checkbox .checked (bool), nicht .value', () => {
+  const feld = hakenElement('saq_rezert', true);
+  global.document = baueDocument([feld], {}, null);
+
+  const snap = controller._formularSnapshot();
+
+  assert.strictEqual(snap.werte['feld:saq_rezert'], true);
+  delete global.document;
+});
+
+test('C-2: ein angehaktes Haekchen uebersteht einen Neuaufbau, der unangehakt rendert', () => {
+  const feld = hakenElement('saq_rezert', true);
+  global.document = baueDocument([feld], {}, null);
+  const snap = controller._formularSnapshot();
+
+  feld.checked = false;   /* Neuaufbau zeigt den (aelteren) unangehakten Dossier-Stand */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(feld.checked, true, 'ein angehaktes Haekchen ist beim Neuaufbau verloren gegangen');
+  delete global.document;
+});
+
+test('C-2 Gegenprobe: ein NICHT angehaktes Haekchen uebersteht einen Neuaufbau, der angehakt rendert ' +
+  '(beide Richtungen — anders als bei Text, wo Leere bewusst verliert)', () => {
+  const feld = hakenElement('saq_rezert', false);
+  global.document = baueDocument([feld], {}, null);
+  const snap = controller._formularSnapshot();
+
+  feld.checked = true;   /* Neuaufbau zeigt einen (aelteren) angehakten Dossier-Stand */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(feld.checked, false,
+    'ein bewusst nicht angehaktes Haekchen hat gegen den frisch gerenderten Stand verloren — ' +
+    'bei einer Checkbox ist "nicht angehakt" keine Leere, die verlieren duerfte');
+  delete global.document;
+});
+
+test('C-2: eine Checkbox bleibt unangetastet, wenn sie mit dem frisch gerenderten Stand uebereinstimmt', () => {
+  const feld = hakenElement('saq_rezert', true);
+  global.document = baueDocument([feld], {}, null);
+  const snap = controller._formularSnapshot();
+  /* kein Neuaufbau-Unterschied: feld.checked bleibt true */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(feld.checked, true);
+  delete global.document;
+});
+
 /* ---------- Integration: controller.render() selbst erhaelt das Formular ----------
    "render-Äquivalent" reicht laut Brief; hier zusaetzlich der echte Aufruf, mit einem
    document-Mock, dessen innerHTML-Setter den Neuaufbau simuliert: das Feld faellt auf

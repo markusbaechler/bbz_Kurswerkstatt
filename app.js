@@ -644,12 +644,20 @@
        Navigation (ein Kurswechsel setzt zufaellig schrittId auf null, wodurch ein
        Zwischen-Render ohne Formular laeuft) — jetzt verankert im Mechanismus
        selbst. _formularWiederherstellen setzt nur ein, wenn beide beim
-       Wiederherstellen noch mit state.position uebereinstimmen. */
+       Wiederherstellen noch mit state.position uebereinstimmen.
+
+       Checkboxen (form:'haken', Etappe 1e Task 6 Fix-Runde 1, C-2) sichern
+       .checked statt .value als eigener Werttyp (bool) — ein natives
+       Checkbox-Element liefert ueber .value ohnehin immer denselben String,
+       unabhaengig vom Ankreuzzustand; s. _formularWiederherstellen fuer die
+       Restaurierungsregel und ihre Begruendung. */
     _formularSnapshot: function () {
       if (typeof document === 'undefined') return null;
       var werte = {};
       Array.prototype.forEach.call(document.querySelectorAll('#briefing-felder [data-feld]'), function (el) {
-        werte['feld:' + el.dataset.feld] = String(el.value == null ? '' : el.value);
+        werte['feld:' + el.dataset.feld] = (el.type === 'checkbox')
+          ? !!el.checked
+          : String(el.value == null ? '' : el.value);
       });
       QUELLEN_FORMULAR_IDS.forEach(function (id) {
         var el = document.getElementById(id);
@@ -673,6 +681,22 @@
        Kein Datei-Input: der laesst sich nicht programmatisch wiederbefuellen — eine
        akzeptierte Luecke, siehe Task-2-Report.
 
+       Checkboxen (form:'haken', Etappe 1e Task 6 Fix-Runde 1, C-2) folgen einer
+       ANDEREN Regel als Text: hier gewinnt der Snapshot-Zustand, sobald er vom
+       frisch gerenderten abweicht — in BEIDE Richtungen, also auch von
+       angehakt zurueck auf nicht angehakt. Das ist bewusst kein Widerspruch zur
+       Text-Regel, sondern dieselbe Absicht (der zuletzt sichtbare Nutzer-Zustand
+       gewinnt gegen einen Zwischen-Render, solange nicht gesichert wurde): bei
+       Text ist eine leere Zeichenkette ZWEIDEUTIG — sie kann "noch nichts
+       getippt" bedeuten oder "bewusst geloescht, aber noch nicht bestaetigt";
+       genau diese Zweideutigkeit ist der Grund, weshalb Leere dort NICHT
+       automatisch gewinnt. Eine Checkbox kennt diese Zweideutigkeit nicht: sie
+       hat exakt zwei Zustaende, und jeder von beiden ist immer eine bewusste,
+       beobachtbare Antwort — "nicht angehakt" ist so wenig ein "noch nichts
+       eingegeben" wie "angehakt" eines waere. Deshalb darf hier jede Abweichung
+       gewinnen, ohne dass ein Neuaufbau mitten in einem Klick etwas verewigt,
+       das die Person nicht so wollte.
+
        Fremd-Kurs-Schutz (Fix-Runde 1, Review-Finding 1): stimmen kursId/schrittId
        des Snapshots nicht mehr mit state.position ueberein, wird NICHTS
        eingesetzt — der Snapshot stammt von einer anderen Ansicht (z. B. Kurs A),
@@ -687,6 +711,11 @@
       var feldGeaendert = false;
       Array.prototype.forEach.call(document.querySelectorAll('#briefing-felder [data-feld]'), function (el) {
         var alt = snap.werte['feld:' + el.dataset.feld];
+        if (el.type === 'checkbox') {
+          var neuC = !!el.checked;
+          if (typeof alt === 'boolean' && alt !== neuC) { el.checked = alt; feldGeaendert = true; }
+          return;
+        }
         var neu = String(el.value == null ? '' : el.value);
         if (alt && alt !== neu) { el.value = alt; feldGeaendert = true; }
       });
@@ -990,6 +1019,29 @@
       return werte;
     },
 
+    /* Merge fuer den "kopieren"-Handler (Prompt-Kopf-Basis, Schritt 1): basis ist
+       der gesicherte Dossier-Stand (scope+regulatorik, ueber briefingWerteAusDossier),
+       form die aktuell sichtbaren, evtl. ungesicherten Formularwerte — form gewinnt.
+       Ausgelagert (Fix-Runde 1, C-1), damit die Merge-Regel ohne DOM/click-Mock
+       direkt testbar ist, wie briefingFelderAusFormular/_formularSnapshot auch.
+
+       Typbewusst: ein Bool (das SAQ-Haekchen) uebernimmt IMMER den Formularwert,
+       auch false — false ist eine vollstaendige Antwort, kein Fehlen, anders als
+       ein leerer String. Vorher liess `String(form[k] || '')` ein explizites
+       false schon am `|| ''` scheitern (false ist falsy, wird durch '' ersetzt,
+       bleibt '' nach trim()) — der Prompt behauptete dann weiter den alten, aus
+       der Basis kopierten Wert (z. B. true), obwohl das Formular sichtbar
+       abgehakt war. */
+    _formularWerteMergen: function (basis, form) {
+      var werte = {};
+      Object.keys(basis || {}).forEach(function (k) { werte[k] = basis[k]; });
+      Object.keys(form || {}).forEach(function (k) {
+        var v = form[k];
+        if (typeof v === 'boolean' || String(v || '').trim()) werte[k] = v;
+      });
+      return werte;
+    },
+
     /* Die Zaehlung mitlaufen lassen, waehrend getippt wird. Ohne das steht nach dem
        Ausfuellen weiter "8 offen", bis gesichert wurde — und das Formular wirkt
        falsch, obwohl es stimmt. Kein Neuaufbau der Ansicht: der wuerde den Fokus
@@ -1006,7 +1058,14 @@
       ziel.classList.toggle('gut', fehlend.length === 0);
       Array.prototype.forEach.call(document.querySelectorAll('#briefing-felder [data-feld]'), function (el) {
         var f = root.inhalt.briefingFeld(el.dataset.feld);
-        var leer = !String(el.value || '').trim();
+        /* Dieselbe Frage wie in inhalt.briefingFehlend() und ansichten.js
+           (Etappe 1e Task 6, Fix-Runde 1 M-1, Konvention 9): ein Haekchen kennt
+           kein "leer" — nicht angehakt ist eine vollstaendige Antwort, keine
+           fehlende. Drei Stellen pruefen dieselbe Tatsache, weil sie an drei
+           verschiedenen Werten haengen (Formularwerte-Objekt, gerendertes HTML,
+           lebendiges DOM-Element) — keine davon kann die anderen ersetzen; die
+           Antwort selbst (form:'haken' zaehlt nie als offen) ist ueberall gleich. */
+        var leer = f && f.form !== 'haken' && !String(el.value || '').trim();
         if (el.parentNode) el.parentNode.classList.toggle('offen', !!(f && f.pflicht && leer));
       });
     },
@@ -1614,15 +1673,14 @@
            getippt und noch nicht gesichert wurde. */
         if (String(state.position.schrittId) === '1' && w.type === 'prompt') {
           var kurs2 = nav.kurs();
-          /* Basis ist der Dossier-Scope (gesichert); nicht-leere Formularwerte
+          /* Basis ist der Dossier-Scope/regulatorik (gesichert); Formularwerte
              ueberschreiben ihn — wer tippt und sofort kopiert, bekommt, was er sieht.
              kurs2 kann null sein (Kurs nicht mehr in KWKurse) — briefingPromptKopf
-             toleriert das mit '?', der Zugriff aufs Dossier davor nicht (M-1). */
+             toleriert das mit '?', der Zugriff aufs Dossier davor nicht (M-1).
+             Die Merge-Regel selbst steht in controller._formularWerteMergen(). */
           var basis = kurs2 ? root.inhalt.briefingWerteAusDossier(state.data.dossier[kurs2.kursId]) : {};
           var form = controller.briefingFelderAusFormular();
-          var werte = {};
-          Object.keys(basis).forEach(function (k) { werte[k] = basis[k]; });
-          Object.keys(form).forEach(function (k) { if (String(form[k] || '').trim()) werte[k] = form[k]; });
+          var werte = controller._formularWerteMergen(basis, form);
           text2 = root.inhalt.briefingPromptKopf(kurs2, werte) + text2;
         }
         kopieren(text2, t);

@@ -409,9 +409,37 @@ die Ansicht zeigt ihn wie bisher direkt im Formular („Gilt fest: …").
 **Das SAQ-Häkchen ist ein neuer `form`-Typ `'haken'`** (natives `<input type="checkbox">`,
 kein Freitext) — `ansichten.js` rendert ihn im selben generischen Feld-Loop wie `'zahl'` und
 Freitext, `controller.briefingFelderAusFormular()` liest bei `el.type === 'checkbox'` `.checked`
-statt `.value`. Ein Häkchen kennt kein „leer": `inhalt.briefingFehlend()` und die
-`offen`-Markierung in `ansichten.js` nehmen `form:'haken'`-Felder von der Pflicht-Prüfung aus,
-unabhängig davon, ob ein Haken-Feld je `pflicht:true` wird.
+statt `.value`. Ein Häkchen kennt kein „leer": `inhalt.briefingFehlend()`, die
+`offen`-Markierung in `ansichten.js` **und** die laufende Zählung in
+`controller.briefingFelderZaehlen()` nehmen `form:'haken'`-Felder von der Pflicht-Prüfung aus
+— drei Stellen, dieselbe Antwort (Konvention 9), weil jede an einem anderen Wert hängt
+(Formularwerte-Objekt, gerendertes HTML, lebendiges DOM-Element) und keine die anderen
+ersetzen kann.
+
+**Checkboxen brauchen beim Formular-Erhalt (Task 2, Audit C2) eine ANDERE Regel als Text**
+(Fix-Runde 1, C-2 — vorher eine dokumentierte, akzeptierte Lücke, jetzt geschlossen, weil
+Schritt 1 wasserdicht sein muss). `controller._formularSnapshot()` sichert bei
+`el.type === 'checkbox'` `.checked` (bool) statt `.value`; `_formularWiederherstellen()`
+restauriert diesen Zustand, **sobald er vom frisch gerenderten abweicht — in beide
+Richtungen**, nicht nur „nicht leer wie bei Text". Der Grund: bei einem Textfeld ist eine
+leere Zeichenkette zweideutig (sie kann „noch nichts getippt" heissen oder „bewusst
+gelöscht, aber noch nicht gesichert") — genau diese Zweideutigkeit ist der Grund, weshalb
+Leere dort nicht automatisch gewinnt und der Dossier-Stand den Vorzug bekommt. Eine Checkbox
+kennt diese Zweideutigkeit nicht: „nicht angehakt" ist so wenig ein „noch nichts eingegeben"
+wie „angehakt" eines wäre, beide Zustände sind immer eine bewusste, beobachtbare Antwort.
+Deshalb darf hier jede Abweichung gewinnen, ohne dass ein Neuaufbau mitten in einem Klick
+etwas verewigt, das die Person nicht so wollte.
+
+**Der „kopieren"-Handler (Schritt 1, Prompt-Kopf-Basis) übernimmt Formularwerte jetzt
+typbewusst, über die neue, eigens testbare `controller._formularWerteMergen(basis, form)`**
+(Fix-Runde 1, C-1 — vorher inline im Click-Handler, der ohne echtes DOM nicht ohne
+Weiteres unit-testbar ist): `if (String(form[k] || '').trim())` verwarf ein explizites
+`false` schon am `|| ''` (false ist falsy, wird durch `''` ersetzt) — ein sichtbar
+abgehaktes, aber auf `false` gesetztes SAQ-Häkchen liess den alten, aus der Dossier-Basis
+kopierten Wert (z. B. `true`) unangetastet stehen, der Prompt behauptete dann das Gegenteil
+von dem, was im Formular sichtbar war. Jetzt: `typeof v === 'boolean'` übernimmt immer
+(auch `false` — eine vollständige Antwort, kein Fehlen), Strings weiterhin nur, wenn sie
+nicht leer sind.
 
 **Nebenauftrag (Fix-Runde T3-Review): `dossier.quelleNeu()` benennt seinen letzten
 Fallback-Wurf jetzt über `quellePruefe(q).join(' · ')` statt über den festen Text
@@ -476,15 +504,6 @@ Status setzen — wartet bewusst, bis ein Gate einmal von Hand gelaufen ist.
 gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (Kurse → ein Kurs →
 ein Schritt, Werkzeuge inline) und *Nachschlagen*. Wird an der laufenden App beurteilt, nicht
 an einer Skizze.
-
-**Das SAQ-Häkchen übersteht einen Zwischen-Render nicht ungesichert** (Etappe 1e, Task 6,
-bewusst kleiner Schnitt): `controller._formularSnapshot()`/`_formularWiederherstellen()`
-(Task 2, Audit C2) kennen nur `.value`-Felder — ein angehakter, aber noch nicht gesicherter
-Zustand geht bei einem Neuaufbau mitten im Tippen verloren (z. B. durch ein spät eintreffendes
-`dossierNachladen`), während Freitext-Felder das überstehen. Der Auftrag nannte nur
-`briefingFelderAusFormular` (liest `checked`) und `briefingFehlend` (behandelt das Häkchen
-nie als offen) ausdrücklich; die Snapshot/Restore-Erweiterung auf Checkboxen war nicht
-Teil des Auftrags und ist eine bekannte Restlücke, keine übersehene.
 
 **Die Dossier-ERSTanlage läuft ohne `If-Match`** (`controller.dossierSchreiben`, Etappe 1e,
 Task 1): Existiert noch kein eTag (Datei war nie geladen oder noch gar nicht angelegt), schreibt
