@@ -512,6 +512,16 @@ die Probe-Quelle wurde von Hand über Graph bereinigt.
 
 ## Offen
 
+**Schritt-2-Texte in SharePoint sind seit dem 2026-07-30 nachgezogen (Etappe 2, Task 8):**
+`werkzeuge.json` trägt die generierten `prompt-lernziele`-Fassungen (Quelle:
+`lernziele-inhaltskontrakt.txt` + `build-lernziele.cjs`, nie mehr von Hand), `guide-1` nennt den
+Gate-Klick der Kurswerkstatt und die Dossier-Erbschaft, `schritte.json` Schritt 2 führt
+`wege: [claude-code, hand, hochladen]` und das Kursdossier im Input, und
+`ablage-kontrakt.json` `schritte['2'].struktur.steckbrief.herkunft` nennt das Dossier statt des
+Briefing-Frontmatters. Rückwege in `_zentral/_verlauf-2026-07-30/` (`*_vor-etappe2.json`).
+`zentral-export.json` ist auf den 2026-07-30 aufgefrischt, `specs-konsistenz.cjs` meldet
+„Alles konsistent". Der folgende Absatz gilt damit nur noch für die übrigen Schritte:
+
 **`schritte.json` trägt (in der Zählung vor dieser Reform) bei Schritt 3 und 4 noch die alten
 Ordner.** Im angezeigten Feld `abl` stehen `02_lernziel-drehbuch/`, `04_freigaben/` und
 `03_content-arbeit/`; ausserdem fehlt dort `hochladen` in `wege`. Die Datei liegt in SharePoint,
