@@ -509,9 +509,12 @@
        dagegen bleibt ein Formularfeld (werte.rechtsstand, aus BRIEFING_FELDER,
        ziel:'regulatorik') — der Merge in controller._formularWerteMergen()
        gibt dem getippten Wert bereits Vorrang vor der Dossier-Basis, hier kommt
-       nur die zusaetzliche Bauanweisung fuers YAML-Feld dazu. Ohne d (kein
-       Dossier geladen, z. B. bestehende Aufrufer/Tests) bleibt das Verhalten
-       exakt wie zuvor — der ganze Block entfaellt. */
+       nur die zusaetzliche Bauanweisung fuers YAML-Feld dazu — und nur, wenn
+       werte.rechtsstand ueberhaupt gesetzt ist (Fix-Runde 1, Review-Finding):
+       ist das Feld leer, steht es ohnehin schon unter NICHT ANGEGEBEN, eine
+       Bauanweisung daneben verwiese auf eine nicht existierende Angabe. Ohne d
+       (kein Dossier geladen, z. B. bestehende Aufrufer/Tests) bleibt das
+       Verhalten exakt wie zuvor — der ganze Block entfaellt. */
     briefingPromptKopf: function (kurs, werte, d) {
       werte = werte || {};
       var z = [];
@@ -549,8 +552,10 @@
           z.push('FACHQUELLEN: noch keine erfasst — das YAML-Feld \'quellen\' bleibt leer; ' +
                  'erfinde keine.');
         }
-        z.push('Das YAML-Feld \'rechtsstand\' ist GENAU aus der Angabe „Rechtsstand" oben zu ' +
-               'bauen, nicht aus einem anderen Datum.');
+        if (String(werte.rechtsstand || '').trim()) {
+          z.push('Das YAML-Feld \'rechtsstand\' ist GENAU aus der Angabe „Rechtsstand" oben zu ' +
+                 'bauen, nicht aus einem anderen Datum.');
+        }
         z.push('');
       }
       if (offen.length) {

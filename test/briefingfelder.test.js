@@ -191,6 +191,29 @@ test('die Rechtsstand-Bauanweisung fuers YAML-Feld steht, sobald ein Dossier mit
   assert.match(k, /Das YAML-Feld 'rechtsstand' ist GENAU aus der Angabe/);
 });
 
+/* Fix-Runde 1 (Review-Finding, Important): ohne gesetzten Rechtsstand stand die
+   Bauanweisung trotzdem da und verwies auf eine nicht existierende Angabe — genau
+   neben der Aufforderung, danach zu fragen. Jetzt bleibt sie weg, solange
+   werte.rechtsstand leer ist, auch wenn ein Dossier (mit anderer Quelle) mitgeht. */
+test('fehlt der Rechtsstand im Formular, bleibt die Bauanweisung weg — NICHT ANGEGEBEN bleibt stehen', () => {
+  const d = { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+              regulatorik: {},
+              quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025',
+                          datei: 'sspa-map-2025.pdf' }],
+              status: {}, offen: [], entschieden: [] };
+  const ohneRechtsstand = Object.assign({}, VOLL, { rechtsstand: '' });
+  const k = inhalt.briefingPromptKopf(DBS, ohneRechtsstand, d);
+  assert.doesNotMatch(k, /Das YAML-Feld 'rechtsstand' ist GENAU/,
+    'Bauanweisung verweist auf eine nicht angegebene Rechtsstand-Zeile');
+  assert.match(k, /NICHT ANGEGEBEN: Rechtsstand/, 'Rechtsstand fehlt in der Offen-Meldung');
+  assert.match(k, /FACHQUELLEN \(verbindlich/, 'Quellenblock haette trotzdem stehen sollen');
+});
+
+/* Mutationsprobe (Fix-Runde 1, Review-Finding): die Bedingung
+   `if (String(werte.rechtsstand || '').trim())` entfernt (unbedingtes z.push) —
+   `node --test` wurde rot an genau diesem Test. Danach wiederhergestellt, wieder
+   gruen. */
+
 test('ohne drittes Argument bleibt der Promptkopf exakt wie bisher — kein Quellen-Teil', () => {
   const k = inhalt.briefingPromptKopf(DBS, VOLL);
   assert.doesNotMatch(k, /FACHQUELLEN/);
