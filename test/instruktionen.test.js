@@ -48,6 +48,17 @@ test('Instruktionen tragen die Fachquellen aus dem Dossier — mit ID und Stand'
   assert.match(t, /keine anderen Quellen/i);
 });
 
+test('eine Link-Quelle traegt Link und Abrufdatum, keine "Datei:"-Zeile fuer sie', () => {
+  const d = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+              quellen: [{ id: 'Q-001', titel: 'Ausschreibung', herausgeber: 'SSPA', stand: '2026',
+                          url: 'https://sspa.ch/ausschreibung', abgerufen: '2026-07-30' }],
+              status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', d);
+  assert.match(t, /Q-001/);
+  assert.match(t, /Link: https:\/\/sspa\.ch\/ausschreibung/);
+  assert.match(t, /abgerufen 2026-07-30/);
+});
+
 test('quellenfreier Modus steht ausdruecklich in den Instruktionen', () => {
   const d = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellenfrei',
               quellen: [], status: {}, offen: [], entschieden: [] };

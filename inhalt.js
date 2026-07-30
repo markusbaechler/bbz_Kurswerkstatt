@@ -671,12 +671,16 @@
                  'vor, der Content entsteht als reiner KI-Entwurf und wird in Schritt 4 ' +
                  'entsprechend strenger validiert. Erfinde keine Quellenangaben.');
         } else if ((d.quellen || []).length) {
-          z.push('Massgebend sind AUSSCHLIESSLICH diese Quellen (Ablage: 03_content/quellen/). ' +
-                 'Keine anderen Quellen beiziehen, keine erfinden; jede gehört in die Leseliste:');
+          z.push('Massgebend sind AUSSCHLIESSLICH diese Quellen (Dateien in 03_content/quellen/, ' +
+                 'Links direkt aufrufen). Keine anderen Quellen beiziehen, keine erfinden; jede ' +
+                 'gehört in die Leseliste:');
           d.quellen.forEach(function (q) {
-            z.push('- ' + q.id + ' · ' + q.titel +
-                   (q.herausgeber ? ' (' + q.herausgeber + ')' : '') +
-                   ' · Stand: ' + q.stand + ' · Datei: ' + q.datei);
+            var kopf = '- ' + q.id + ' · ' + q.titel +
+                       (q.herausgeber ? ' (' + q.herausgeber + ')' : '') +
+                       ' · Stand: ' + q.stand;
+            z.push(q.url
+              ? kopf + ' · Link: ' + q.url + ' (abgerufen ' + q.abgerufen + ')'
+              : kopf + ' · Datei: ' + q.datei);
           });
         } else {
           z.push('Noch keine Fachquellen erfasst. Vor Schritt 3 in der Kurswerkstatt erfassen ' +
