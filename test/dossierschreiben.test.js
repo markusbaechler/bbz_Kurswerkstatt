@@ -201,6 +201,72 @@ test('_dossierVersuch stempelt identitaet aus state.data.kurse in JEDES Schreibe
     { titel: 'Derivate Basis', kompetenzfeld: 'Vermögen & Vorsorge' });
 });
 
+/* ---------- Etappe 2, Task 7: Dossier-Erstanlage mit conflictBehavior=fail ----------
+   Bisher schrieb der allererste Schreiber (kein eTag im State — Datei nie geladen oder
+   noch gar nicht angelegt) unbedingt, ohne If-Match: zwei Sitzungen, die gleichzeitig
+   zum ersten Mal ein Dossier fuer denselben Kurs anlegen, konnten sich gegenseitig
+   ueberschreiben (CLAUDE.md „Offen": Restluecke ausserhalb des behobenen Lost-Update).
+   _dossierVersuch gibt jetzt nurNeu=true mit, wenn kein eTag da ist — graph.ablegen
+   haengt dann '?@microsoft.graph.conflictBehavior=fail' an, Graph antwortet 409, wenn
+   die Datei inzwischen von woanders angelegt wurde. Die Wiederholung laeuft ueber
+   denselben Mechanismus wie 412: einmal frisch lesen, Mutator einmal erneut anwenden —
+   danach mit dem frisch gelesenen eTag, also nicht mehr nurNeu. */
+
+test('Erstanlage (kein Dossier im State) ruft graph.ablegen mit nurNeu === true auf', async () => {
+  state.data.dossier = {};
+  state.data.dossierETag = {};
+  let gesehenEtag, gesehenNurNeu;
+  graph.ablegen = function (kursId, ordner, datei, text, eTagWert, nurNeu) {
+    gesehenEtag = eTagWert;
+    gesehenNurNeu = nurNeu;
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.dossierSchreiben('DBS-001', function (d) { d.offen.push('A'); return d; });
+
+  assert.strictEqual(gesehenEtag, undefined, 'die Erstanlage haette keinen eTag mitgeben duerfen');
+  assert.strictEqual(gesehenNurNeu, true, 'die Erstanlage haette nurNeu=true mitgeben muessen');
+});
+
+test('409 bei der Erstanlage (zwei gleichzeitige erste Schreiber): frisch lesen, Mutator einmal erneut anwenden, dann Erfolg mit eTag', async () => {
+  state.data.dossier = {};
+  state.data.dossierETag = {};
+
+  let anzahlAblegen = 0;
+  const gesendeteNurNeu = [];
+  const gesendeteEtags = [];
+  graph.ablegen = function (kursId, ordner, datei, text, eTagWert, nurNeu) {
+    anzahlAblegen++;
+    gesendeteEtags.push(eTagWert);
+    gesendeteNurNeu.push(nurNeu);
+    if (anzahlAblegen === 1) {
+      const fehler = new Error('Nicht abgelegt (Graph 409)');
+      fehler.status = 409;
+      return Promise.reject(fehler);
+    }
+    return Promise.resolve({ eTag: 'W/"2"' });
+  };
+  graph.dateiLesenGenau = function () {
+    return Promise.resolve({ ok: true, text: JSON.stringify(dossierMit(['extern'])), eTag: 'W/"neu"' });
+  };
+
+  let mutatorAufrufe = 0;
+  const ergebnis = await controller.dossierSchreiben('DBS-001', function (d) {
+    mutatorAufrufe++;
+    d.offen.push('lokal');
+    return d;
+  });
+
+  assert.strictEqual(anzahlAblegen, 2, 'nach 409 folgte kein zweiter Schreibversuch');
+  assert.strictEqual(mutatorAufrufe, 2, 'der Mutator wurde nicht ein zweites Mal angewandt');
+  assert.strictEqual(gesendeteNurNeu[0], true, 'der erste Versuch (Erstanlage) haette nurNeu=true senden muessen');
+  assert.strictEqual(gesendeteEtags[1], 'W/"neu"', 'der zweite Versuch nutzte nicht den frisch gelesenen eTag');
+  assert.deepStrictEqual(ergebnis.offen, ['extern', 'lokal'],
+    'der zweite Mutator-Lauf sah nicht den frisch gelesenen Stand');
+  assert.deepStrictEqual(state.data.dossier['DBS-001'].offen, ['extern', 'lokal']);
+  assert.strictEqual(state.data.dossierETag['DBS-001'], 'W/"2"');
+});
+
 test('je Kurs eine eigene Warteschlange — zwei verschiedene Kurse laufen unabhaengig', async () => {
   state.data.dossier = { 'DBS-001': dossierMit([]), 'AFL-001': dossierMit([]) };
   state.data.dossierETag = {};

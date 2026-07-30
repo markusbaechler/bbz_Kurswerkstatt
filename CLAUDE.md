@@ -546,12 +546,6 @@ gebaut und verworfen (unübersichtlich). Aktuell: zwei Bereiche — *Arbeiten* (
 ein Schritt, Werkzeuge inline) und *Nachschlagen*. Wird an der laufenden App beurteilt, nicht
 an einer Skizze.
 
-**Die Dossier-ERSTanlage läuft ohne `If-Match`** (`controller.dossierSchreiben`, Etappe 1e,
-Task 1): Existiert noch kein eTag (Datei war nie geladen oder noch gar nicht angelegt), schreibt
-`graph.ablegen` unbedingt — zwei Sitzungen, die gleichzeitig zum ersten Mal ein Dossier anlegen,
-können sich dabei gegenseitig überschreiben. Ausserhalb des behobenen Lost-Update (zwischen den
-vier Schreibern eines bereits bestehenden Dossiers), aber eine bekannte Restlücke.
-
 **`s.zweck`/`s.lief` aus `schritte.json` gehen ungeprüft in die Ansicht** (vorbestehend,
 betrifft die Sichtbarkeit in Schritt-Ansicht F2) — kein `esc()` davor. `schritte.json` kommt aus
 SharePoint, nicht aus dem Repo; ein Redakteur mit fremdem HTML darin liesse es ungefiltert
@@ -567,16 +561,12 @@ Graph-Aufruf (Datei lesen/hochladen/löschen, Kursliste) wird nirgends automatis
 `briefingPromptKopf` für ein Haken-Feld mit echtem Bool `false` (wird zu `[OFFEN]` statt
 `'false'`) — bewusst nicht mitgezogen, weil der Code beim Aufräumen ohnehin verschwindet.
 
-**Der Duplikatschutz für Fachquellen gilt nur am Schreibweg** (`dossier.quelleNeu()`, s. o.):
-`dossier.pruefe()` (Leseweg) weist ein von Hand doppelt eingetragenes Duplikat in der
-`dossier.json` nicht zurück. Beim zweiten Schreibweg (Etappe 2, Gate-Ablauf) mitziehen.
-
-**Dieselbe Asymmetrie gilt für `offen[]`/`entschieden[]` (Etappe 2, Task 5).**
-`dossier.pruefe()` (Leseweg) validiert die beiden Listen nur auf `Array`, nicht strukturell —
-ein von Hand editiertes `dossier.json` mit einem `offen[]`-Eintrag ohne `was`/`wo` oder mit einem
-`fuer` ausserhalb von `dossier.ZIELE` bleibt lesbar. Nur der Schreibweg
-(`offenNeu`/`offenEntscheiden`/`offenVerschieben`) prüft das streng. Bewusst vertagt, wie beim
-Quellen-Duplikatschutz oben.
+**Dieselbe Asymmetrie wie beim (mit Task 7 behobenen) Quellen-Duplikatschutz gilt weiterhin für
+`offen[]`/`entschieden[]` (Etappe 2, Task 5).** `dossier.pruefe()` (Leseweg) validiert die beiden
+Listen nur auf `Array`, nicht strukturell — ein von Hand editiertes `dossier.json` mit einem
+`offen[]`-Eintrag ohne `was`/`wo` oder mit einem `fuer` ausserhalb von `dossier.ZIELE` bleibt
+lesbar. Nur der Schreibweg (`offenNeu`/`offenEntscheiden`/`offenVerschieben`) prüft das streng.
+Bewusst vertagt.
 
 ## Stand 2026-07-30 — Härtung Etappe 1e, an VL-001 abgenommen
 
@@ -724,8 +714,9 @@ der Gate-Felder inkl. indiziertem Feld, Select-Verhalten, sowie ein Integrations
 genau bei den vier neuen Gate-Box-Tests rot (31 grün/4 rot von 35), danach wiederhergestellt,
 komplette Suite wieder grün.
 
-**Dieselbe Asymmetrie wie beim Quellen-Duplikatschutz gilt für `offen[]`/`entschieden[]`:**
-`dossier.pruefe()` (Leseweg) validiert nur `Array`, nicht strukturell — s. „## Offen" unten.
+**Dieselbe Asymmetrie wie beim (seit Task 7 behobenen) Quellen-Duplikatschutz gilt für
+`offen[]`/`entschieden[]`:** `dossier.pruefe()` (Leseweg) validiert nur `Array`, nicht
+strukturell — s. „## Offen" unten.
 
 **Fix-Runde 2 (Review des Fix-Diffs selbst): id-basiertes Restore der indizierten Gate-Felder
 verfälschte Daten nach einer Listenverschiebung.** Positions-ids wie `offen-wer-0` sind NICHT
@@ -884,3 +875,60 @@ unverändert grün).
 ```
 Genau der eine neue F3-Test fiel rot, danach die Zeile wiederhergestellt, komplette Suite
 erneut geprüft: `node --test` → 516/516 grün.
+
+## Restpunkte (Task 7): Duplikat-Leseweg in `pruefe` + Dossier-Erstanlage-Schutz
+
+Schliesst die beiden Restlücken, die Task 3/6 bewusst offen liessen (s. vormals „## Offen").
+
+**Duplikat ist eine Eigenschaft der Liste, nicht der einzelnen Quelle (Handover §4.4).**
+`dossier.quelleNeu()` (Schreibweg) wies eine doppelte Datei/URL schon seit Etappe 1e (Audit C3)
+ab; `dossier.pruefe()` (Leseweg, u. a. für ein von Hand editiertes `dossier.json`) prüfte das
+bisher nicht. Die Quellen-Schleife in `pruefe()` — die `quellePruefe()` je Eintrag ohnehin schon
+aufruft — führt jetzt zusätzlich ein `gesehen`-Objekt über `datei`/`url`, case-insensitiv und
+getrimmt wie beim Schreibweg: `a.pdf` und `A.PDF` gelten als dieselbe Quelle, ebenso
+`https://x.ch` und `HTTPS://X.CH`. Ein Treffer erzeugt die Meldung „Quelle N: datei doppelt
+(schon als Q-001 erfasst)" bzw. dasselbe für `url`.
+
+**Migrationsfolge, geprüft statt nur behauptet:** `dossier.lesen()` weist ein Dossier mit
+Duplikat künftig ab (`null` → sichtbare Fehlermeldung über den bestehenden Nicht-sticky-Pfad,
+Etappe 1e Task 4 — kein stiller Import). Das ist das gewollte Verhalten, kein
+Regressionsrisiko: das echte VL-001-Dossier in SharePoint (Stand 2026-07-30) hat keine
+Duplikate und bleibt lesbar; ein Test (`test/dossier.test.js`) hält ausdrücklich beides fest —
+das Duplikat-Dossier wird abgewiesen, ein VL-001-artiges Fixture-Dossier ohne Duplikate bleibt
+lesbar.
+
+**Dossier-Erstanlage jetzt mit `conflictBehavior=fail` statt ungeschützt.** Bisher schrieb der
+allererste Schreiber für einen Kurs (kein eTag im State — Datei nie geladen oder noch gar nicht
+angelegt, s. vormals „## Offen") sein `graph.ablegen` unbedingt, ohne `If-Match`: zwei Sitzungen,
+die gleichzeitig zum ersten Mal ein Dossier anlegen, konnten sich gegenseitig überschreiben —
+eine Lücke ausserhalb des mit Etappe 1e Task 1 behobenen Lost-Update (das deckt nur Schreiber
+gegen ein bereits bestehendes Dossier ab). `graph.ablegen(kursId, ordner, datei, text, eTagWert,
+nurNeu)` bekommt dafür einen sechsten, optionalen Parameter: ist `nurNeu` `true` und **kein**
+`eTagWert` gesetzt, hängt der PUT `?@microsoft.graph.conflictBehavior=fail` an — Graph antwortet
+409, wenn die Datei zwischen dem „gibt es schon?"-Zeitpunkt und diesem Schreiben von woanders
+angelegt wurde. Trägt `eTagWert` bereits einen Wert, hat `If-Match` Vorrang; `nurNeu` ändert dann
+nichts mehr am Query-String. Jeder bestehende Aufrufer ohne `nurNeu` bleibt unverändert (einfaches
+PUT, kein `conflictBehavior`) — nur `controller._dossierVersuch` setzt den neuen Parameter,
+genau dann, wenn kein eTag vorliegt (`!eTagAlt`).
+
+**Die Wiederholung nach einem Konflikt läuft über denselben Mechanismus wie 412**, nicht über
+einen zweiten Pfad: die Bedingung in `_dossierVersuch` prüft jetzt `err.status === 412 ||
+err.status === 409` — bei beiden wird einmal frisch gelesen (`_dossierNeuLesen`, holt jetzt den
+eTag der fremden Erstanlage) und der Mutator genau einmal erneut angewandt, danach nicht mehr
+mit `nurNeu` (der frisch gelesene eTag greift, `If-Match` hat Vorrang). Kein dritter Versuch,
+aus demselben Grund wie beim bestehenden 412-Pfad: ein ständig schreibender Zweitnutzer soll
+diesen Aufruf nicht endlos blockieren.
+
+**Tests:** `test/dossier.test.js` (Duplikat-Leseweg für Datei und Link, Migrationsprobe
+VL-001-artig ohne Duplikate), `test/dossierschreiben.test.js` (Erstanlage ruft `graph.ablegen`
+mit `nurNeu === true` auf; ein 409 bei der Erstanlage löst genau ein Neu-Lesen + eine
+Mutator-Wiederholung aus, danach Erfolg mit dem frisch gelesenen eTag), `test/ablegen.test.js`
+(Netzwerk-Ebene direkt: der tatsächliche Query-String mit/ohne `nurNeu`/eTag, `If-Match`-Vorrang,
+409 trägt `.status = 409` wie 412). **524 Tests grün.**
+
+Mutationsproben (tatsächlich ausgeführt, nicht nur behauptet): der Duplikat-Push in `pruefe()`
+auskommentiert → genau die beiden neuen Duplikat-Tests fielen rot (522/524 grün), alle anderen
+blieben grün; danach wiederhergestellt. Der `nurNeu`-Parameter (`!eTagAlt`) beim Aufruf von
+`graph.ablegen` in `_dossierVersuch` entfernt → genau die beiden neuen Erstanlage-Tests fielen
+rot (522/524 grün); danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` →
+524/524 grün.

@@ -361,3 +361,48 @@ test('ein Alt-Dossier ohne identitaet bleibt lesbar', () => {
   const alt = JSON.stringify(dossier.neu('VL-001'));
   assert.ok(dossier.lesen(alt));
 });
+
+/* ---------- Etappe 2, Task 7: Duplikat-Leseweg (Handover §4.4) ----------
+   Duplikat ist eine Eigenschaft der LISTE, nicht der einzelnen Quelle — quelleNeu()
+   (Schreibweg) wies Duplikate schon ab (Etappe 1e, Audit C3); pruefe() (Leseweg, u.a.
+   fuer von Hand editierte dossier.json) noch nicht. Sitz der Regel ist deshalb die
+   Quellen-Schleife in pruefe(), die quellePruefe() je Eintrag ohnehin schon aufruft —
+   dieselbe case-insensitive Vergleichslogik wie beim Schreibweg (datei/url). */
+
+test('pruefe() weist doppelte Datei und doppelten Link ab — Leseweg wie Schreibweg', () => {
+  const d = dossier.neu('VL-001');
+  d.quellen = [
+    { id: 'Q-001', titel: 'A', stand: '2026', datei: 'a.pdf' },
+    { id: 'Q-002', titel: 'B', stand: '2026', datei: 'A.PDF' },
+  ];
+  assert.ok(dossier.pruefe(d).some(p => /doppelt/.test(p)));
+  d.quellen = [
+    { id: 'Q-001', titel: 'A', stand: '2026', url: 'https://x.ch', abgerufen: '2026-07-30' },
+    { id: 'Q-002', titel: 'B', stand: '2026', url: 'HTTPS://X.CH', abgerufen: '2026-07-30' },
+  ];
+  assert.ok(dossier.pruefe(d).some(p => /doppelt/.test(p)));
+});
+
+/* Migrationsprobe (Brief Task 7): lesen() weist ein Dossier mit Duplikat kuenftig ab
+   (null -> sichtbare Fehlermeldung ueber den bestehenden Nicht-sticky-Pfad, kein
+   stiller Import) — das ist das gewollte Verhalten, kein Regressionsrisiko: ein
+   VL-001-artiges Fixture-Dossier OHNE Duplikate (wie das echte VL-001 in SharePoint,
+   Stand 2026-07-30) bleibt lesbar. */
+test('lesen() weist ein Dossier mit doppelter Quelle ab, ein VL-001-artiges ohne Duplikate bleibt lesbar', () => {
+  const mitDuplikat = dossier.neu('VL-001');
+  mitDuplikat.quellen = [
+    { id: 'Q-001', titel: 'A', stand: '2026', datei: 'a.pdf' },
+    { id: 'Q-002', titel: 'B', stand: '2026', datei: 'a.pdf' },
+  ];
+  assert.equal(dossier.lesen(dossier.text(mitDuplikat)), null);
+
+  const vl001 = dossier.neu('VL-001');
+  dossier.quelleNeu(vl001, { titel: 'SSPA Map', stand: '2025', datei: 'sspa-map-2025.pdf' });
+  dossier.quelleNeu(vl001, {
+    titel: 'Ausschreibung', stand: '2026',
+    url: 'https://sspa.ch/ausschreibung', abgerufen: '2026-07-30'
+  });
+  const zurueck = dossier.lesen(dossier.text(vl001));
+  assert.ok(zurueck, 'ein VL-001-artiges Dossier ohne Duplikate wurde faelschlich abgewiesen');
+  assert.equal(zurueck.quellen.length, 2);
+});

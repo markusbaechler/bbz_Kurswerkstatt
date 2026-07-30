@@ -1,10 +1,16 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { graph } = require('../app.js');
+const { graph, auth } = require('../app.js');
 const { inhalt } = require('../inhalt.js');
 const { dossier } = require('../dossier.js');
 const { INHALT, KURSE } = require('./fixture.js');
+
+/* Die echte graph.ablegen-Implementierung, festgehalten VOR jedem Test dieser Datei —
+   spaetere Tests ueberschreiben graph.ablegen mit eigenen Mocks und stellen es nie
+   zurueck (Muster dieser Datei durchgehend). Der Netzwerk-Test-Block weiter unten
+   prueft die echte Implementierung und muss sie deshalb explizit wiederherstellen. */
+const graphAblegenEcht = graph.ablegen;
 
 const DBS = KURSE[0];   // Schritt 4, inArbeit
 
@@ -349,4 +355,62 @@ test('Briefing-Ablage gelingt, der Dossier-Status-Write scheitert: state.fehlerH
   assert.match(state.fehlerHinweis || '', /Graph 500/, 'die eigentliche Fehlermeldung fehlt im Hinweis');
   assert.strictEqual(state.data.dossier['AFL-001'].status.briefing, undefined,
     'der Status haette bei gescheitertem Schreiben nicht uebernommen werden duerfen');
+});
+
+/* ---------- graph.ablegen: nurNeu / conflictBehavior=fail (Etappe 2, Task 7) ----------
+   Netzwerk-Ebene direkt: graph.driveId/kursOrdner und auth.token ueberschrieben,
+   global.fetch gemockt (Muster aus test/quelleentfernen.test.js). Prueft das, was
+   _dossierVersuch nicht sieht, weil es graph.ablegen dort komplett ueberschreibt:
+   den tatsaechlichen Query-String und dass ein 409 denselben .status-Fehlerwurf
+   traegt wie ein 412. */
+
+function ablegenNetzMocken(status, body) {
+  graph.ablegen = graphAblegenEcht;   /* vorherige Tests dieser Datei ueberschreiben es sonst dauerhaft */
+  graph.driveId = function () { return Promise.resolve('DID'); };
+  graph.kursOrdner = function () { return Promise.resolve({ id: 'ORD' }); };
+  auth.token = function () { return Promise.resolve('TOKEN'); };
+  const aufrufe = [];
+  global.fetch = function (url, init) {
+    aufrufe.push({ url: url, init: init });
+    return Promise.resolve({
+      status: status, ok: status >= 200 && status < 300,
+      json: function () { return Promise.resolve(body || { eTag: 'W/"1"' }); }
+    });
+  };
+  return aufrufe;
+}
+
+test('ablegen() ohne eTag und ohne nurNeu: kein conflictBehavior im Query-String, kein If-Match', async () => {
+  const aufrufe = ablegenNetzMocken(200);
+  await graph.ablegen('DBS-001', '01_briefing', 'x.md', 'Text');
+  assert.strictEqual(aufrufe.length, 1);
+  assert.doesNotMatch(aufrufe[0].url, /conflictBehavior/);
+  assert.strictEqual('If-Match' in aufrufe[0].init.headers, false);
+  delete global.fetch;
+});
+
+test('ablegen() mit eTag: If-Match gesetzt, kein conflictBehavior (eTag hat Vorrang)', async () => {
+  const aufrufe = ablegenNetzMocken(200);
+  await graph.ablegen('DBS-001', '', 'x_dossier.json', '{}', 'W/"1"', true);
+  assert.doesNotMatch(aufrufe[0].url, /conflictBehavior/,
+    'mit eTagWert darf nurNeu den Query-String nicht mehr aendern');
+  assert.strictEqual(aufrufe[0].init.headers['If-Match'], 'W/"1"');
+  delete global.fetch;
+});
+
+test('ablegen() mit nurNeu und ohne eTag: haengt conflictBehavior=fail an', async () => {
+  const aufrufe = ablegenNetzMocken(200);
+  await graph.ablegen('DBS-001', '', 'x_dossier.json', '{}', undefined, true);
+  assert.match(aufrufe[0].url, /\?@microsoft\.graph\.conflictBehavior=fail$/);
+  assert.strictEqual('If-Match' in aufrufe[0].init.headers, false);
+  delete global.fetch;
+});
+
+test('ablegen(): ein 409 wirft einen Error mit .status = 409', async () => {
+  ablegenNetzMocken(409);
+  await assert.rejects(
+    () => graph.ablegen('DBS-001', '', 'x_dossier.json', '{}', undefined, true),
+    function (e) { assert.strictEqual(e.status, 409); return true; }
+  );
+  delete global.fetch;
 });

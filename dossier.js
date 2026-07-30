@@ -140,10 +140,25 @@
       if (d.identitaet != null && typeof d.identitaet !== 'object') p.push('identitaet ist kein Objekt');
       if (dossier.MODI.indexOf(d.content_modus) < 0) p.push('content_modus unbekannt: ' + d.content_modus);
       if (!Array.isArray(d.quellen)) p.push('quellen ist keine Liste');
-      else d.quellen.forEach(function (q, n) {
-        if (!q || !String(q.id || '').trim()) p.push('Quelle ' + (n + 1) + ': id fehlt');
-        p.push.apply(p, dossier.quellePruefe(q, n + 1));
-      });
+      else {
+        /* Duplikat ist eine Eigenschaft der LISTE, nicht der einzelnen Quelle
+           (Etappe 2, Task 7, Handover §4.4) — quelleNeu() (Schreibweg) wies
+           Duplikate schon ab (Etappe 1e, Audit C3), pruefe() (Leseweg, u.a.
+           fuer von Hand editierte dossier.json) noch nicht. Case-insensitiv
+           ueber datei/url, dieselbe Vergleichslogik wie im Schreibweg. */
+        var gesehen = {};
+        d.quellen.forEach(function (q, n) {
+          if (!q || !String(q.id || '').trim()) p.push('Quelle ' + (n + 1) + ': id fehlt');
+          p.push.apply(p, dossier.quellePruefe(q, n + 1));
+          ['datei', 'url'].forEach(function (f) {
+            var v = String((q || {})[f] || '').trim().toLowerCase();
+            if (!v) return;
+            var schl = f + ':' + v;
+            if (gesehen[schl]) p.push('Quelle ' + (n + 1) + ': ' + f + ' doppelt (schon als ' + gesehen[schl] + ' erfasst)');
+            else gesehen[schl] = q.id || ('Quelle ' + (n + 1));
+          });
+        });
+      }
       if (!d.status || typeof d.status !== 'object') p.push('status fehlt');
       else Object.keys(d.status).forEach(function (k) {
         if (dossier.STATUS.indexOf(d.status[k]) < 0) p.push('status.' + k + ': unbekannter Wert ' + d.status[k]);

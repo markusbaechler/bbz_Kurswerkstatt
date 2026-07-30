@@ -349,8 +349,17 @@
        "If-Match", und Graph antwortet 412, wenn die Datei inzwischen von woanders
        geschrieben wurde — das serialisierte Dossier-Schreiben (controller.dossierSchreiben)
        ist der einzige Aufrufer, der ihn setzt. Der Fehler traegt .status, damit die
-       Warteschlange 412 erkennt, ohne den Meldungstext zu parsen. */
-    ablegen: function (kursId, ordner, datei, text, eTagWert) {
+       Warteschlange 412 erkennt, ohne den Meldungstext zu parsen.
+
+       nurNeu ist optional (Etappe 2, Task 7): bei true UND ohne eTagWert haengt der
+       PUT '?@microsoft.graph.conflictBehavior=fail' an — Graph antwortet dann 409,
+       wenn die Datei zwischen dem Pruefen "gibt es schon?" und diesem Schreiben von
+       woanders ANGELEGT wurde (die Erstanlage-Luecke, die If-Match nicht abdeckt,
+       weil es noch keinen eTag gibt, gegen den es pruefen koennte). Traegt eTagWert
+       bereits einen Wert, hat If-Match Vorrang — nurNeu aendert dann nichts mehr am
+       Query-String. Jeder bestehende Aufrufer ohne nurNeu bleibt unveraendert
+       (einfaches PUT, kein conflictBehavior). */
+    ablegen: function (kursId, ordner, datei, text, eTagWert, nurNeu) {
       return Promise.all([graph.driveId(), graph.kursOrdner(kursId)]).then(function (r) {
         var did = r[0], ord = r[1];
         if (!ord) {
@@ -361,8 +370,9 @@
         return auth.token().then(function (t) {
           var headers = { Authorization: 'Bearer ' + t, 'Content-Type': 'text/plain; charset=utf-8' };
           if (eTagWert) headers['If-Match'] = eTagWert;
+          var query = (nurNeu && !eTagWert) ? '?@microsoft.graph.conflictBehavior=fail' : '';
           return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
-                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content', {
+                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content' + query, {
             method: 'PUT',
             headers: headers,
             body: new Blob([text], { type: 'text/plain;charset=utf-8' })
@@ -1221,7 +1231,18 @@
        Mutator heisst Abbruch — kein PUT, State unveraendert. 412 heisst: jemand
        anderes hat inzwischen geschrieben — einmal frisch lesen und den Mutator ein
        zweites Mal anwenden (nicht endlos, sonst koennte ein staendig schreibender
-       Zweitnutzer diesen Aufruf nie durchlassen). */
+       Zweitnutzer diesen Aufruf nie durchlassen).
+
+       Erstanlage-Schutz (Etappe 2, Task 7): fehlt ein eTag (Datei nie geladen oder
+       noch gar nicht angelegt), gibt es nichts, wogegen If-Match pruefen koennte —
+       ohne Gegenmassnahme koennten zwei Sitzungen gleichzeitig zum ERSTEN Mal ein
+       Dossier fuer denselben Kurs anlegen und sich gegenseitig ueberschreiben
+       (CLAUDE.md „Offen": die Restluecke ausserhalb des behobenen Lost-Update).
+       eTagAlt fehlt genau dann, wenn nurNeu true sein muss — graph.ablegen haengt
+       dann conflictBehavior=fail an, Graph antwortet mit 409, wenn die Datei
+       zwischen Pruefen und Schreiben von woanders angelegt wurde. Die Wiederholung
+       laeuft ueber denselben Mechanismus wie 412: einmal frisch lesen (holt den
+       eTag der fremden Erstanlage), Mutator einmal erneut anwenden. */
     _dossierVersuch: function (kursId, mutator, melde, nochmalErlaubt) {
       var kopie = JSON.parse(JSON.stringify(state.data.dossier[kursId] || root.dossier.neu(kursId)));
       var neu;
@@ -1236,14 +1257,14 @@
       root.dossier.identitaetSetzen(neu, kursObj);
 
       var eTagAlt = state.data.dossierETag[kursId];
-      return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(neu), eTagAlt)
+      return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(neu), eTagAlt, !eTagAlt)
         .then(function (antwort) {
           state.data.dossier[kursId] = neu;
           state.data.dossierETag[kursId] = antwort && antwort.eTag;
           return neu;
         })
         .catch(function (e) {
-          if (e && e.status === 412 && nochmalErlaubt) {
+          if (e && (e.status === 412 || e.status === 409) && nochmalErlaubt) {
             if (melde) melde('Zwischenzeitlich geändert — wird neu gelesen …');
             return controller._dossierNeuLesen(kursId).then(function () {
               return controller._dossierVersuch(kursId, mutator, melde, false);
