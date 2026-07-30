@@ -682,6 +682,20 @@
       Array.prototype.forEach.call(document.querySelectorAll('[name="content-modus"]'), function (r) {
         werte['radio:content-modus:' + r.value] = { checked: !!r.checked, disabled: !!r.disabled };
       });
+      /* Gate-Box-Felder (Fix-Runde 1, Review-Finding "Gate-Box-Felder ueberleben
+         Zwischen-Renders nicht"): EIN gemeinsamer Selektor (data-gate-feld,
+         ansichten.js gateBlock) statt einer eigenen ID-Liste je Feld wie
+         QUELLEN_FORMULAR_IDS — deckt damit automatisch auch die indizierten
+         Felder (offen-wer-N, offen-wann-N, offen-ziel-N, offen-begruendung-N)
+         ab, ohne dass dieser Code eine Obergrenze fuer N kennen muesste.
+         Geschluesselt nach el.id (jedes Gate-Feld traegt eine eigene, in der
+         Ansicht generierte id). Kritisch, weil offenErfassen/offenEntscheiden/
+         offenVerschieben selbst render() aufrufen: wer "Entscheiden" auf einem
+         bestehenden Punkt klickt, waehrend in der Erfassung (offen-was/-wo)
+         schon getippt ist, darf diesen Text nicht verlieren. */
+      Array.prototype.forEach.call(document.querySelectorAll('[data-gate-feld]'), function (el) {
+        if (el.id) werte['gate:' + el.id] = String(el.value == null ? '' : el.value);
+      });
       var aktiv = document.activeElement;
       return {
         werte: werte,
@@ -756,6 +770,22 @@
         if (!alt) return;
         if (alt.checked !== !!r.checked) r.checked = alt.checked;
         if (alt.disabled !== !!r.disabled) r.disabled = alt.disabled;
+      });
+      /* Gate-Box-Felder (Fix-Runde 1): dieselbe Regel wie bei Text
+         ("abweichend UND nicht leer gewinnt") — bewusst auch fuer die zwei
+         Selects der Box (offen-fuer, offen-ziel-N). Ein Select wird hier NICHT
+         gesondert behandelt (anders als Checkbox/Radio mit ihrer
+         Beide-Richtungen-Regel): er hat schlicht nie den leeren Zustand, weil
+         er immer eine echte Option aus dossier.ZIELE traegt — die
+         "nicht leer"-Bedingung ist fuer ihn also nie der einschraenkende Teil,
+         nur die Abweichung selbst zaehlt praktisch. Dieselbe Code-Zeile deckt
+         damit Text- und Select-Felder gleich ab, ohne eine Typ-Fallunterscheidung
+         einzufuehren, die es fuer Selects gar nicht braucht. */
+      Array.prototype.forEach.call(document.querySelectorAll('[data-gate-feld]'), function (el) {
+        if (!el.id) return;
+        var alt = snap.werte['gate:' + el.id];
+        var neu = String(el.value == null ? '' : el.value);
+        if (alt && alt !== neu) el.value = alt;
       });
       /* Ohne das steht nach der Wiederherstellung weiter "8 offen" fuer ein
          Feld, das gerade wieder befuellt wurde (wie beim Tippen, s. briefingFelderZaehlen). */

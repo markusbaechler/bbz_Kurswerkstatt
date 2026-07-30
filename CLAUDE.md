@@ -561,6 +561,13 @@ Graph-Aufruf (Datei lesen/hochladen/löschen, Kursliste) wird nirgends automatis
 `dossier.pruefe()` (Leseweg) weist ein von Hand doppelt eingetragenes Duplikat in der
 `dossier.json` nicht zurück. Beim zweiten Schreibweg (Etappe 2, Gate-Ablauf) mitziehen.
 
+**Dieselbe Asymmetrie gilt für `offen[]`/`entschieden[]` (Etappe 2, Task 5).**
+`dossier.pruefe()` (Leseweg) validiert die beiden Listen nur auf `Array`, nicht strukturell —
+ein von Hand editiertes `dossier.json` mit einem `offen[]`-Eintrag ohne `was`/`wo` oder mit einem
+`fuer` ausserhalb von `dossier.ZIELE` bleibt lesbar. Nur der Schreibweg
+(`offenNeu`/`offenEntscheiden`/`offenVerschieben`) prüft das streng. Bewusst vertagt, wie beim
+Quellen-Duplikatschutz oben.
+
 ## Stand 2026-07-30 — Härtung Etappe 1e, an VL-001 abgenommen
 
 Der Drei-Linsen-Audit (Code · Inhalte · Spec) fand 3 Critical + 10 Important; alle sind
@@ -686,3 +693,26 @@ auskommentiert) hält das fest: ohne sie bleiben alle anderen Tests grün, nur d
 Guard-Tests schlagen fehl (Kommando `node --test`, Beleg im Task-Report). Click-Kette in `app.js`
 nach `quelle-entfernen`: `offen-erfassen` → `controller.offenErfassen(t)`, `offen-entscheiden` →
 `controller.offenEntscheiden(t)`, `offen-verschieben` → `controller.offenVerschieben(t)`.
+
+**Fix-Runde 1 (Review dieses Tasks): die Gate-Box-Felder überleben Zwischen-Renders** — derselbe
+Mechanismus wie beim Briefing-Formular (Etappe 1e, Task 2), nur bisher nicht mitgezogen. Kritisch,
+weil `offenErfassen`/`offenEntscheiden`/`offenVerschieben` selbst `render()` aufrufen: wer
+"Entscheiden" auf einem bestehenden Punkt klickt, während in der Erfassung schon `was`/`wo`
+getippt ist, verlor den Text deterministisch. Jedes Feld der Gate-Box (`ansichten.js` `gateBlock`)
+trägt seither das Attribut `data-gate-feld` — **ein gemeinsamer Selektor statt einer festen
+ID-Liste** wie `QUELLEN_FORMULAR_IDS`, damit `controller._formularSnapshot`/
+`_formularWiederherstellen` auch die indizierten Felder (`offen-wer-N`, `offen-wann-N`,
+`offen-ziel-N`, `offen-begruendung-N`) erfassen, ohne eine Obergrenze für `N` kennen zu müssen.
+Selects (`offen-fuer`, `offen-ziel-N`) laufen durch **dieselbe** Code-Zeile wie Textfelder
+("abweichend UND nicht leer gewinnt") — eigens keine Typ-Fallunterscheidung, weil ein Select nie
+den leeren Zustand kennt (immer eine echte Option aus `dossier.ZIELE`): die
+Nicht-leer-Bedingung ist für ihn nie der einschränkende Teil, praktisch zählt nur die Abweichung.
+Test in `test/formularerhalt.test.js` (Muster der bestehenden Sektionen dort): Snapshot/Restore
+der Gate-Felder inkl. indiziertem Feld, Select-Verhalten, sowie ein Integrationstest über
+`controller.render()`, der die gemeldete Fehlerszene nachstellt. Mutationsprobe (beide neuen
+`[data-gate-feld]`-Schleifen auskommentiert): `node --test test/formularerhalt.test.js` fiel
+genau bei den vier neuen Gate-Box-Tests rot (31 grün/4 rot von 35), danach wiederhergestellt,
+komplette Suite wieder grün.
+
+**Dieselbe Asymmetrie wie beim Quellen-Duplikatschutz gilt für `offen[]`/`entschieden[]`:**
+`dossier.pruefe()` (Leseweg) validiert nur `Array`, nicht strukturell — s. „## Offen" unten.

@@ -456,6 +456,138 @@ test('M-2: Radios bleiben unangetastet, wenn sie mit dem frisch gerenderten Stan
   delete global.document;
 });
 
+/* ---------- Fix-Runde 1: Gate-Box-Felder im Formular-Erhalt ----------
+   Review-Finding (Important): _formularSnapshot/_formularWiederherstellen kannten
+   bisher nur #briefing-felder [data-feld], QUELLEN_FORMULAR_IDS und die
+   content-modus-Radios — die Gate-Box-Felder (offen-was, offen-wo, offen-fuer,
+   offen-wer-N, offen-wann-N, offen-ziel-N, offen-begruendung-N) fehlten. Kritisch,
+   weil offenErfassen/offenEntscheiden/offenVerschieben selbst render() aufrufen:
+   wer "Entscheiden" auf einem bestehenden Punkt klickt, waehrend in der Erfassung
+   schon was/wo getippt ist, verlor den Text deterministisch.
+
+   Fix: EIN gemeinsamer Selektor (data-gate-feld, in ansichten.js gateBlock gesetzt)
+   statt einer festen ID-Liste — deckt automatisch auch die indizierten Felder ab,
+   ohne dass der Mechanismus eine Obergrenze fuer den Index kennen muesste.
+   Selects (offen-fuer, offen-ziel-N) laufen durch DIESELBE Code-Zeile wie
+   Textfelder ("abweichend UND nicht leer gewinnt") — ein Select hat aber nie den
+   leeren Zustand (immer eine echte Option aus dossier.ZIELE), die
+   Nicht-leer-Bedingung ist fuer ihn also nie der einschraenkende Teil. */
+
+function gateFeld(id, wert) {
+  const el = { id: id, value: wert };
+  el.focus = function () { el._fokussiert = true; };
+  return el;
+}
+
+function baueDocumentMitGateFeldern(gateFelder, aktivEl) {
+  return {
+    getElementById: function (id) {
+      return gateFelder.filter(function (el) { return el.id === id; })[0] || null;
+    },
+    querySelector: function () { return null; },
+    querySelectorAll: function (sel) {
+      if (sel === '[data-gate-feld]') return gateFelder;
+      return [];
+    },
+    activeElement: aktivEl || null
+  };
+}
+
+test('Fix-Runde 1: _formularSnapshot liest Gate-Box-Felder ueber [data-gate-feld], inkl. indizierter Felder', () => {
+  const was = gateFeld('offen-was', 'Getippter Punkt');
+  const wer0 = gateFeld('offen-wer-0', 'Markus');
+  const ziel0 = gateFeld('offen-ziel-0', 'schritt-3');
+  global.document = baueDocumentMitGateFeldern([was, wer0, ziel0]);
+
+  const snap = controller._formularSnapshot();
+
+  assert.strictEqual(snap.werte['gate:offen-was'], 'Getippter Punkt');
+  assert.strictEqual(snap.werte['gate:offen-wer-0'], 'Markus');
+  assert.strictEqual(snap.werte['gate:offen-ziel-0'], 'schritt-3');
+  delete global.document;
+});
+
+test('Fix-Runde 1: ein getipptes Gate-Box-Textfeld uebersteht einen Neuaufbau, der es leer zeigt ' +
+  '(genau der gemeldete Fehler: Erfassung waehrend "Entscheiden" auf einem anderen Punkt)', () => {
+  const was = gateFeld('offen-was', 'Getippter Punkt, ungesichert');
+  global.document = baueDocumentMitGateFeldern([was]);
+  const snap = controller._formularSnapshot();
+
+  was.value = '';   /* Neuaufbau (ausgeloest z. B. durch offenEntscheiden woanders) */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(was.value, 'Getippter Punkt, ungesichert',
+    'das getippte offen-was ist beim Neuaufbau verloren gegangen');
+  delete global.document;
+});
+
+test('Fix-Runde 1: ein Select in der Gate-Box (offen-ziel-N) laeuft durch dieselbe Regel wie ein Textfeld — abweichender Wert gewinnt', () => {
+  const ziel0 = gateFeld('offen-ziel-0', 'schritt-5');   /* Person hat bereits umgestellt */
+  global.document = baueDocumentMitGateFeldern([ziel0]);
+  const snap = controller._formularSnapshot();
+
+  ziel0.value = 'schritt-3';   /* Neuaufbau zeigt wieder die Default-Auswahl */
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(ziel0.value, 'schritt-5',
+    'ein Select in der Gate-Box wurde beim Neuaufbau nicht wie ein Textfeld behandelt');
+  delete global.document;
+});
+
+test('Fix-Runde 1: ein leeres Gate-Box-Feld verliert gegen einen gefuellten frisch gerenderten Wert (dieselbe Regel wie bei Text)', () => {
+  const wer0 = gateFeld('offen-wer-0', '');
+  global.document = baueDocumentMitGateFeldern([wer0]);
+  const snap = controller._formularSnapshot();
+
+  wer0.value = 'Aus dem Dossier';
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(wer0.value, 'Aus dem Dossier');
+  delete global.document;
+});
+
+test('controller.render() bewahrt einen getippten Gate-Box-Wert ueber den Neuaufbau hinweg (Integrationstest zum Finding)', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = INHALT;
+  state.data.kurse = KURSE;
+  state.position = { kursId: DBS.kursId, schrittId: 2 };
+  state.data.ordner = { 'DBS-001': null };
+  state.data.dateien = {};
+  state.data.dossier = {};
+  state.data.briefing = {};
+  state.hinweis = null;
+
+  const was = gateFeld('offen-was', 'Getippt, waehrend anderswo auf "Entscheiden" geklickt wurde');
+  const app = {};
+  Object.defineProperty(app, 'innerHTML', {
+    set: function () {
+      /* Ein echter Neuaufbau zeichnet die Gate-Box-Erfassung frisch — leer. */
+      was.value = '';
+    }
+  });
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'app') return app;
+      if (id === 'nav') return { innerHTML: '' };
+      return null;
+    },
+    querySelector: function () { return null; },
+    querySelectorAll: function (sel) { return sel === '[data-gate-feld]' ? [was] : []; },
+    activeElement: null
+  };
+
+  controller.render();
+
+  assert.strictEqual(was.value, 'Getippt, waehrend anderswo auf "Entscheiden" geklickt wurde',
+    'controller.render() hat den getippten Gate-Box-Wert nicht ueber den Neuaufbau hinweg erhalten');
+
+  delete global.document;
+  state.auth.account = null;
+});
+
 /* ---------- Integration: controller.render() selbst erhaelt das Formular ----------
    "render-Äquivalent" reicht laut Brief; hier zusaetzlich der echte Aufruf, mit einem
    document-Mock, dessen innerHTML-Setter den Neuaufbau simuliert: das Feld faellt auf

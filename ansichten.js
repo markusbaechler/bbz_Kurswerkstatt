@@ -547,26 +547,34 @@
       h += '<ul class="gate-liste">' + offen.map(function (e, i) {
         return '<li><span>' + esc(e.was) + ' &mdash; ' + esc(e.wo) + '</span>' +
           '<div class="arow">' +
-            '<input type="text" id="offen-wer-' + i + '" placeholder="wer">' +
-            '<input type="date" id="offen-wann-' + i + '">' +
+            '<input type="text" id="offen-wer-' + i + '" data-gate-feld placeholder="wer">' +
+            '<input type="date" id="offen-wann-' + i + '" data-gate-feld>' +
             '<button class="knopf still" data-action="offen-entscheiden" data-index="' + i +
               '" data-was="' + esc(e.was) + '">Entscheiden</button>' +
           '</div>' +
           '<div class="arow">' +
-            '<select id="offen-ziel-' + i + '">' + ziele.map(function (z) {
+            '<select id="offen-ziel-' + i + '" data-gate-feld>' + ziele.map(function (z) {
               return '<option value="' + esc(z) + '">' + esc(z) + '</option>';
             }).join('') + '</select>' +
-            '<input type="text" id="offen-begruendung-' + i + '" placeholder="Begr&uuml;ndung">' +
+            '<input type="text" id="offen-begruendung-' + i + '" data-gate-feld placeholder="Begr&uuml;ndung">' +
             '<button class="knopf still" data-action="offen-verschieben" data-index="' + i +
               '" data-was="' + esc(e.was) + '">Verschieben</button>' +
           '</div></li>';
       }).join('') + '</ul>';
     }
 
+    /* data-gate-feld (Fix-Runde 1, Review-Finding "Gate-Box-Felder ueberleben
+       Zwischen-Renders nicht"): EIN gemeinsamer Selektor statt einer festen
+       ID-Liste (wie QUELLEN_FORMULAR_IDS) — deckt damit auch die indizierten
+       Felder (offen-wer-N, offen-wann-N, offen-ziel-N, offen-begruendung-N) ab,
+       ohne dass controller._formularSnapshot eine Obergrenze fuer N kennen
+       muesste. s. controller._formularSnapshot/_formularWiederherstellen in
+       app.js fuer die Restaurierungsregel (Selects werden dabei bewusst wie
+       Textfelder behandelt). */
     h += '<div class="formular gate-erfassung">' +
-      '<input type="text" id="offen-was" placeholder="was">' +
-      '<input type="text" id="offen-wo" placeholder="wo (Modul, LZ/EK-ID oder Blatt)">' +
-      '<select id="offen-fuer">' + root.dossier.ZIELE.map(function (z) {
+      '<input type="text" id="offen-was" data-gate-feld placeholder="was">' +
+      '<input type="text" id="offen-wo" data-gate-feld placeholder="wo (Modul, LZ/EK-ID oder Blatt)">' +
+      '<select id="offen-fuer" data-gate-feld>' + root.dossier.ZIELE.map(function (z) {
         return '<option value="' + esc(z) + '"' + (z === adressat ? ' selected' : '') + '>' + esc(z) + '</option>';
       }).join('') + '</select>' +
       '<button class="knopf" data-action="offen-erfassen">Punkt erfassen</button>' +
