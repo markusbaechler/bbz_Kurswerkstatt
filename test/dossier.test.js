@@ -82,3 +82,55 @@ test('quellenDateiname() bereinigt wie der Ablage-Kontrakt es verlangt', () => {
   assert.equal(dossier.quellenDateiname('AHV Merkblatt_2.01 (gültig).pdf'), 'ahv-merkblatt-2-01-gueltig.pdf');
   assert.equal(dossier.quellenDateiname('map.PDF'), 'map.pdf');
 });
+
+/* ---------- Etappe 1b: Link-Quellen (Datei ODER Link) ---------- */
+
+test('quelleNeu() legt eine Link-Quelle an: url + abgerufen, kein datei-Feld', () => {
+  const d = dossier.neu('X');
+  const q = dossier.quelleNeu(d, {
+    titel: 'Ausschreibung SSPA', herausgeber: 'SSPA', stand: '2026',
+    url: 'https://sspa.ch/ausschreibung', abgerufen: '2026-07-30'
+  });
+  assert.equal(q.id, 'Q-001');
+  assert.equal(q.url, 'https://sspa.ch/ausschreibung');
+  assert.equal(q.abgerufen, '2026-07-30');
+  assert.equal('datei' in q, false);
+});
+
+test('quelleNeu() wirft, wenn Datei UND Link angegeben werden', () => {
+  const d = dossier.neu('X');
+  assert.throws(
+    () => dossier.quelleNeu(d, { titel: 'X', stand: '2026', datei: 'x.pdf', url: 'https://x.ch' }),
+    /entweder.*Datei.*Link|entweder.*Link.*Datei/i
+  );
+});
+
+test('quelleNeu() wirft, wenn weder Datei noch Link angegeben werden', () => {
+  const d = dossier.neu('X');
+  assert.throws(
+    () => dossier.quelleNeu(d, { titel: 'X', stand: '2026' }),
+    /Datei.*Link|Link.*Datei/i
+  );
+});
+
+test('quelleNeu() wirft bei einer URL ohne http(s)', () => {
+  const d = dossier.neu('X');
+  assert.throws(
+    () => dossier.quelleNeu(d, { titel: 'X', stand: '2026', url: 'sspa.ch/seite', abgerufen: '2026-07-30' }),
+    /http/i
+  );
+});
+
+test('pruefe() verlangt bei einer Link-Quelle das Abrufdatum', () => {
+  const d = dossier.neu('X');
+  d.quellen.push({ id: 'Q-001', titel: 'X', stand: '2026', url: 'https://x.ch' });  /* abgerufen fehlt */
+  const p = dossier.pruefe(d);
+  assert.ok(p.some(x => /abgerufen/.test(x)), 'pruefe() meldet das fehlende Abrufdatum nicht');
+});
+
+test('positivliste() ignoriert Link-Quellen — nur Dateien gehen in die Leseliste', () => {
+  const d = dossier.neu('X');
+  dossier.quelleNeu(d, { titel: 'A', stand: '2025', datei: 'a.pdf' });
+  dossier.quelleNeu(d, { titel: 'B', stand: '2026', url: 'https://b.ch', abgerufen: '2026-07-30' });
+  assert.deepEqual(dossier.positivliste(d), ['a.pdf']);
+});

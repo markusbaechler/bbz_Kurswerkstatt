@@ -62,9 +62,16 @@
       if (dossier.MODI.indexOf(d.content_modus) < 0) p.push('content_modus unbekannt: ' + d.content_modus);
       if (!Array.isArray(d.quellen)) p.push('quellen ist keine Liste');
       else d.quellen.forEach(function (q, n) {
-        ['id', 'titel', 'stand', 'datei'].forEach(function (f) {
+        ['id', 'titel', 'stand'].forEach(function (f) {
           if (!q || !String(q[f] || '').trim()) p.push('Quelle ' + (n + 1) + ': ' + f + ' fehlt');
         });
+        var hatDatei = !!(q && String(q.datei || '').trim());
+        var hatUrl = !!(q && String(q.url || '').trim());
+        if (hatDatei === hatUrl) {
+          p.push('Quelle ' + (n + 1) + ': entweder datei oder url');
+        } else if (hatUrl && !String((q || {}).abgerufen || '').trim()) {
+          p.push('Quelle ' + (n + 1) + ': abgerufen fehlt');
+        }
       });
       if (!d.status || typeof d.status !== 'object') p.push('status fehlt');
       else Object.keys(d.status).forEach(function (k) {
@@ -104,26 +111,43 @@
 
     /* Datei ablegen + Dossier-Eintrag ist EIN Vorgang (Spec §5.6) — dieser Helfer
        ist die Dossier-Haelfte davon und weist Unvollstaendiges ab, bevor etwas
-       hochgeladen wird. */
+       hochgeladen wird. Eine Quelle ist Datei ODER Link (Entscheid Markus,
+       2026-07-30): Links tragen statt datei ein url-Feld plus das Abrufdatum
+       (abgerufen kommt fertig herein — kein Date in dossier.js), eine Kopie ist
+       keine Pflicht. */
     quelleNeu: function (d, q) {
-      var fehlt = ['titel', 'stand', 'datei'].filter(function (f) {
-        return !String((q || {})[f] || '').trim();
+      q = q || {};
+      var hatDatei = !!String(q.datei || '').trim();
+      var hatUrl = !!String(q.url || '').trim();
+      if (hatDatei && hatUrl) throw new Error('Quelle: entweder Datei oder Link, nicht beides');
+      if (!hatDatei && !hatUrl) throw new Error('Quelle: Datei oder Link angeben');
+      var fehlt = ['titel', 'stand'].filter(function (f) {
+        return !String(q[f] || '').trim();
       });
       if (fehlt.length) throw new Error('Quelle unvollständig: ' + fehlt.join(', ') + ' fehlt');
       var e = {
         id: dossier.naechsteQuellenId(d),
         titel: String(q.titel).trim(),
         herausgeber: String(q.herausgeber || '').trim(),
-        stand: String(q.stand).trim(),
-        datei: String(q.datei).trim()
+        stand: String(q.stand).trim()
       };
+      if (hatUrl) {
+        var url = String(q.url).trim();
+        if (!/^https?:\/\//.test(url)) throw new Error('Link muss mit http:// oder https:// beginnen');
+        e.url = url;
+        e.abgerufen = String(q.abgerufen || '').trim();
+      } else {
+        e.datei = String(q.datei).trim();
+      }
       d.quellen.push(e);
       return e;
     },
 
-    /* Die Positivliste: genau diese Dateien liest der Auftrag, keine andere. */
+    /* Die Positivliste: genau diese Dateien liest der Auftrag, keine andere.
+       Link-Quellen tragen kein datei-Feld und bleiben aussen vor — Auftraege
+       behandeln Links separat (direkt aufrufen, nicht als Ablage lesen). */
     positivliste: function (d) {
-      return ((d && d.quellen) || []).map(function (q) { return q.datei; });
+      return ((d && d.quellen) || []).map(function (q) { return q.datei; }).filter(Boolean);
     },
 
     /* Der Mensch tippt keinen Dateinamen — die Bereinigung uebernimmt die App.
