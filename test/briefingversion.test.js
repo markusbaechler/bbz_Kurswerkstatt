@@ -131,3 +131,39 @@ test('der Ladevorgang wird auf Schritt 1 UND 2 angestossen', () => {
   assert.ok(/p\.schrittId\) === '2'/.test(stelle),
     'Schritt 2 stoesst das Nachladen nicht mehr an');
 });
+
+/* ---------- Fix-Runde 1, Review-Finding 3 (I4-Restluecke) ----------
+   graph.dateiLesen liefert null sowohl bei "Datei fehlt" als auch bei jedem stillen
+   Lesefehler (bewusst so dokumentiert, bleibt unangetastet). Das kann in briefingNachladen
+   NUR eintreten, wenn geltendeDatei schon einen Namen gefunden hatte (sonst waere der Wert
+   oben schon '' gewesen) — also ein echter Fehler, kein "nichts gefunden". Vorher landete
+   dieser Fall unbehandelt als state.data.briefing[kursId] = null, dieselbe Sticky-Falle wie
+   bei I1/I4: die Instruktionsflaeche zeigte fuer immer "wird gelesen", kein Ansichtswechsel
+   konnte je wieder nachladen. */
+const { controller, state, graph } = require('../app.js');
+
+test('geltendeDatei findet einen Namen, aber dateiLesen liefert null: state faellt auf undefined zurueck, sichtbare Fehlermeldung (Fix-Runde 1, Finding 3)', async () => {
+  state.position = { bereich: 'arbeiten', kursId: 'VL-001', schrittId: 1, werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  state.data.inhalt = INHALT;
+  state.data.briefing = {};
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  global.document = undefined;
+
+  graph.ordnerInhalt = function () { return Promise.resolve([{ name: 'VL-001_briefing_final.md' }]); };
+  graph.dateiLesen = function () { return Promise.resolve(null); };   /* Name gefunden, aber Inhalt nicht lesbar */
+
+  /* briefingNachladen gibt seine Promise-Kette nicht zurueck (anders als dossierNachladen) —
+     ein await auf den Aufruf selbst wartet nicht auf die Kette, deshalb hier wie in
+     ablegen.test.js ueber setTimeout abgewartet. */
+  controller.briefingNachladen('VL-001');
+  await new Promise(function (r) { setTimeout(r, 20); });
+
+  assert.strictEqual(state.data.briefing['VL-001'], undefined,
+    'sticky null (I4-Restluecke): ein erneuter Ansichtswechsel koennte nie wieder nachladen');
+  assert.match(state.fehlerHinweis || '', /nicht gelesen werden/,
+    'kein sichtbarer Hinweis — der Fehler blieb (wie vor dem Fix) unsichtbar');
+
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});

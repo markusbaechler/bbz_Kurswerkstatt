@@ -455,6 +455,59 @@ test('state.fehlerHinweis zeigt die bestehende Fehler-Optik OHNE Haekchen (M3)',
   state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
 });
 
+/* ---------- Fix-Runde 1, Review-Finding 1 ----------
+   Vorher wurde die meldung-Variable VOR der Bereichs-Weiche berechnet und dabei
+   state.hinweis/state.fehlerHinweis sofort konsumiert (auf null gesetzt) — auch
+   wenn p.bereich === 'nachschlagen' war und die Ansicht die Meldung gar nicht
+   rendert. Eine Meldung, die waehrend Nachschlagen entstand (oder einfach noch
+   stand, als dorthin gewechselt wurde), war dann endgueltig verschluckt: weder
+   angezeigt noch beim naechsten Wechsel zurueck in eine Arbeiten-Ansicht noch
+   vorhanden. Gewaehlte (kleinere) Loesung: die Berechnung/Konsumierung hinter
+   die Nachschlagen-Weiche ziehen, statt Nachschlagen zusaetzlich rendern zu
+   lassen — Nachschlagen hat keine schreibenden Aktionen, die ueberhaupt eine
+   Meldung ausloesen koennten, ein Anzeige-Pfad dort waere totes Gewicht. */
+test('bereich=nachschlagen: state.hinweis geht beim Rendern nicht verloren (Fix-Runde 1, Finding 1)', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = INHALT;
+  state.data.kurse = KURSE;
+  state.position = { bereich: 'nachschlagen', kursId: null, schrittId: null, werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  state.hinweis = 'Sollte nicht verschluckt werden';
+  state.fehlerHinweis = null;
+
+  const html = renderErfassen();
+
+  const nochImState = state.hinweis === 'Sollte nicht verschluckt werden';
+  const angezeigt = html.indexOf('Sollte nicht verschluckt werden') >= 0;
+  assert.ok(nochImState || angezeigt,
+    'die Meldung ist weder angezeigt noch im State erhalten geblieben — endgueltig verschluckt');
+
+  state.auth.account = null;
+  state.hinweis = null;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
+test('bereich=nachschlagen: state.fehlerHinweis geht beim Rendern ebenfalls nicht verloren (Fix-Runde 1, Finding 1)', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = INHALT;
+  state.data.kurse = KURSE;
+  state.position = { bereich: 'nachschlagen', kursId: null, schrittId: null, werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  state.hinweis = null;
+  state.fehlerHinweis = 'Sollte ebenfalls nicht verschluckt werden';
+
+  const html = renderErfassen();
+
+  const nochImState = state.fehlerHinweis === 'Sollte ebenfalls nicht verschluckt werden';
+  const angezeigt = html.indexOf('Sollte ebenfalls nicht verschluckt werden') >= 0;
+  assert.ok(nochImState || angezeigt,
+    'die Fehlermeldung ist weder angezeigt noch im State erhalten geblieben — endgueltig verschluckt');
+
+  state.auth.account = null;
+  state.fehlerHinweis = null;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
 test('Erfolg (state.hinweis) UND Fehler (state.fehlerHinweis) koennen gleichzeitig stehen und bleiben unterscheidbar (M3)', () => {
   state.auth.account = { name: 'Test' };
   state.data.inhalt = INHALT;

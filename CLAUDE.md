@@ -346,7 +346,27 @@ in den „Kein freigegebenes Briefing"-Zweig.
 scheiterte** (Etappe 1e Task 4, Audit I10): die Meldung nennt den (bereinigten) Dateinamen und
 sagt, dass ein erneutes „Quelle erfassen" mit derselben Datei sicher ist — `graph.hochladen` legt
 unter demselben, deterministisch bereinigten Namen ab (Überschreiben, `conflictBehavior: replace`
-bei der Ladesitzung), ein zweiter Versuch erzeugt kein Duplikat und keine zweite Waise.
+bei der Ladesitzung), ein zweiter Versuch erzeugt kein Duplikat und keine zweite Waise. Diese
+Meldung steht seit Fix-Runde 1 (Review-Finding 2) zusätzlich in `state.fehlerHinweis`, nicht mehr
+nur im lokalen `#quelle-melde`-Knoten — ein Zwischen-Render kann diesen Knoten aushängen, bevor
+die Person ihn liest; `state.fehlerHinweis` lebt im State und übersteht das.
+
+**Fix-Runde 1 (Review dieses Tasks, drei Findings):**
+1. `meldung` (hinweis/fehlerHinweis) wurde bisher **vor** der Nachschlagen-Weiche berechnet und
+   dabei konsumiert (auf `null` gesetzt) — eine Meldung, die anlag, während `bereich ===
+   'nachschlagen'` war, verschwand endgültig, ohne je gezeigt worden zu sein (eigene Regression
+   der I2-Latte). Fix: die Berechnung/Konsumierung steht jetzt **hinter** der
+   Nachschlagen-Weiche, betrifft also nur noch die Arbeiten-Ansichten, die sie auch rendern.
+   Gewählt statt der Alternative „Nachschlagen zusätzlich anzeigen lassen", weil Nachschlagen
+   keine schreibende Aktion kennt, die überhaupt eine Meldung auslösen könnte — ein Anzeige-Pfad
+   dort wäre totes Gewicht.
+2. Siehe `quelleErfassen`-Absatz oben (Audit I10) — `state.fehlerHinweis` ergänzt, `sag()` bleibt.
+3. `briefingNachladen` behandelte im **erfolgreichen** Zweig ein `text === null` (Name gefunden,
+   aber `graph.dateiLesen` liefert `null` — dessen dokumentiertes Verhalten bei jedem stillen
+   Lesefehler, unverändert) bisher wie ein normales Ergebnis: `state.data.briefing[kursId]`
+   blieb bei `null` hängen, dieselbe Sticky-Falle wie vor I1/I4. Jetzt derselbe Mechanismus wie
+   im `.catch`: `state.fehlerHinweis` setzen, rendern, danach auf `undefined` zurückfallen.
+   `graph.dateiLesen` selbst bleibt unverändert.
 
 ## Stand 2026-07-22
 

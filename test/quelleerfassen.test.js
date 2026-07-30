@@ -136,11 +136,20 @@ test('mit Datei und Feldern: Upload nach 03_content/quellen mit bereinigtem Name
    schlaegt fehl), liegt die Datei bereits in 03_content/quellen, ohne dass das Dossier von
    ihr weiss. Die Meldung muss den Dateinamen nennen und sagen, dass ein erneutes
    "Quelle erfassen" mit derselben Datei gefahrlos ist (graph.hochladen legt unter demselben,
-   bereinigten Namen ab und ueberschreibt — kein Duplikat, keine zweite Waise). */
+   bereinigten Namen ab und ueberschreibt — kein Duplikat, keine zweite Waise).
+
+   Fix-Runde 1, Review-Finding 2: die lokale sag()-Meldung schreibt in den beim Klick
+   eingefangenen #quelle-melde-Knoten — ein Zwischen-Render (z. B. ein spaeter eintreffendes
+   dossierNachladen/briefingNachladen aus derselben Ansicht) haengt diesen Knoten aus, die
+   Waisen-Datei-Meldung erreicht dann niemanden mehr. Seither traegt zusaetzlich
+   state.fehlerHinweis dieselbe Meldung — der lebt im State, nicht im DOM-Knoten, und
+   ueberlebt damit jeden Zwischen-Render. */
 test('Upload gelingt, Dossier-Ablage scheitert danach: die Meldung nennt die Datei und sagt, ein erneuter Versuch sei sicher (I10)', async () => {
   state.position.kursId = 'DBS-001';
   state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
     quellen: [], status: {}, offen: [], entschieden: [] } };
+  state.hinweis = null;
+  state.fehlerHinweis = null;
   const melde = els({ titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025', datei: { name: 'SSPA Map.pdf' } });
   let hochgeladen = false;
   graph.hochladen = function () { hochgeladen = true; return Promise.resolve(); };
@@ -155,6 +164,13 @@ test('Upload gelingt, Dossier-Ablage scheitert danach: die Meldung nennt die Dat
   assert.match(melde.textContent, /erneutes .Quelle erfassen. mit derselben Datei ist sicher/,
     'die Meldung beruhigt nicht, dass ein erneuter Versuch mit derselben Datei gefahrlos ist');
   assert.strictEqual(knopf.disabled, false, 'der Knopf blieb gesperrt — ein erneuter Versuch waere nicht moeglich');
+
+  /* Fix-Runde 1, Finding 2: dieselbe Meldung muss AUCH in state.fehlerHinweis stehen — der
+     lokale melde-Knoten allein reicht nicht, weil ein Zwischen-Render ihn aushaengen kann. */
+  assert.match(state.fehlerHinweis || '', /sspa-map\.pdf/,
+    'state.fehlerHinweis nennt nicht den Dateinamen — die Meldung haengt nur am DOM-Knoten');
+  assert.match(state.fehlerHinweis || '', /erneutes .Quelle erfassen. mit derselben Datei ist sicher/,
+    'state.fehlerHinweis enthaelt nicht den Retry-sicher-Satz');
   delete global.document;
 });
 

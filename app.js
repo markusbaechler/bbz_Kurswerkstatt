@@ -749,12 +749,28 @@
       }
 
       var inh = state.data.inhalt, p = state.position;
-      /* EINE Stelle fuer beide Meldungsarten, vor der Ansichts-Weiche berechnet und
-         in ALLEN Arbeiten-Ansichten vorangestellt (Kursliste, Kursansicht, Schritt) —
-         zuvor stand der Block nur im Schritt-Zweig, ein Hinweis aus der Kursliste
-         oder Kursansicht heraus (z. B. dossierNachladen von dort) verschwand
-         stumm (I2, Etappe 1e Task 4). Nachschlagen bleibt bewusst ohne, dort gibt
-         es keine schreibenden Aktionen, die eine Meldung ausloesen koennten.
+      if (!inh) { controller.setz('<p class="lead">Inhalte werden geladen &hellip;</p>'); return; }
+
+      if (p.bereich === 'nachschlagen') {
+        /* meldung wird NICHT hier oben berechnet (Fix-Runde 1, Review-Finding 1):
+           vorher wurden state.hinweis/state.fehlerHinweis VOR dieser Weiche
+           konsumiert (auf null gesetzt), auch wenn die Ansicht "nachschlagen"
+           sie gar nicht rendert — die Meldung war dann endgueltig verschluckt,
+           statt wenigstens beim naechsten Wechsel zurueck in eine Arbeiten-
+           Ansicht zu erscheinen. Jetzt bleibt sie in Nachschlagen unangetastet
+           im State stehen, bis eine Ansicht sie tatsaechlich zeigt. */
+        controller.setz(root.ansichten.nachschlagen(inh, p.werk));
+        return;
+      }
+
+      /* EINE Stelle fuer beide Meldungsarten, erst NACH der Nachschlagen-Weiche
+         berechnet und in ALLEN Arbeiten-Ansichten vorangestellt (Kursliste,
+         Kursansicht, Schritt) — zuvor stand der Block nur im Schritt-Zweig, ein
+         Hinweis aus der Kursliste oder Kursansicht heraus (z. B. dossierNachladen
+         von dort) verschwand stumm (I2, Etappe 1e Task 4). Nachschlagen bleibt
+         bewusst ohne, dort gibt es keine schreibenden Aktionen, die eine Meldung
+         ausloesen koennten — s. Kommentar oben, warum die Berechnung dafuer
+         extra hinter diese Weiche gezogen wurde.
          Zwei getrennte Felder statt einem (M3): state.hinweis ist Erfolg (gruen,
          Haekchen), state.fehlerHinweis eine fehlgeschlagene Aktion (rot, bestehende
          .klemmt-Optik wie beim Ablage-Fehler) — vorher trugen auch Fehlermeldungen
@@ -769,11 +785,8 @@
         meldung += '<div class="klemmt">' + esc(state.fehlerHinweis) + '</div>';
         state.fehlerHinweis = null;
       }
-      if (!inh) { controller.setz('<p class="lead">Inhalte werden geladen &hellip;</p>'); return; }
 
-      if (p.bereich === 'nachschlagen') {
-        controller.setz(root.ansichten.nachschlagen(inh, p.werk));
-      } else if (p.schrittId) {
+      if (p.schrittId) {
         var k = nav.kurs();
         var ab = root.inhalt.ablageVon(inh, p.schrittId, k ? k.kursId : '');
         var ordn = k ? state.data.ordner[k.kursId] : null;
@@ -858,6 +871,25 @@
           return graph.dateiLesen(kursId, ordner, name);
         })
         .then(function (text) {
+          /* graph.dateiLesen liefert null sowohl bei 404 als auch bei jedem
+             stillen Lesefehler (bewusst laxer als dateiLesenGenau, s. dessen
+             Kommentar) — das kann hier nur eintreten, wenn geltendeDatei bereits
+             einen Namen gefunden hatte (sonst waere text oben schon '' gewesen).
+             Also KEIN "nichts gefunden", sondern ein echter Fehler: dieselbe
+             Behandlung wie im aeusseren .catch (Fix-Runde 1, Review-Finding 3) —
+             sichtbare Fehlermeldung, danach (nach dem Rendern) Reset auf
+             undefined, damit kein sticky null/[FEHLT] entsteht und der naechste
+             Ansichtswechsel es erneut versucht. graph.dateiLesen selbst bleibt
+             unangetastet — andere Aufrufer verlassen sich auf sein Verhalten. */
+          if (text === null) {
+            state.fehlerHinweis = 'Briefing konnte nicht gelesen werden — Seite neu laden.';
+            var pFehler = String(state.position.schrittId);
+            if (state.position.kursId === kursId && (pFehler === '1' || pFehler === '2')) {
+              controller.render();
+            }
+            state.data.briefing[kursId] = undefined;
+            return;
+          }
           state.data.briefing[kursId] = text;
           var p = String(state.position.schrittId);
           if (state.position.kursId === kursId && (p === '1' || p === '2')) {
@@ -1158,8 +1190,19 @@
         })
         .catch(function (e) {
           if (hochgeladen) {
-            sag(name + ' wurde hochgeladen, aber nicht im Dossier erfasst: ' + (e.message || e) +
-              ' — erneutes „Quelle erfassen“ mit derselben Datei ist sicher.');
+            /* state.fehlerHinweis statt/zusaetzlich zu sag() (Fix-Runde 1, Review-
+               Finding 2): sag() schreibt in den beim Klick eingefangenen
+               #quelle-melde-Knoten — haengt ein Zwischen-Render diesen aus (z. B.
+               ein spaeter eintreffendes briefingNachladen/dossierNachladen aus
+               derselben Ansicht), erreicht die Waisen-Datei-Meldung niemanden
+               mehr. state.fehlerHinweis lebt im State, nicht im DOM-Knoten, und
+               wird von controller.render() ueber den globalen Meldungsblock
+               gezeigt (I2/M3) — deshalb hier explizit rendern, nicht nur sag(). */
+            var text = name + ' wurde hochgeladen, aber nicht im Dossier erfasst: ' + (e.message || e) +
+              ' — erneutes „Quelle erfassen“ mit derselben Datei ist sicher.';
+            sag(text);
+            state.fehlerHinweis = text;
+            controller.render();
           } else {
             sag(String(e.message || e));
           }
