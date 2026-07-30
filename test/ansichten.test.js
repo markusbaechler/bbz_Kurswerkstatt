@@ -79,6 +79,49 @@ test('ein unbekannter Kurs erzeugt eine Meldung statt einer Ausnahme', () => {
   assert.ok(/Nicht gefunden/.test(ansichten.einKurs(INHALT, null)));
 });
 
+/* ---------- Quellenverzeichnis (Etappe 1b) ---------- */
+
+test('die Kursansicht zeigt das Quellenverzeichnis, wenn ein Dossier geladen ist', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025', datei: 'sspa.pdf' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const h = ansichten.einKurs(INHALT, DBS, props);
+  assert.match(h, /Quellenverzeichnis/);
+  assert.match(h, /Q-001/);
+});
+
+test('ohne geladenes Dossier bleibt das Quellenverzeichnis in der Kursansicht weg', () => {
+  const h = ansichten.einKurs(INHALT, DBS, {});
+  assert.doesNotMatch(h, /Quellenverzeichnis/);
+});
+
+test('eine Link-Quelle im Verzeichnis wird ein escapetes <a href>, kein Dateitext', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'Sch"one Seite', herausgeber: '', stand: '2026',
+                url: 'https://x.ch/pfad?a="b"', abgerufen: '2026-07-30' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const h = ansichten.einKurs(INHALT, DBS, props);
+  assert.match(h, /<a href="https:\/\/x\.ch\/pfad\?a=&quot;b&quot;" target="_blank" rel="noopener">/);
+  assert.doesNotMatch(h, /<a href="https:\/\/x\.ch\/pfad\?a="b""/, 'href nicht escaped');
+  assert.match(h, /Sch&quot;one Seite/);
+});
+
+test('Schritt 3 zeigt dasselbe Quellenverzeichnis, lesend', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025', datei: 'sspa.pdf' }],
+    status: {}, offen: [], entschieden: []
+  } };
+  const h = ansichten.einSchritt(INHALT, DBS, 3, null, props);
+  assert.match(h, /Quellenverzeichnis/);
+  assert.match(h, /Q-001/);
+  assert.doesNotMatch(h, /data-action="quelle-erfassen"/, 'Schritt 3 erfasst nicht, nur Schritt 1');
+});
+
 /* ---------- Ein Schritt ---------- */
 
 test('der Kopf nennt Nummer und Namen', () => {

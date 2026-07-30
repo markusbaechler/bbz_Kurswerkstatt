@@ -319,6 +319,7 @@
     return '<div class="laufkarte">' + schriftfeld(inh, kurs, null) +
         kette(inh, kurs, null) + legende(true) + '</div>' +
       ((lage && lage.ordnerFehlt) ? ohneOrdner(inh, kurs) : '') +
+      ((lage && lage.dossier) ? quellenVerzeichnisBlock(lage.dossier) : '') +
       (naechster ? '<div class="card naechst">' +
         '<span class="eyebrow">Als N&auml;chstes dran</span>' +
         '<h3>Schritt ' + esc(naechster.id) + ' &middot; ' + esc(naechster.nm) + '</h3>' +
@@ -399,6 +400,36 @@
     return h;
   }
 
+  /* ---------- Das Quellenverzeichnis ----------
+     Eine Quelle pro Begriff: dieser Builder rendert die Tabelle, egal ob er aus
+     dem Erfassungs-Formular (Schritt 1), der Kursansicht oder Schritt 3 kommt —
+     erfasst wird nur in Schritt 1, sichtbar ist es an allen drei Stellen
+     (Entscheid Markus, 2026-07-30). Bei einer Datei steht der reine Dateiname
+     (der SharePoint-Ordnerlink existiert nur in der Schrittansicht); bei einem
+     Link ein <a>, esc() auch im href-Attribut — der Wert kommt vom Menschen. */
+  function quellenVerzeichnis(d) {
+    var ql = (d && d.quellen) || [];
+    if (!ql.length) return '<p class="hinweis-leise">Noch keine Quellen erfasst.</p>';
+    var h = '<div class="tblwrap"><table class="tbl"><tr><th>ID</th><th>Titel</th><th>Stand</th><th>Quelle</th></tr>';
+    ql.forEach(function (q) {
+      var quelle = q.url
+        ? '<a href="' + esc(q.url) + '" target="_blank" rel="noopener">' + esc(q.url) + '</a>'
+        : esc(q.datei);
+      h += '<tr><td>' + esc(q.id) + '</td><td>' + esc(q.titel) +
+           (q.herausgeber ? ' (' + esc(q.herausgeber) + ')' : '') + '</td><td>' +
+           esc(q.stand) + '</td><td>' + quelle + '</td></tr>';
+    });
+    h += '</table></div>';
+    return h;
+  }
+
+  /* Der Block fuer die lesenden Stellen (Kursansicht, Schritt 3) — mit eigener
+     Ueberschrift, sonst gleicher Inhalt wie im Schritt-1-Formular. */
+  function quellenVerzeichnisBlock(d) {
+    return '<div class="box" id="quellenverzeichnis"><h3>Quellenverzeichnis</h3>' +
+           quellenVerzeichnis(d) + '</div>';
+  }
+
   /* ---------- Der Quellen-Block (Schritt 1) ----------
      Ablegen und Dossier-Eintrag sind EIN Vorgang (Spec §5.6) — hier steht nur die
      Erfassung dafuer, die Aktion selbst macht controller.quelleErfassen in app.js. */
@@ -408,22 +439,14 @@
     h += '<h3>Fachquellen</h3>';
     h += '<p class="hinweis-leise">Massgebende Quellen &mdash; sie werden nach 03_content/quellen/ ' +
          'gelegt und im Dossier eingetragen, in einem Zug. Altmaterial geh&ouml;rt nach 00_input, nicht hierher.</p>';
-    var ql = (d && d.quellen) || [];
-    if (ql.length) {
-      h += '<div class="tblwrap"><table class="tbl"><tr><th>ID</th><th>Titel</th><th>Stand</th><th>Datei</th></tr>';
-      ql.forEach(function (q) {
-        h += '<tr><td>' + esc(q.id) + '</td><td>' + esc(q.titel) +
-             (q.herausgeber ? ' (' + esc(q.herausgeber) + ')' : '') + '</td><td>' +
-             esc(q.stand) + '</td><td>' + esc(q.datei) + '</td></tr>';
-      });
-      h += '</table></div>';
-    } else {
-      h += '<p class="hinweis-leise">Noch keine Quellen erfasst.</p>';
-    }
+    h += quellenVerzeichnis(d);
     h += '<label>Titel <input id="quelle-titel" type="text"></label>';
     h += '<label>Herausgeber <input id="quelle-herausgeber" type="text"></label>';
     h += '<label>Stand <input id="quelle-stand" type="text" placeholder="z. B. 2025 oder 2026-01-01"></label>';
     h += '<label>Datei <input id="quelle-datei" type="file"></label>';
+    h += '<label>Link (URL) <input id="quelle-url" type="text"></label>';
+    h += '<p class="hinweis-leise">Datei ODER Link — massgebende Rechtstexte als Datei (PDF), ' +
+         'Links für Ausschreibungen und Referenzseiten.</p>';
     h += '<button class="knopf" data-action="quelle-erfassen">Quelle erfassen</button>';
     h += '<span class="hinweis-leise" id="quelle-melde" hidden></span>';
     var modus = (d && d.content_modus) || 'quellengestuetzt';
@@ -510,6 +533,12 @@
        Rueckfragen ohne Erkenntnis. Was ausgefuellt ist, geht mit dem Masterprompt
        mit; was leer bleibt, landet dort als offener Entscheid. */
     if (String(schrittId) === '1') h += briefingFormular(kurs, ablageDaten);
+
+    /* Erfasst wird nur in Schritt 1 — sichtbar auch in Schritt 3, damit hier
+       geprueft werden kann, was die Positivliste des Auftrags enthaelt. */
+    if (String(schrittId) === '3' && ablageDaten.dossier) {
+      h += quellenVerzeichnisBlock(ablageDaten.dossier);
+    }
 
     /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
        nicht hinter den Leitplanken. Der Masterprompt zuerst. */
