@@ -42,7 +42,12 @@
                  variante: null, weg: null },
     laden:     false,
     fehler:    null,
-    hinweis:   null
+    hinweis:   null,
+    /* Getrennt von hinweis (M3, Etappe 1e Task 4): hinweis ist eine erfolgreiche
+       Aktion (gruen, Haekchen), fehlerHinweis eine fehlgeschlagene (rot, .klemmt-
+       Optik) — beide werden in _renderAufbau in EINEM Block vor der Ansicht
+       gerendert und dort je einzeln konsumiert (auf null gesetzt). */
+    fehlerHinweis: null
   };
 
   /* ---------- helpers ---------- */
@@ -744,10 +749,25 @@
       }
 
       var inh = state.data.inhalt, p = state.position;
+      /* EINE Stelle fuer beide Meldungsarten, vor der Ansichts-Weiche berechnet und
+         in ALLEN Arbeiten-Ansichten vorangestellt (Kursliste, Kursansicht, Schritt) —
+         zuvor stand der Block nur im Schritt-Zweig, ein Hinweis aus der Kursliste
+         oder Kursansicht heraus (z. B. dossierNachladen von dort) verschwand
+         stumm (I2, Etappe 1e Task 4). Nachschlagen bleibt bewusst ohne, dort gibt
+         es keine schreibenden Aktionen, die eine Meldung ausloesen koennten.
+         Zwei getrennte Felder statt einem (M3): state.hinweis ist Erfolg (gruen,
+         Haekchen), state.fehlerHinweis eine fehlgeschlagene Aktion (rot, bestehende
+         .klemmt-Optik wie beim Ablage-Fehler) — vorher trugen auch Fehlermeldungen
+         (z. B. "Dossier konnte nicht gelesen werden") das gruene Haekchen von
+         state.hinweis, als waeren sie ein Erfolg. */
       var meldung = '';
       if (state.hinweis) {
-        meldung = '<div class="hinweis"><b>&#10003;</b>' + esc(state.hinweis) + '</div>';
+        meldung += '<div class="hinweis"><b>&#10003;</b>' + esc(state.hinweis) + '</div>';
         state.hinweis = null;
+      }
+      if (state.fehlerHinweis) {
+        meldung += '<div class="klemmt">' + esc(state.fehlerHinweis) + '</div>';
+        state.fehlerHinweis = null;
       }
       if (!inh) { controller.setz('<p class="lead">Inhalte werden geladen &hellip;</p>'); return; }
 
@@ -794,7 +814,7 @@
         }
       } else if (p.kursId) {
         var kk = nav.kurs();
-        controller.setz(root.ansichten.einKurs(inh, kk, {
+        controller.setz(meldung + root.ansichten.einKurs(inh, kk, {
           ordnerFehlt: kk ? state.data.ordner[kk.kursId] === null : false,
           dossier: kk ? (state.data.dossier[kk.kursId] || null) : null
         }));
@@ -804,7 +824,7 @@
            Schritt 1 laengst ein Dossier abgelegt hat. */
         if (kk && state.data.ordner[kk.kursId]) controller.dossierNachladen(kk.kursId);
       } else {
-        controller.setz(root.ansichten.alleKurse(state.data.kurse));
+        controller.setz(meldung + root.ansichten.alleKurse(state.data.kurse));
       }
     },
 
@@ -821,7 +841,11 @@
 
     /* Das freigegebene Briefing aus Schritt 1 lesen — es geht in die
        Projekt-Instruktionen von Schritt 2 ein. undefined = noch nicht nachgesehen,
-       null = nachgesehen und nicht da. */
+       null = wird gerade nachgesehen (verhindert Doppelabruf, waehrend der Aufruf
+       laeuft) — leerer String = nachgesehen und nichts gefunden (I4, Etappe 1e
+       Task 4: null und '' duerfen die Instruktionsflaeche nicht gleich anzeigen,
+       sonst zeigt sie nach einem echten "nichts gefunden" fuer immer "wird
+       gelesen" statt des Hinweises auf das fehlende Briefing). */
     briefingNachladen: function (kursId) {
       if (state.data.briefing[kursId] !== undefined) return;
       var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['1'] || {};
@@ -830,7 +854,7 @@
       graph.ordnerInhalt(kursId, ordner)
         .then(function (dateien) {
           var name = root.inhalt.geltendeDatei(dateien, kursId, e.lieferobjekt || 'briefing');
-          if (!name) return null;
+          if (!name) return '';
           return graph.dateiLesen(kursId, ordner, name);
         })
         .then(function (text) {
@@ -840,7 +864,21 @@
             controller.render();
           }
         })
-        .catch(function () {});
+        .catch(function () {
+          /* Sticky null waere hier derselbe Fehler wie beim Dossier (I1/I4): ohne
+             Reset zeigt die Instruktionsflaeche dauerhaft "wird gelesen", und ein
+             erneuter Versuch (naechster Ansichtswechsel) waere unmoeglich. Bisher
+             stand hier gar nichts — ein Netzfehler blieb komplett unsichtbar.
+             Reset ERST nach dem Rendern (wie bei dossierNachladen): waehrend
+             controller.render() laeuft, blockiert der noch stehende null-Wert
+             einen sofortigen Selbst-Retry aus demselben Render-Aufruf. */
+          state.fehlerHinweis = 'Briefing konnte nicht gelesen werden — Seite neu laden.';
+          var p = String(state.position.schrittId);
+          if (state.position.kursId === kursId && (p === '1' || p === '2')) {
+            controller.render();
+          }
+          state.data.briefing[kursId] = undefined;
+        });
     },
 
     /* Das Dossier aus dem Kursordner. Drei Faelle, ueber dateiLesenGenau
@@ -848,12 +886,16 @@
        - fehlt (404 oder kein Kursordner): EINMAL aus der Altdatei
          {K}_briefing-felder.md importieren — geschrieben wird der Import erst
          beim naechsten Sichern, nicht still beim Lesen.
-       - jeder andere Lesefehler: state bleibt null, sichtbare Meldung. Ein
+       - jeder andere Lesefehler: waehrend des Aufrufs bleibt state kurz null (der
+         Doppelabruf-Schutz), sichtbare Fehlermeldung; NACH dem Rendern wird auf
+         undefined zurueckgesetzt (I1, Etappe 1e Task 4) — sonst bliebe der Fehler
+         sticky und kein spaeterer Ansichtswechsel wuerde je wieder nachladen. Ein
          Import-Fallback hier wuerde ein echtes Dossier unbemerkt ersetzen, sobald
          spaeter gesichert wird — der Guard in dossierSpeichern greift nur, solange
-         state.data.dossier[kursId] null bleibt.
+         state.data.dossier[kursId] undefined oder null ist.
        - Datei da, aber unlesbar (dossier.lesen() liefert null): ebenso KEIN Ersatz —
-         dossier.js schliesst ein stilles Reparieren ausdruecklich aus. */
+         dossier.js schliesst ein stilles Reparieren ausdruecklich aus. Auch hier
+         wird nach dem Rendern auf undefined zurueckgesetzt. */
     dossierNachladen: function (kursId) {
       if (state.data.dossier[kursId] !== undefined) return;
       state.data.dossier[kursId] = null;
@@ -867,15 +909,20 @@
               controller.render();
               return;
             }
-            state.data.dossier[kursId] = null;
-            state.hinweis = 'Dossier unlesbar — wird nicht überschrieben.';
+            state.fehlerHinweis = 'Dossier unlesbar — wird nicht überschrieben.';
             controller.render();
+            /* Erst NACH dem Rendern zuruecksetzen (I1): waehrend controller.render()
+               laeuft, blockiert der noch stehende null-Wert einen sofortigen
+               Selbst-Retry aus demselben Render-Aufruf (z. B. wenn diese Ansicht
+               dossierNachladen erneut anstoesst) — erst der naechste, unabhaengige
+               Ansichtswechsel soll es erneut versuchen. */
+            state.data.dossier[kursId] = undefined;
             return;
           }
           if (!r.fehlt) {
-            state.data.dossier[kursId] = null;
-            state.hinweis = 'Dossier konnte nicht gelesen werden — Seite neu laden.';
+            state.fehlerHinweis = 'Dossier konnte nicht gelesen werden — Seite neu laden.';
             controller.render();
+            state.data.dossier[kursId] = undefined;
             return;
           }
           var e = ((state.data.inhalt['ablage-kontrakt'] || {}).schritte || {})['1'] || {};
@@ -888,9 +935,9 @@
             });
         })
         .catch(function () {
-          state.data.dossier[kursId] = null;
-          state.hinweis = 'Dossier konnte nicht gelesen werden — Seite neu laden.';
+          state.fehlerHinweis = 'Dossier konnte nicht gelesen werden — Seite neu laden.';
           controller.render();
+          state.data.dossier[kursId] = undefined;
         });
     },
 
@@ -1087,9 +1134,21 @@
         return kopie;
       }
 
+      /* Merkt, ob der Upload schon durch ist, BEVOR der Dossier-Schreibvorgang
+         beginnt (I10, Etappe 1e Task 4) — scheitert danach nur noch der
+         Dossier-Eintrag, liegt die Datei bereits in QUELLEN_ORDNER, ohne dass
+         das Dossier von ihr weiss ("Waise"). Ohne diese Unterscheidung nennt die
+         Fehlermeldung nur den Graph-Fehler, nicht die Datei — wer dann blind
+         nochmals klickt, weiss nicht, ob ein zweiter Upload gefahrlos ist. Der
+         erneute Versuch IST gefahrlos: graph.hochladen legt unter demselben,
+         deterministisch bereinigten Namen ab (Ueberschreiben, kein Konflikt). */
+      var hochgeladen = false;
       var vorgang = nurDatei
         ? graph.hochladen(kursId, QUELLEN_ORDNER, name, datei)
-            .then(function () { return controller.dossierSchreiben(kursId, mutator, sag); })
+            .then(function () {
+              hochgeladen = true;
+              return controller.dossierSchreiben(kursId, mutator, sag);
+            })
         : controller.dossierSchreiben(kursId, mutator, sag);
 
       return vorgang
@@ -1097,7 +1156,15 @@
           state.hinweis = q.id + ' erfasst: ' + (nurDatei ? name : url);
           controller.render();
         })
-        .catch(function (e) { sag(String(e.message || e)); if (knopf) knopf.disabled = false; });
+        .catch(function (e) {
+          if (hochgeladen) {
+            sag(name + ' wurde hochgeladen, aber nicht im Dossier erfasst: ' + (e.message || e) +
+              ' — erneutes „Quelle erfassen“ mit derselben Datei ist sicher.');
+          } else {
+            sag(String(e.message || e));
+          }
+          if (knopf) knopf.disabled = false;
+        });
     },
 
     /* Ersetzbare Indirektion fuer confirm() — der Handler bleibt so in Node
@@ -1291,7 +1358,12 @@
                   root.dossier.statusSetzen(kopie, 'briefing', 'final');
                   return kopie;
                 }).catch(function (e) {
-                  state.hinweis = 'Abgelegt als ' + ziel.datei + ' — Status nicht aktualisiert: ' + (e.message || e);
+                  /* state.fehlerHinweis statt state.hinweis (M3, Etappe 1e Task 4):
+                     das ist ein Fehler, kein Erfolg — er darf nicht das gruene
+                     Haekchen von state.hinweis tragen. "Abgelegt als ..." steht
+                     bereits im (erfolgreichen) state.hinweis oben, deshalb hier
+                     nicht wiederholt. */
+                  state.fehlerHinweis = 'Status nicht aktualisiert: ' + (e.message || e);
                 });
               }
             }

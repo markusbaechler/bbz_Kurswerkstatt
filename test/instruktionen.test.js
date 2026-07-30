@@ -279,10 +279,23 @@ test('solange das Briefing nicht gelesen ist, wird nichts behauptet', () => {
   assert.ok(h.indexOf('Kein freigegebenes Briefing') < 0, 'behauptet zu frueh, es fehle');
 });
 
-test('fehlt das Briefing, sagt der Block es offen', () => {
+test('fehlt das Briefing (nachgesehen, nichts gefunden — leerer String), sagt der Block es offen', () => {
+  /* Seit I4 (Etappe 1e Task 4) steht fuer "nachgesehen und nichts gefunden" ein
+     leerer String, nicht mehr null — null ist jetzt "wird gerade nachgesehen"
+     vorbehalten, s. Test unten. */
+  const h = ansichten.einSchritt(INHALT, AFL, 1, null,
+    { ordnerFehlt: false, briefing: '' });
+  assert.ok(h.indexOf('Kein freigegebenes Briefing') >= 0);
+});
+
+test('briefing: null (Anfrage laeuft) zeigt "wird gelesen", nicht "Kein freigegebenes Briefing" (I4)', () => {
+  /* Vorher zeigte nur undefined "wird gelesen" — waehrend der laufenden Anfrage
+     (state.data.briefing[kursId] ist kurz null, verhindert den Doppelabruf) stand
+     faelschlich schon "Kein freigegebenes Briefing", das "[FEHLT]-Fenster". */
   const h = ansichten.einSchritt(INHALT, AFL, 1, null,
     { ordnerFehlt: false, briefing: null });
-  assert.ok(h.indexOf('Kein freigegebenes Briefing') >= 0);
+  assert.ok(h.indexOf('wird gelesen') >= 0, 'zeigt nicht "wird gelesen" fuer null');
+  assert.ok(h.indexOf('Kein freigegebenes Briefing') < 0, 'behauptet zu frueh, es fehle');
 });
 
 test('der Text im Block ist escaped — er kommt aus SharePoint', () => {

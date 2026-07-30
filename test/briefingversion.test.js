@@ -113,8 +113,10 @@ test('die Instruktionen auf Schritt 1 tragen das Briefing, sobald es da ist', ()
 });
 
 test('ohne Briefing sagt Schritt 1 es — und sperrt Schritt 2 nicht still', () => {
+  /* Seit I4 (Etappe 1e Task 4) steht fuer "nachgesehen, nichts gefunden" ein
+     leerer String — null ist jetzt "Anfrage laeuft gerade" vorbehalten. */
   const h = ansichten.einSchritt(INHALT, VL, 1, null,
-    { ordnerFehlt: false, dateien: [], briefing: null });
+    { ordnerFehlt: false, dateien: [], briefing: '' });
   assert.ok(h.indexOf('Kein freigegebenes Briefing') >= 0,
     'kein sichtbarer Hinweis, dass die Instruktionen unvollstaendig sind');
 });

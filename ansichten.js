@@ -845,7 +845,14 @@
       f.txt = I().projektInstruktionen(inh, kurs, briefing, f.k, ordnerName, d);
       return f;
     });
-    var quelle = briefing === undefined
+    /* briefing == null deckt sowohl undefined (noch nicht angefragt) als auch
+       null (Anfrage laeuft gerade, verhindert Doppelabruf) ab — vorher zeigte
+       nur undefined "wird gelesen"; waehrend der laufenden Anfrage (null) stand
+       hier faelschlich "Kein freigegebenes Briefing", noch bevor ueberhaupt
+       nachgesehen wurde (I4, Etappe 1e Task 4, "[FEHLT]-Fenster"). Ein echtes
+       "nichts gefunden" liefert app.js seit demselben Fix als leerer String, nicht
+       mehr als null — der faellt in den else-Zweig unten. */
+    var quelle = briefing == null
       ? '<span class="dim">Briefing wird gelesen &hellip;</span>'
       : (briefing
           ? '<span class="zielname">Briefing aus <code>01_briefing/</code> eingelesen &mdash; ' +

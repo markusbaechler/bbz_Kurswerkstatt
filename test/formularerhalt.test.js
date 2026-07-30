@@ -352,3 +352,128 @@ test('controller.render() rendert weiterhin fehlerfrei, wenn kein document exist
 
   if (vorher) global.document = vorher;
 });
+
+/* ---------- I2 + M3 (Etappe 1e Task 4): hinweis/fehlerHinweis in ALLEN
+   Arbeiten-Ansichten, nicht nur im Schritt ----------
+   Der Meldungsblock wurde bisher nur in der Schritt-Ansicht vorangestellt
+   (meldung + ansichten.einSchritt(...)) — ein Hinweis aus der Kursliste oder
+   Kursansicht heraus (z. B. dossierNachladen von dort) verschwand stumm, weil
+   state.hinweis beim naechsten Render trotzdem konsumiert (auf null gesetzt)
+   wurde, ohne je gezeigt worden zu sein. Jetzt EINE Stelle in _renderAufbau, vor
+   der Ansichts-Weiche berechnet, in Kursliste/Kursansicht/Schritt vorangestellt.
+   Nachschlagen bleibt bewusst ohne (keine schreibenden Aktionen dort).
+
+   Zugleich M3: state.hinweis (Erfolg) traegt weiter das gruene Haekchen,
+   state.fehlerHinweis (Fehler) die bestehende .klemmt-Fehler-Optik OHNE
+   Haekchen — vorher trugen auch echte Fehlermeldungen (z. B. "Dossier konnte
+   nicht gelesen werden") das Haekchen von state.hinweis, als waeren sie ein
+   Erfolg. */
+
+function renderErfassen() {
+  let html = '';
+  const app = {};
+  Object.defineProperty(app, 'innerHTML', { set: function (v) { html += v; } });
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'app') return app;
+      if (id === 'nav') return { innerHTML: '' };
+      return null;
+    },
+    querySelector: function () { return null; },
+    querySelectorAll: function () { return []; },
+    activeElement: null
+  };
+  controller.render();
+  delete global.document;
+  return html;
+}
+
+test('state.hinweis erscheint auch in der Kursliste (I2)', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = INHALT;
+  state.data.kurse = KURSE;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
+                     variante: null, weg: null };
+  state.hinweis = 'Dossier gesichert: Testdatei';
+  state.fehlerHinweis = null;
+
+  const html = renderErfassen();
+
+  assert.ok(html.indexOf('Dossier gesichert: Testdatei') >= 0,
+    'die Kursliste zeigt state.hinweis nicht — der Meldungsblock haengt noch am Schritt-Zweig');
+  assert.ok(html.indexOf('<div class="hinweis">') >= 0);
+  assert.strictEqual(state.hinweis, null, 'state.hinweis wurde nicht konsumiert');
+
+  state.auth.account = null;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
+test('state.hinweis erscheint auch in der Kursansicht (I2)', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = INHALT;
+  state.data.kurse = KURSE;
+  state.position = { bereich: 'arbeiten', kursId: DBS.kursId, schrittId: null, werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  /* null = nachgesehen, nichts da — verhindert echte (ungemockte) Netzaufrufe aus
+     ordnerPruefen/dossierNachladen, die die Kursansicht sonst anstoesst. */
+  state.data.ordner = { [DBS.kursId]: null };
+  state.data.dossier = { [DBS.kursId]: null };
+  state.hinweis = 'Q-001 erfasst: sspa-map.pdf';
+  state.fehlerHinweis = null;
+
+  const html = renderErfassen();
+
+  assert.ok(html.indexOf('Q-001 erfasst: sspa-map.pdf') >= 0,
+    'die Kursansicht zeigt state.hinweis nicht');
+
+  state.auth.account = null;
+  state.data.ordner = {};
+  state.data.dossier = {};
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
+test('state.fehlerHinweis zeigt die bestehende Fehler-Optik OHNE Haekchen (M3)', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = INHALT;
+  state.data.kurse = KURSE;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
+                     variante: null, weg: null };
+  state.hinweis = null;
+  state.fehlerHinweis = 'Dossier konnte nicht gelesen werden — Seite neu laden.';
+
+  const html = renderErfassen();
+
+  assert.ok(html.indexOf('Dossier konnte nicht gelesen werden') >= 0,
+    'die Fehlermeldung erscheint nicht');
+  assert.ok(html.indexOf('<div class="klemmt">Dossier konnte nicht gelesen werden') >= 0,
+    'die Fehlermeldung nutzt nicht die bestehende .klemmt-Fehler-Optik');
+  assert.ok(html.indexOf('&#10003;Dossier konnte nicht gelesen werden') < 0,
+    'die Fehlermeldung traegt das gruene Erfolgs-Haekchen — M3 verlangt genau das Gegenteil');
+  assert.strictEqual(state.fehlerHinweis, null, 'state.fehlerHinweis wurde nicht konsumiert');
+
+  state.auth.account = null;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});
+
+test('Erfolg (state.hinweis) UND Fehler (state.fehlerHinweis) koennen gleichzeitig stehen und bleiben unterscheidbar (M3)', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = INHALT;
+  state.data.kurse = KURSE;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
+                     variante: null, weg: null };
+  state.hinweis = 'Abgelegt als X_v2.md';
+  state.fehlerHinweis = 'Status nicht aktualisiert: Graph 500';
+
+  const html = renderErfassen();
+
+  const posErfolg = html.indexOf('Abgelegt als X_v2.md');
+  const posFehler = html.indexOf('Status nicht aktualisiert');
+  assert.ok(posErfolg >= 0 && posFehler >= 0, 'eine der beiden Meldungen fehlt');
+  assert.ok(html.slice(Math.max(0, posErfolg - 30), posErfolg).indexOf('&#10003;') >= 0,
+    'die Erfolgsmeldung traegt kein Haekchen');
+  assert.ok(html.slice(Math.max(0, posFehler - 30), posFehler).indexOf('&#10003;') < 0,
+    'die Fehlermeldung traegt faelschlich ein Haekchen');
+
+  state.auth.account = null;
+  state.position = { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null };
+});

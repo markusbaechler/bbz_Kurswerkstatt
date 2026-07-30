@@ -131,6 +131,33 @@ test('mit Datei und Feldern: Upload nach 03_content/quellen mit bereinigtem Name
   delete global.document;
 });
 
+/* ---------- I10 (Etappe 1e Task 4): Waisen-Datei nach gelungenem Upload benennen ----------
+   Scheitert NACH einem erfolgreichen Upload nur noch der Dossier-Eintrag (graph.ablegen
+   schlaegt fehl), liegt die Datei bereits in 03_content/quellen, ohne dass das Dossier von
+   ihr weiss. Die Meldung muss den Dateinamen nennen und sagen, dass ein erneutes
+   "Quelle erfassen" mit derselben Datei gefahrlos ist (graph.hochladen legt unter demselben,
+   bereinigten Namen ab und ueberschreibt — kein Duplikat, keine zweite Waise). */
+test('Upload gelingt, Dossier-Ablage scheitert danach: die Meldung nennt die Datei und sagt, ein erneuter Versuch sei sicher (I10)', async () => {
+  state.position.kursId = 'DBS-001';
+  state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: [] } };
+  const melde = els({ titel: 'SSPA Map', herausgeber: 'SSPA', stand: '2025', datei: { name: 'SSPA Map.pdf' } });
+  let hochgeladen = false;
+  graph.hochladen = function () { hochgeladen = true; return Promise.resolve(); };
+  graph.ablegen = function () { return Promise.reject(new Error('Graph 500')); };
+  const knopf = { disabled: false };
+
+  await controller.quelleErfassen(knopf);
+
+  assert.strictEqual(hochgeladen, true, 'der Upload haette gelingen sollen — sonst ist die Datei keine Waise');
+  assert.strictEqual(melde.hidden, false);
+  assert.match(melde.textContent, /sspa-map\.pdf/, 'die Meldung nennt nicht den (bereinigten) Dateinamen');
+  assert.match(melde.textContent, /erneutes .Quelle erfassen. mit derselben Datei ist sicher/,
+    'die Meldung beruhigt nicht, dass ein erneuter Versuch mit derselben Datei gefahrlos ist');
+  assert.strictEqual(knopf.disabled, false, 'der Knopf blieb gesperrt — ein erneuter Versuch waere nicht moeglich');
+  delete global.document;
+});
+
 test('ohne Datei und ohne Link kommt eine eigene Meldung, kein Upload', () => {
   state.position.kursId = 'DBS-001';
   state.data.dossier = { 'DBS-001': { dossier: 1, kurs: 'DBS-001', scope: {}, content_modus: 'quellengestuetzt',

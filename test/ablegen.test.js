@@ -292,14 +292,17 @@ test('bei geladenem Dossier rueckt das Ablegen des Briefings den Status auf fina
 });
 
 /* Fix-Runde 1 (Review-Finding 1, Task 1): der Content-Ablage-Erfolg darf nicht durch einen
-   gescheiterten Dossier-Status-Write verschluckt werden — state.hinweis muss das melden statt
-   im .catch von controller.dossierSchreiben zu verschwinden. Mutationsprobe: entfernt man den
+   gescheiterten Dossier-Status-Write verschluckt werden — eine sichtbare Meldung muss das melden
+   statt im .catch von controller.dossierSchreiben zu verschwinden. Mutationsprobe: entfernt man den
    .catch-Zweig um den controller.dossierSchreiben(...)-Aufruf im Schritt-1-Zweig von
    controller.ablegen (app.js, "Status nicht aktualisiert"), wird dieser Test rot — die
-   Fehlermeldung erreicht state.hinweis dann nicht mehr, weil die Ablehnung unbehandelt durch die
-   Kette faellt und render() nie mit dem Hinweistext aufgerufen wird (durchgefuehrt und wieder
-   rueckgaengig gemacht, siehe task-1-report.md). */
-test('Briefing-Ablage gelingt, der Dossier-Status-Write scheitert: state.hinweis meldet es, kein Crash', async () => {
+   Fehlermeldung erreicht state.fehlerHinweis dann nicht mehr, weil die Ablehnung unbehandelt durch
+   die Kette faellt und render() nie mit dem Hinweistext aufgerufen wird (durchgefuehrt und wieder
+   rueckgaengig gemacht, siehe task-1-report.md).
+   Seit M3 (Etappe 1e Task 4) traegt diese Fehlermeldung state.fehlerHinweis, nicht mehr
+   state.hinweis — der Erfolg ("Abgelegt als ...") und der Fehler ("Status nicht aktualisiert")
+   sollen nicht dasselbe gruene Haekchen tragen. */
+test('Briefing-Ablage gelingt, der Dossier-Status-Write scheitert: state.fehlerHinweis meldet es, kein Crash', async () => {
   const vorher = dossier.neu('AFL-001');
   let anzahlAblegen = 0;
   const rufe = [];
@@ -340,9 +343,10 @@ test('Briefing-Ablage gelingt, der Dossier-Status-Write scheitert: state.hinweis
   assert.strictEqual(meldung.textContent, '', 'die Content-Ablage selbst darf nicht als gescheitert gemeldet werden');
   assert.strictEqual(rufe.length, 2, 'erwartet: Briefing- und der gescheiterte Dossier-Versuch');
   assert.ok(gerendert, 'controller.render() wurde nach dem gescheiterten Status-Write nicht aufgerufen');
-  assert.match(state.hinweis || '', /Status nicht aktualisiert/,
+  assert.match(state.hinweis || '', /Abgelegt als/, 'die erfolgreiche Content-Ablage wird nicht mehr gemeldet');
+  assert.match(state.fehlerHinweis || '', /Status nicht aktualisiert/,
     'ein gescheiterter Dossier-Status-Write darf nicht stillschweigend verschluckt werden');
-  assert.match(state.hinweis || '', /Graph 500/, 'die eigentliche Fehlermeldung fehlt im Hinweis');
+  assert.match(state.fehlerHinweis || '', /Graph 500/, 'die eigentliche Fehlermeldung fehlt im Hinweis');
   assert.strictEqual(state.data.dossier['AFL-001'].status.briefing, undefined,
     'der Status haette bei gescheitertem Schreiben nicht uebernommen werden duerfen');
 });

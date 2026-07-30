@@ -254,8 +254,12 @@ Formularfeldern für den Scope-Teil — Wissenstransfer ohne
 Handkopie. Die frühere Ablage `{K}_briefing-felder.md` wird **nur noch einmalig importiert**,
 wenn noch kein Dossier existiert (`dossierNachladen`); geschrieben wird sie nicht mehr.
 **Der Import läuft nur beim echten „fehlt"** (404 oder kein Kursordner, unterschieden über
-`graph.dateiLesenGenau`) — ein Lesefehler oder eine korrupte Dossier-Datei bleibt `null` mit
-sichtbarer Meldung, damit ein bestehendes Dossier nie still durch ein importiertes ersetzt wird.
+`graph.dateiLesenGenau`) — ein Lesefehler oder eine korrupte Dossier-Datei zeigt eine sichtbare
+Fehlermeldung (`state.fehlerHinweis`, s. u.), damit ein bestehendes Dossier nie still durch ein
+importiertes ersetzt wird. **Der `null`-Zustand ist seit Etappe 1e Task 4 (Audit I1) nie sticky**:
+nach dem Rendern der Fehlermeldung fällt `state.data.dossier[k]` auf `undefined` zurück, damit der
+nächste Ansichtswechsel erneut nachlädt — vorher blieb `null` für immer stehen, weil der
+Doppelabruf-Guard (`!== undefined`) jeden weiteren Versuch blockierte.
 
 **`dossierSpeichern` bricht ab, solange das Dossier nicht geladen ist** — `state.data.dossier[k]`
 ist `undefined` (nie geladen) oder `null` (lädt gerade) nur ein Zwischenzustand; ein Sichern in
@@ -311,6 +315,38 @@ Ohne diesen Stempel-Vergleich könnte ein spät eintreffendes Nachladen aus Kurs
 seine alten Feldwerte in ein längst geöffnetes Formular von Kurs B (oder Schritt 3) schreiben;
 bisher verhinderte das nur zufällig, dass ein Kurswechsel `schrittId` auf `null` setzt und damit
 das Zwischen-Render ohne Formular läuft.
+
+**Meldungen: `state.hinweis` (Erfolg) und `state.fehlerHinweis` (Fehler) sind zwei getrennte
+Felder, in EINEM Block gerendert, der ALLEN Arbeiten-Ansichten vorangestellt wird — Kursliste,
+Kursansicht und Schritt (Etappe 1e Task 4, Audit I2/M3).** Vorher stand der Meldungsblock nur im
+Schritt-Zweig von `controller._renderAufbau`; ein Hinweis, der aus der Kursliste oder
+Kursansicht heraus entstand (z. B. `dossierNachladen` von dort), wurde beim nächsten Render
+trotzdem konsumiert (auf `null` gesetzt), ohne je gezeigt worden zu sein. Jetzt wird der Block vor
+der Ansichts-Weiche berechnet und in Kursliste/Kursansicht/Schritt vorangestellt; Nachschlagen
+bleibt bewusst ohne, dort löst nichts eine Meldung aus. `state.hinweis` trägt weiter das grüne
+Häkchen (`.hinweis`), `state.fehlerHinweis` die bestehende `.klemmt`-Fehler-Optik **ohne**
+Häkchen — vorher trugen auch echte Fehlermeldungen (z. B. „Dossier konnte nicht gelesen werden",
+„Status nicht aktualisiert") das Häkchen von `state.hinweis`, als wären sie ein Erfolg.
+
+**Drei Nachlade-Fehlerpfade wurden auf denselben Nicht-sticky-Mechanismus umgestellt** (Etappe 1e
+Task 4, Audit I1/I4): `dossierNachladen` (drei Fehlerzweige) und `briefingNachladen`
+(`.catch`, vorher komplett leer und damit ein Netzfehler unsichtbar) setzen jetzt
+`state.fehlerHinweis`, rendern, und setzen ERST DANACH `state.data.dossier[k]` bzw.
+`state.data.briefing[k]` auf `undefined` zurück — die Reihenfolge ist bewusst: während
+`controller.render()` noch läuft, blockiert der noch stehende `null`-Wert einen sofortigen
+Selbst-Retry aus demselben Render-Aufruf; erst der nächste, unabhängige Ansichtswechsel soll es
+erneut versuchen. **`briefingNachladen` unterscheidet jetzt `null` (Anfrage läuft) von `''`
+(nachgesehen, nichts gefunden)** — vorher trugen beide denselben Wert, und
+`ansichten.instruktionenBlock` zeigte während der laufenden Anfrage fälschlich schon „Kein
+freigegebenes Briefing" (das „[FEHLT]-Fenster", Audit I4). `ansichten.js` prüft seither
+`briefing == null` (deckt `undefined` und `null` ab) für „wird gelesen"; ein leerer String fällt
+in den „Kein freigegebenes Briefing"-Zweig.
+
+**`quelleErfassen` benennt die Waisen-Datei, wenn der Upload gelang, aber der Dossier-Eintrag
+scheiterte** (Etappe 1e Task 4, Audit I10): die Meldung nennt den (bereinigten) Dateinamen und
+sagt, dass ein erneutes „Quelle erfassen" mit derselben Datei sicher ist — `graph.hochladen` legt
+unter demselben, deterministisch bereinigten Namen ab (Überschreiben, `conflictBehavior: replace`
+bei der Ladesitzung), ein zweiter Versuch erzeugt kein Duplikat und keine zweite Waise.
 
 ## Stand 2026-07-22
 
