@@ -322,6 +322,27 @@ test('mit Kursordner bleiben Kasten und disabled weg', () => {
   assert.doesNotMatch(html, /data-action="content-modus"[^>]*disabled/);
 });
 
+/* ---------- Etappe 2, Task 3: Schritt 2 erbt aus dem Dossier ---------- */
+
+test('Schritt 2 ohne freigegebenes Briefing zeigt den Kein-freigegebenes-Briefing-Kasten', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 2, null, props);
+  assert.match(html, /Kein freigegebenes Briefing/);
+  assert.match(html, /class="box achtung"/, 'dieselbe Kasten-Optik wie der Kaltstart-Hinweis fehlt');
+});
+
+test('Schritt 2 mit freigegebenem Briefing (status.briefing final) zeigt keinen Kasten', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'AFL-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: { briefing: 'final' }, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, AFL, 2, null, props);
+  assert.doesNotMatch(html, /Kein freigegebenes Briefing/);
+});
+
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/So gehst du vor/.test(h));

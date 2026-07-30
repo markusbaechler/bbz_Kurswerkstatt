@@ -594,6 +594,19 @@
       h += quellenVerzeichnisBlock(ablageDaten.dossier);
     }
 
+    /* Schritt 2 startet erst NACH einem freigegebenen Briefing (Etappe 2, Task
+       3, Halluzinations-Bremse): ohne das kann weder der Chat noch Claude Code
+       wissen, was der Kurs voraussetzt. Kein Disable der Knoepfe (Altkurse und
+       laufende Migrationen muessen weiterarbeiten koennen) — nur der deutliche
+       Kasten, dieselbe Optik wie der Kaltstart-Hinweis in Schritt 1
+       (briefingFormular oben, "Zuerst die Ablage anlegen"). */
+    if (String(schrittId) === '2' && ablageDaten.dossier &&
+        root.dossier.statusVon(ablageDaten.dossier, 'briefing') !== 'final') {
+      h += '<div class="box achtung"><span class="bt">Kein freigegebenes Briefing</span>' +
+           'Schritt 2 startet erst, wenn das Briefing in Schritt 1 abgelegt ist ' +
+           '(Halluzinations-Bremse). Ohne Dossier zuerst Schritt 1 durchlaufen.</div>';
+    }
+
     /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
        nicht hinter den Leitplanken. Der Masterprompt zuerst. */
     if (hilfsmittel.length) {

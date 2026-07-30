@@ -574,3 +574,55 @@ den 412-Pfad, die Migration und die GENAU-Vererbung erstmals **am echten Graph**
 Lost Update bei konkurrierenden Schreibern. Erb-Quelle für `rechtsstand`/`quellen` ist per
 Entscheid vom 2026-07-30 das Dossier; Ablage-Kontrakt §3.4 und Prozess-Spec tragen datierte
 Nachträge.
+
+## Etappe 2
+
+Baut auf Etappe 1 (Kursdossier) auf: die Meta-Architektur sieht das Dossier als das eine
+maschinenlesbare Lenkrad je Kurs vor, aus dem jeder folgende Schritt und jedes CC-Werkzeug erbt,
+statt Angaben je Schritt neu abzufragen oder zu kopieren.
+
+**`dossier.identitaet` — Titel und Kompetenzfeld stammen aus `KWKurse`, nie aus dem Dossier
+selbst gepflegt.** `dossier.identitaetSetzen(d, kurs) -> d` stempelt `d.identitaet = { titel,
+kompetenzfeld }` aus dem `KWKurse`-Kursobjekt (`kurs == null` lässt `d` unangetastet). Gerufen
+wird das **zentral in `controller._dossierVersuch`**, nachdem der Mutator eine neue Fassung
+geliefert hat und bevor geschrieben wird — nicht an jeder der vier Schreibstellen einzeln
+(`dossierSpeichern`, `quelleErfassen`, `quelleEntfernen`, `contentModus`, plus der Schritt-1-Zweig
+von `ablegen`, die alle über `dossierSchreiben` laufen). So kann Titel/Kompetenzfeld nie im
+Dossier veralten, selbst wenn `KWKurse` sich ändert, und jede Schreibstelle muss die Regel nicht
+selbst kennen. `dossier.pruefe()` behandelt `identitaet` additiv wie `regulatorik` (Etappe 1e,
+Task 6): fehlt der Schlüssel ganz, ist das Dossier trotzdem gültig — nur ein falsch typisiertes
+`identitaet` wird abgewiesen. Eine Mutationsprobe hält die Stempel-Zeile fest
+(`test/dossierschreiben.test.js`): ohne sie bleiben alle anderen 471 Tests grün, kein Test hätte
+das Fehlen sonst bemerkt.
+
+**Schritt 2 (Lernziele) lädt das Dossier und erbt daraus den Prompt-Kopf.** Der
+`dossierNachladen`-Trigger in `app.js` (Ansichtswechsel) lädt jetzt auch auf Schritt 2, nicht nur
+1 und 3 — Schritt 2 braucht das Dossier für den Kaltstart-Kasten UND für den Prompt-Kopf.
+`inhalt.lernzielePromptKopf(kurs, d)` ist das Gegenstück zu `briefingPromptKopf` (Schritt 1):
+Kurs-ID/Titel/Kompetenzfeld aus `kurs`, Rechtsstand/Zusatz/SAQ-Rezertifizierung sowie die
+FACHQUELLEN-Liste GENAU aus `d` — anders als in Schritt 1 gibt es dafür keine eigenen
+Formularfelder, alles kommt ausschliesslich aus dem Dossier. Ohne Dossier (`d` fehlt) liefert die
+Funktion `''` — Schritt 2 ohne vorher durchlaufenen Schritt 1 hat nichts zu erben. Der
+FACHQUELLEN-Zeilen-Builder ist aus `briefingPromptKopf` in die private Hilfsfunktion
+`fachquellenZeilen(d)` herausgezogen und wird von **beiden** Prompt-Köpfen aufgerufen (Konvention
+9, eine Quelle pro Begriff) — der Wortlaut (inklusive der GENAU-Formulierung) bleibt dabei exakt
+der bisherige, weil bestehende Tests genau ihn prüfen. Der `kopieren`-Handler in `app.js` stellt
+`lernzielePromptKopf` in Schritt 2 dem kopierten Masterprompt voran, analog zum
+Schritt-1-Zweig mit `briefingPromptKopf`.
+
+**`ansichten.einSchritt` zeigt in Schritt 2 einen Kasten, solange `status.briefing` nicht
+`final` ist** — „Kein freigegebenes Briefing", dieselbe Optik (`box achtung`) wie der
+Kaltstart-Kasten aus Schritt 1. Halluzinations-Bremse: ohne freigegebenes Briefing hat weder Chat
+noch Claude Code eine geprüfte Grundlage. Anders als beim Kaltstart-Kasten werden die Knöpfe
+dabei **nicht** disabled — Altkurse und laufende Migrationen müssen weiterarbeiten können, nur
+der Hinweis soll deutlich sein.
+
+**Wortlaut-Hinweis (Fix in dieser Task):** die Testvorlage im Task-Brief prüfte für den
+Quellen-Zeilen-Auszug die Zeichenkette „Stand 2026" (ohne Doppelpunkt) und für den
+Quellenfrei-Satz das Muster `/quellenfrei/` (Kleinschreibung). Beides weicht vom bestehenden,
+reviewer-freigegebenen Wortlaut in `briefingPromptKopf` ab (`Stand: 2026` mit Doppelpunkt,
+`MODUS QUELLENFREI` in Grossbuchstaben) — genau der Wortlaut, den `test/briefingfelder.test.js`
+bereits als Wortlaut-Vertrag hält. Da bestehende Tests unverändert grün bleiben müssen und beide
+Prompt-Köpfe denselben Zeilen-Builder teilen sollen, wurden die neuen Tests in
+`test/lernzielekopf.test.js` auf den tatsächlichen, bestehenden Wortlaut abgestimmt (Doppelpunkt
+erhalten, Quellenfrei-Prüfung case-insensitiv), statt den Wortlaut für diese Task zu ändern.

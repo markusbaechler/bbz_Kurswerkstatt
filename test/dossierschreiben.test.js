@@ -177,6 +177,30 @@ test('ein Fehler im ersten Aufruf blockiert die Warteschlange nicht fuer den nae
   assert.deepStrictEqual(state.data.dossier['DBS-001'].offen, ['klappt']);
 });
 
+/* Mutationsprobe (Etappe 2, Task 3): die Zeile "root.dossier.identitaetSetzen(neu,
+   kursObj);" in _dossierVersuch auskommentiert — `node --test` blieb dabei komplett
+   gruen, 471/471, kein einziger Test rot. Deshalb dieser eigene Test: er haelt genau
+   die Zeile fest, die sonst durch nichts geschuetzt war. */
+test('_dossierVersuch stempelt identitaet aus state.data.kurse in JEDES Schreiben (Etappe 2, Task 3)', async () => {
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.kurse = [{ id: '1', kursId: 'DBS-001', kurstitel: 'Derivate Basis',
+    kompetenzfeld: 'Vermögen & Vorsorge', schritt: 1, status: 'offen', prio: null, bemerkung: '' }];
+  const schreibversuche = [];
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    schreibversuche.push(text);
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.dossierSchreiben('DBS-001', function (d) { return d; });
+
+  assert.strictEqual(schreibversuche.length, 1);
+  const geschrieben = JSON.parse(schreibversuche[0]);
+  assert.deepStrictEqual(geschrieben.identitaet, { titel: 'Derivate Basis', kompetenzfeld: 'Vermögen & Vorsorge' });
+  assert.deepStrictEqual(state.data.dossier['DBS-001'].identitaet,
+    { titel: 'Derivate Basis', kompetenzfeld: 'Vermögen & Vorsorge' });
+});
+
 test('je Kurs eine eigene Warteschlange — zwei verschiedene Kurse laufen unabhaengig', async () => {
   state.data.dossier = { 'DBS-001': dossierMit([]), 'AFL-001': dossierMit([]) };
   state.data.dossierETag = {};

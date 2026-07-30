@@ -13,6 +13,38 @@
   var DATEIEN = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz', 'hf'];
   var PFLICHT = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz'];  /* hf darf fehlen */
 
+  /* Eine Quelle pro Begriff (CLAUDE.md Konvention 9, Etappe 2 Task 3): der
+     FACHQUELLEN-Block ist in briefingPromptKopf (Schritt 1) und
+     lernzielePromptKopf (Schritt 2) wortgleich — beide Prompt-Koepfe erben
+     dieselbe Erb-Quelle Dossier (d.quellen, d.content_modus). Herausgezogen aus
+     briefingPromptKopf, wo der Block seit Etappe 1e Task 5 stand; der Wortlaut
+     (inkl. "des Briefings" in der GENAU-Formulierung) bleibt unveraendert, weil
+     bestehende Tests genau ihn pruefen — Konsistenz zwischen den zwei Koepfen
+     wiegt hier schwerer als ein Schritt-2-genauerer Satz. */
+  function fachquellenZeilen(d) {
+    var z = [];
+    var quellen = d.quellen || [];
+    if (d.content_modus === 'quellenfrei') {
+      z.push('MODUS QUELLENFREI: reiner KI-Entwurf ohne Fachquellen — das YAML-Feld ' +
+             '\'quellen\' bleibt leer; erfinde keine.');
+    } else if (quellen.length) {
+      z.push('FACHQUELLEN (verbindlich — das YAML-Feld \'quellen\' des Briefings ist ' +
+             'GENAU diese Liste, nichts anderes):');
+      quellen.forEach(function (q) {
+        var kopf = '- ' + q.id + ' · ' + q.titel +
+                   (q.herausgeber ? ' (' + q.herausgeber + ')' : '') +
+                   ' · Stand: ' + q.stand;
+        z.push(q.url
+          ? kopf + ' · Link: ' + q.url + ' (abgerufen ' + q.abgerufen + ')'
+          : kopf + ' · Datei: ' + q.datei);
+      });
+    } else {
+      z.push('FACHQUELLEN: noch keine erfasst — das YAML-Feld \'quellen\' bleibt leer; ' +
+             'erfinde keine.');
+    }
+    return z;
+  }
+
   var inhalt = {
     dateien: DATEIEN,
 
@@ -546,25 +578,7 @@
       });
       z.push('');
       if (d) {
-        var quellen = d.quellen || [];
-        if (d.content_modus === 'quellenfrei') {
-          z.push('MODUS QUELLENFREI: reiner KI-Entwurf ohne Fachquellen — das YAML-Feld ' +
-                 '\'quellen\' bleibt leer; erfinde keine.');
-        } else if (quellen.length) {
-          z.push('FACHQUELLEN (verbindlich — das YAML-Feld \'quellen\' des Briefings ist ' +
-                 'GENAU diese Liste, nichts anderes):');
-          quellen.forEach(function (q) {
-            var kopf = '- ' + q.id + ' · ' + q.titel +
-                       (q.herausgeber ? ' (' + q.herausgeber + ')' : '') +
-                       ' · Stand: ' + q.stand;
-            z.push(q.url
-              ? kopf + ' · Link: ' + q.url + ' (abgerufen ' + q.abgerufen + ')'
-              : kopf + ' · Datei: ' + q.datei);
-          });
-        } else {
-          z.push('FACHQUELLEN: noch keine erfasst — das YAML-Feld \'quellen\' bleibt leer; ' +
-                 'erfinde keine.');
-        }
+        z.push.apply(z, fachquellenZeilen(d));
         if (String(werte.rechtsstand || '').trim()) {
           z.push('Das YAML-Feld \'rechtsstand\' ist GENAU aus der Angabe „Rechtsstand" oben zu ' +
                  'bauen, nicht aus einem anderen Datum.');
@@ -578,6 +592,37 @@
         z.push('ALLE FELDER SIND AUSGEFÜLLT. Schreibe jetzt das Briefing. Keine Rückfrage,');
         z.push('keine Feldübersicht, keine Liste. Nur die Datei.');
       }
+      z.push('=== ENDE DER ANGABEN ===');
+      z.push('');
+      return z.join('\n');
+    },
+
+    /* Prompt-Kopf fuer Schritt 2 (Lernziele-Drehbuch), Etappe 2 Task 3 — dasselbe
+       Prinzip wie briefingPromptKopf: Angaben, die die App schon hat, muss der
+       Chat nicht erfragen. Schritt 2 startet erst NACH einem freigegebenen
+       Briefing (s. ansichten.einSchritt, Kein-freigegebenes-Briefing-Kasten) —
+       Titel/Kompetenzfeld (aus KWKurse, kurs), Rechtsstand/Zusatz/SAQ und die
+       Fachquellenliste (aus dem Dossier, d) stehen zu diesem Zeitpunkt bereits
+       fest, keines davon ist hier ein Formularfeld. Ohne Dossier (kein d) gibt
+       es keinen Kopf — ohne Dossier ist Schritt 1 nie durchlaufen worden. */
+    lernzielePromptKopf: function (kurs, d) {
+      if (!d) return '';
+      var z = [];
+      z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
+      z.push('Diese Werte sind gesetzt. Übernimm sie. Frage sie NICHT erneut ab, rechne sie');
+      z.push('nicht um und bewerte sie nicht.');
+      z.push('');
+      z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
+      z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
+      var regulatorik = d.regulatorik || {};
+      z.push('Rechtsstand: ' + (regulatorik.stand || 'NICHT ANGEGEBEN'));
+      if (String(regulatorik.zusatz || '').trim()) {
+        z.push('Zusatz: ' + regulatorik.zusatz);
+      }
+      z.push('SAQ-Rezertifizierung: ' + (regulatorik.saq_rezert ? 'ja' : 'nein'));
+      z.push('');
+      z.push.apply(z, fachquellenZeilen(d));
+      z.push('');
       z.push('=== ENDE DER ANGABEN ===');
       z.push('');
       return z.join('\n');

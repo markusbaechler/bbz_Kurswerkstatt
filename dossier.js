@@ -134,6 +134,10 @@
          der Migration in lesen() ist ein fehlendes regulatorik-Objekt ohnehin
          unmoeglich, dieser Check trifft nur ein von Hand kaputt editiertes. */
       if (!d.regulatorik || typeof d.regulatorik !== 'object') p.push('regulatorik fehlt');
+      /* identitaet ist additiv wie regulatorik (Etappe 2, Task 3): ein Alt-Dossier
+         ganz ohne den Schluessel bleibt lesbar, nur ein falsch typisiertes wird
+         abgewiesen — dieselbe Schema-ERWEITERUNG-Logik wie bei regulatorik. */
+      if (d.identitaet != null && typeof d.identitaet !== 'object') p.push('identitaet ist kein Objekt');
       if (dossier.MODI.indexOf(d.content_modus) < 0) p.push('content_modus unbekannt: ' + d.content_modus);
       if (!Array.isArray(d.quellen)) p.push('quellen ist keine Liste');
       else d.quellen.forEach(function (q, n) {
@@ -157,6 +161,19 @@
     statusSetzen: function (d, lieferobjekt, status) {
       if (dossier.STATUS.indexOf(status) < 0) throw new Error('unbekannter Status: ' + status);
       d.status[lieferobjekt] = status;
+      return d;
+    },
+
+    /* Identitaet: Titel und Kompetenzfeld stammen aus KWKurse und werden von der
+       App bei jedem Schreiben gestempelt — nie im Dossier gepflegt (Meta-Spec §3:
+       "aus KWKurse, nie doppelt gepflegt"). So koennen die CC-Werkzeuge
+       (dossier-steckbrief.cjs) alles aus einer Datei erben. */
+    identitaetSetzen: function (d, kurs) {
+      if (!kurs) return d;
+      d.identitaet = {
+        titel: String(kurs.kurstitel || ''),
+        kompetenzfeld: String(kurs.kompetenzfeld || '')
+      };
       return d;
     },
 

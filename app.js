@@ -882,8 +882,12 @@
            nur lesend — wer nur Schritt 3 ansieht, ohne vorher auf Schritt 1
            gewesen zu sein, muesste sonst auf ein leeres state.data.dossier
            starren (dieselbe Lehre wie beim Briefing-Nachladen oben: wenn eine
-           Ansicht Daten zeigt, muss der Ladevorgang an derselben Ansicht haengen). */
-        if (k && (String(p.schrittId) === '1' || String(p.schrittId) === '3') &&
+           Ansicht Daten zeigt, muss der Ladevorgang an derselben Ansicht haengen).
+           Schritt 2 (Etappe 2, Task 3) braucht das Dossier ebenso: der
+           Kein-freigegebenes-Briefing-Kasten prueft status.briefing, und der
+           kopieren-Handler stellt lernzielePromptKopf voran — beides ohne
+           geladenes Dossier unmoeglich. */
+        if (k && (String(p.schrittId) === '1' || String(p.schrittId) === '2' || String(p.schrittId) === '3') &&
             state.data.ordner[k.kursId]) {
           controller.dossierNachladen(k.kursId);
         }
@@ -1135,6 +1139,13 @@
       var neu;
       try { neu = mutator(kopie); } catch (e) { return Promise.reject(e); }
       if (neu === null || neu === undefined) return Promise.resolve(null);
+
+      /* identitaet zentral stempeln (Etappe 2, Task 3): Titel/Kompetenzfeld
+         kommen aus KWKurse, nie aus einem Formularfeld — jede Schreibstelle
+         soll das nicht selbst wissen muessen, deshalb hier an der einzigen
+         Stelle, durch die JEDES Dossier-Schreiben laeuft. */
+      var kursObj = (state.data.kurse || []).filter(function (x) { return x.kursId === kursId; })[0];
+      root.dossier.identitaetSetzen(neu, kursObj);
 
       var eTagAlt = state.data.dossierETag[kursId];
       return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(neu), eTagAlt)
@@ -1747,6 +1758,18 @@
           var form = controller.briefingFelderAusFormular();
           var werte = controller._formularWerteMergen(basis, form);
           text2 = root.inhalt.briefingPromptKopf(kurs2, werte, d2) + text2;
+        }
+        /* Schritt 2 (Etappe 2, Task 3): Titel/Kompetenzfeld/Rechtsstand/Quellen
+           kommen ausschliesslich aus dem geladenen Dossier — anders als in
+           Schritt 1 gibt es hier keine eigenen Formularfelder, die den Kopf
+           speisen koennten. Kein Dossier (noch nicht geladen oder Kurs ohne
+           Kursordner) heisst: kein Kopf, lernzielePromptKopf liefert dann ''. */
+        if (String(state.position.schrittId) === '2' && w.type === 'prompt') {
+          var kurs3 = nav.kurs();
+          var d3 = kurs3 ? state.data.dossier[kurs3.kursId] : null;
+          if (d3 && typeof d3 === 'object') {
+            text2 = root.inhalt.lernzielePromptKopf(kurs3, d3) + text2;
+          }
         }
         kopieren(text2, t);
         return;

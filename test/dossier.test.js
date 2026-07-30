@@ -341,3 +341,23 @@ test('lesen() eines bereits migrierten Dossiers (regulatorik vorhanden) laesst e
    fuer diesen Kommentar: eine Mutationsprobe ist nur so viel wert wie der
    tatsaechlich ausgefuehrte Lauf — eine plausibel klingende Zahl ohne echten
    Testlauf ist eine Behauptung, kein Beleg. */
+
+/* ---------- Etappe 2, Task 3: identitaet (Titel/Kompetenzfeld aus KWKurse) ---------- */
+
+test('identitaetSetzen stempelt Titel und Kompetenzfeld aus KWKurse', () => {
+  const d = dossier.neu('VL-001');
+  dossier.identitaetSetzen(d, { kursId: 'VL-001', kurstitel: 'Vorsorge Basis', kompetenzfeld: 'Vorsorge' });
+  assert.deepEqual(d.identitaet, { titel: 'Vorsorge Basis', kompetenzfeld: 'Vorsorge' });
+  assert.equal(dossier.pruefe(d).length, 0);
+});
+
+test('identitaetSetzen ohne Kurs laesst das Dossier unangetastet', () => {
+  const d = dossier.neu('VL-001');
+  dossier.identitaetSetzen(d, null);
+  assert.equal(d.identitaet, undefined);
+});
+
+test('ein Alt-Dossier ohne identitaet bleibt lesbar', () => {
+  const alt = JSON.stringify(dossier.neu('VL-001'));
+  assert.ok(dossier.lesen(alt));
+});
