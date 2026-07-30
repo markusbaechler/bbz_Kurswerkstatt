@@ -277,7 +277,49 @@ test('bricht die Person die Bestaetigung ab, wird nichts geschrieben und keine E
 
   assert.strictEqual(geschrieben, false, 'trotz abgebrochener Bestaetigung wurde geschrieben');
   assert.strictEqual(state.hinweis, null, 'trotz Abbruch wurde eine Erfolgsmeldung gesetzt');
+  assert.strictEqual(state.gateLaeuft['DBS-001/2'], undefined,
+    'der Lauf-Merker wurde nach einem Abbruch der Bestaetigung nicht wieder geloescht');
   controller._bestaetige = function () { return true; };
+  delete global.document;
+});
+
+/* ---------- A-1 (finale Fix-Welle Etappe 2): laufBeenden() im .catch-Zweig ----------
+   Ohne diesen Test blieben alle Tests gruen, wenn laufBeenden() aus dem .catch entfernt
+   wuerde (per Mutationsprobe belegt) — ein Netzfehler haette dann state.gateLaeuft fuer
+   die restliche Sitzung gesperrt gelassen, denn F3 prueft den Merker VOR jedem weiteren
+   Graph-Aufruf. Der Test wirft einen echten Fehler aus graph.ordnerInhalt und prueft
+   danach (1) den Merker ist wieder frei, (2) ein zweiter Klick erreicht wieder
+   graph.ordnerInhalt, statt am Merker abzuprallen. */
+test('A-1: ein Graph-Fehler gibt den Lauf-Merker frei — ein zweiter Klick erreicht wieder graph.ordnerInhalt', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  controller._bestaetige = function () { return true; };
+  let ordnerInhaltAufrufe = 0;
+  graph.ordnerInhalt = function () {
+    ordnerInhaltAufrufe++;
+    return Promise.reject(new Error('Netzfehler (Testfall)'));
+  };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(ordnerInhaltAufrufe, 1);
+  assert.match(state.fehlerHinweis || '', /nicht \(vollst.ndig\) durchlaufen/);
+  assert.strictEqual(state.gateLaeuft['DBS-001/2'], undefined,
+    'der Lauf-Merker wurde nach einem Graph-Fehler im .catch-Zweig nicht wieder geloescht');
+
+  /* Zweiter Klick, NACH dem Fehler: ohne laufBeenden() im .catch bliebe der Merker
+     gesetzt und F3 wuerde diesen Aufruf mit "Gate laeuft bereits" abweisen, OHNE
+     graph.ordnerInhalt je ein zweites Mal zu rufen. */
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  await controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(ordnerInhaltAufrufe, 2,
+    'ein zweiter Klick nach einem Graph-Fehler haette wieder graph.ordnerInhalt erreichen ' +
+    'muessen — der Lauf-Merker blieb offenbar gesetzt');
   delete global.document;
 });
 
