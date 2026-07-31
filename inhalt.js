@@ -367,6 +367,82 @@
       return inhalt.naechsteDatei(i, schrittId, kursId, dateien, variante);
     },
 
+    /* --- Upload-Strukturpruefung fuer Contract-Excels (T11) ---
+       Das Drift-Netz fuer chat-generierte Dateien: eine KI-Excel mit einer
+       erfundenen Spalte ging bei AFL-001 unbemerkt durch Gate 1. struktur ist
+       die Abschrift aus IT_Architektur_bbz/output/tools/contract-schema.cjs
+       (kern[].name/spalten, katalog, steckbrief.name, reihenfolge) — dieselbe
+       Form, die state.data.inhalt['ablage-kontrakt'].schritte['2'].struktur
+       traegt. Kein Schritt fuehrt sie? Dann gibt es nichts zu pruefen. */
+    strukturVon: function (i, schrittId) {
+      var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
+      return (e && e.struktur) || null;
+    },
+
+    /* Dieselben Regeln wie contract-pruefen.cjs (pruefe()), im Browser ohne
+       Abhaengigkeit: unerlaubtes Blatt, fehlendes Pflichtblatt (Kern +
+       Steckbrief), Kopfzeilen-Abgleich (woertlich, nur die ersten
+       spalten.length Zellen), Blattreihenfolge, Steckbrief zuletzt. Prueft NIE
+       Zellinhalte jenseits der Kopfzeile — das bleibt Fachurteil am Gate.
+       blaetter kommt aus xlsxLesen.blaetterUndKoepfe(): [{name, kopf}]. Ohne
+       struktur (Schritt fuehrt keine) liefert die Funktion null statt eines
+       leeren, potenziell falsch als "geprueft und sauber" gelesenen Arrays —
+       ein leeres Ergebnis ist nie ein gruenes (contract-pruefen.cjs-Kommentar,
+       hier ebenso bindend). */
+    strukturPruefe: function (blaetter, struktur) {
+      if (!struktur) return null;
+      var bl = Array.isArray(blaetter) ? blaetter : [];
+      var fehler = [];
+      var kern = Array.isArray(struktur.kern) ? struktur.kern : [];
+      var katalog = Array.isArray(struktur.katalog) ? struktur.katalog : [];
+      var steckbrief = struktur.steckbrief || null;
+      var alle = kern.concat(katalog).concat(steckbrief ? [steckbrief] : []);
+      var reihenfolge = Array.isArray(struktur.reihenfolge)
+        ? struktur.reihenfolge
+        : alle.map(function (b) { return b.name; });
+
+      function istErlaubt(name) { return reihenfolge.indexOf(name) >= 0; }
+      function blattSchema(name) {
+        for (var n = 0; n < alle.length; n++) if (alle[n].name === name) return alle[n];
+        return null;
+      }
+      function rang(name) { var r = reihenfolge.indexOf(name); return r < 0 ? 999 : r; }
+
+      var namen = bl.map(function (b) { return b.name; });
+
+      namen.forEach(function (n) {
+        if (!istErlaubt(n)) fehler.push('Unerlaubtes Blatt: ' + n);
+      });
+
+      var pflicht = kern.map(function (b) { return b.name; });
+      if (steckbrief) pflicht.push(steckbrief.name);
+      pflicht.forEach(function (p) {
+        if (namen.indexOf(p) < 0) fehler.push('Pflichtblatt fehlt: ' + p);
+      });
+
+      bl.forEach(function (b) {
+        var s = blattSchema(b.name);
+        if (!s || !Array.isArray(s.spalten)) return;
+        var kopf = (b.kopf || []).slice(0, s.spalten.length)
+          .map(function (c) { return c == null ? '' : String(c).trim(); });
+        if (kopf.join('|') !== s.spalten.join('|')) {
+          fehler.push('Blatt ' + b.name + ': Kopfzeile weicht vom Schema ab');
+        }
+      });
+
+      var erlaubteInDatei = namen.filter(istErlaubt);
+      var sollFolge = erlaubteInDatei.slice().sort(function (a, b) { return rang(a) - rang(b); });
+      if (erlaubteInDatei.join('|') !== sollFolge.join('|')) {
+        fehler.push('Blattreihenfolge weicht vom Schema ab');
+      }
+
+      if (steckbrief && namen.length && namen[namen.length - 1] !== steckbrief.name) {
+        fehler.push('_steckbrief ist nicht das letzte Blatt');
+      }
+
+      return fehler;
+    },
+
     /* --- Die Briefing-Felder (Schritt 1) ---
        Acht generische Angaben, die kein Urteil brauchen, sondern nur gewusst werden
        muessen. Sie werden in der Kurswerkstatt gefragt, nicht im Chat: ein Prompt,

@@ -31,6 +31,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `index.html` | App-Shell + **gesamtes CSS** (`:root`-Tokens oben, aus v0.2 übernommen) |
 | `app.js` | `CONFIG` · `state` · `helpers` · `controller` |
 | `dossier.js` | Das Kursdossier — reine Funktionen: Schema, Status, Quellen |
+| `xlsx-lesen.js` | Liest eine .xlsx dependency-frei (ZIP + minimales XML) — Blattnamen und Kopfzeile je Blatt, fuer die Upload-Strukturpruefung (T11) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
 | `ansichten.js` | Kette, alle Kurse, ein Kurs, ein Schritt, Nachschlagen — reine String-Builder |
 | `test/fixture.js` | Testdaten in der Struktur der echten Dateien, ohne echte Prompt-Texte |
@@ -1304,3 +1305,106 @@ damit ein zurückgefallener Bereich sofort auffiele. Nebenbei: der Testkommentar
 verweist jetzt auf CLAUDE.md statt eine zweite, driftende Quelle für dieselbe Zahl zu führen.
 **552 Tests grün.** Mutationsproben 1 und 3 oben belegen den Fix (Einzahl/Mehrzahl bzw. der
 zurückgedrehte Bereichs-Fehler selbst).
+
+## Task T11: Upload-Strukturpruefung — Contract-Excels werden vor dem Hochladen geprüft
+
+Das Drift-Netz für chat-generierte Dateien: eine KI-Excel für AFL-001 trug eine erfundene Spalte
+(„Lernort") und ging unbemerkt durch Gate 1 — niemand prüfte die Struktur vor der Freigabe, nur
+den Inhalt. T11 schliesst diese Lücke im Weg Hochladen (Schritt 2, `.xlsx`), **im Browser, ohne
+Abhängigkeit** — Konvention 1 gilt auch hier, kein Paketmanager nur für einen xlsx-Parser.
+
+**`xlsx-lesen.js` (neu, UMD wie jede andere Datei) liest eine .xlsx dependency-frei.** Eine xlsx
+ist ein ZIP: `xlsxLesen.blaetterUndKoepfe(arrayBuffer) -> Promise<[{name, kopf}]>` parst das
+Central-Directory-Verzeichnis von Hand (dieselbe Logik wie
+`IT_Architektur_bbz/output/tools/contract-lesen.cjs`, dort mit `zlib`, weil Node-Werkzeug — hier
+mit `DecompressionStream('deflate-raw')`, nativ in Chrome/Edge und seit Node 18 auch im Test ohne
+Zusatzabhängigkeit), liest `xl/workbook.xml` + `xl/_rels/workbook.xml.rels` für die Blattnamen in
+Reihenfolge und je Blatt nur die **erste** `<row>` als Kopfzeile. **Kein vollwertiger
+xlsx-Parser:** keine Formeln, keine Formate, keine Datenzeilen, kein `sharedStrings`-Cache über
+die Kopfzeile hinaus gebraucht (wird trotzdem gelesen, falls Kopfzellen Typ `s` statt `inlineStr`
+tragen). Wirft (lehnt die Promise ab) bei einem Nicht-Zip, einem Zip ohne `xl/workbook.xml` und
+bei einer nicht unterstützten Zip-Kompressionsmethode (nur 0 = ungespeichert und 8 = deflate
+kommen aus xlsx je vor).
+
+**`inhalt.strukturPruefe(blaetter, struktur)` — dieselben Regeln wie
+`IT_Architektur_bbz/output/tools/contract-pruefen.cjs`, nicht neu erfunden:** unerlaubtes Blatt,
+fehlendes Pflichtblatt (Kern-Blätter + Steckbrief), Kopfzeilen-Abgleich (die ersten
+`spalten.length` Zellen wörtlich, nicht mehr), Blattreihenfolge, `_steckbrief` muss das letzte
+Blatt sein. `struktur` ist die Abschrift aus `contract-schema.cjs`
+(`kern[].name/spalten`, `katalog`, `steckbrief.name`, `reihenfolge`) und liegt im Kontrakt als
+`ablage-kontrakt.schritte['2'].struktur` — `inhalt.strukturVon(i, schrittId)` liest sie. **Führt
+ein Schritt kein `struktur`-Feld, gibt es nichts zu prüfen: `strukturPruefe` liefert dann `null`,
+nie ein leeres Array** — ein leeres Ergebnis ist nie ein grünes (derselbe Grundsatz wie im
+Kommentarkopf von `contract-pruefen.cjs`), und `null` sagt ehrlich „ungeprüft" statt „sauber
+befunden".
+
+**Was geprüft wird — und was bewusst NICHT:** die Struktur (Blätter, Reihenfolge, Kopfzeilen)
+einer hochgeladenen Contract-Excel wird gegen das Schema abgeglichen. **Zellinhalte jenseits der
+Kopfzeile werden NIE gelesen oder geprüft** — ob ein Lernziel inhaltlich taugt, bleibt Fachurteil
+am Gate, keine Maschinenprüfung. Ebenso ungeprüft: Formeln, Zahlenformate, Bloom-Stufen-Werte,
+die Reihenfolge der Datenzeilen innerhalb eines Blatts. T11 ist ein Struktur-Drift-Netz, kein
+Inhalts-Lektor.
+
+**`controller.hochladen` (app.js) — die Prüfung läuft VOR jedem Netzzugriff, nicht erst nach dem
+Ordner-Lesen:** nur wenn `inhalt.strukturVon(inh, n)` etwas liefert UND die gewählte Datei auf
+`.xlsx` endet, liest der Controller die Datei als `ArrayBuffer` (`datei.arrayBuffer()`, nativ auf
+jedem `File`), ruft `xlsxLesen.blaetterUndKoepfe` und dann `inhalt.strukturPruefe` auf. Ein Befund
+**bricht den Upload ab** (kein `graph.ordnerInhalt`, kein `graph.hochladen`): die Befundliste
+landet am bestehenden Fehlerknoten `#hochladefehler` (Klartext über `.textContent`, keine
+HTML-Einspeisung — deshalb kein zusätzliches `esc()` nötig) UND in `state.fehlerHinweis` (Muster
+`quelleErfassen`-I10, Etappe 1e: ein Zwischen-Render kann den lokalen Knoten aushängen, bevor die
+Person ihn liest — `state.fehlerHinweis` lebt im State und übersteht das). Scheitert schon das
+Lesen der Datei selbst (kein Zip, kaputt) — ebenfalls Abbruch, eigene Meldung („Datei nicht
+lesbar — nicht hochgeladen: …"). Fehlt das `struktur`-Feld am Schritt, oder ist die Datei keine
+`.xlsx`, bleibt das Verhalten unverändert — kein Netzaufruf an `xlsxLesen`, direkter Weg wie vor
+T11.
+
+**Tests:** `test/xlsxlesen.test.js` (Store- UND Deflate-Pfad je mit einer im Test gebauten
+Mini-xlsx — kein Zip-Werkzeug im Projekt, ein kleiner ZIP-Bau-Helfer direkt in der Testdatei;
+`zlib.deflateRawSync` dient dort NUR als Test-Datengenerator für den Deflate-Fall, läuft nie im
+Browser mit; Fehlerfälle: kein Zip, `xl/workbook.xml` fehlt, unbekannte Kompressionsmethode, ein
+Blatt ohne auflösbares `rels`-Target). **Dokumentierte Grenze:** der Deflate-Pfad ist nur so weit
+geprüft, wie Node ≥18 `DecompressionStream` nativ bereitstellt — eine echte
+Browser-Verifikation (Chrome/Edge) fand in dieser Task nicht statt; die API-Fläche ist identisch,
+ein Engine-Unterschied ist mit dieser Suite trotzdem nicht auszuschliessen.
+`test/strukturpruefen.test.js` (jede Regel einzeln: sauberer Satz, optionale Katalog-Blätter,
+unerlaubtes Blatt, fehlendes Kern-/Steckbrief-Pflichtblatt, kaputte Kopfzeile — genau der
+AFL-001-Fall mit der erfundenen Spalte —, vertauschte Reihenfolge, Steckbrief nicht zuletzt, kein
+`struktur`-Feld → `null`). `test/hochladen.test.js` (Integration über `controller.hochladen`:
+sauberer Upload läuft durch, ein Befund bricht ab und meldet beides (`#hochladefehler` UND
+`state.fehlerHinweis`), eine unlesbare Datei bricht ab, eine Nicht-`.xlsx`-Datei sowie ein Schritt
+ohne `struktur`-Feld überspringen die Prüfung vollständig — `xlsxLesen.blaetterUndKoepfe` wird in
+beiden Fällen nachweislich nicht aufgerufen). `test/fixture.js` führt `struktur` jetzt bei Schritt
+2, in derselben Form wie der echte Ablage-Kontrakt. **574 Tests grün** (Baseline 552 + 10 + 7 + 5).
+
+**Mutationsproben (tatsächlich ausgeführt):**
+
+1. In `inhalt.strukturPruefe` den Kopfzeilen-Abgleich stillgelegt (`if (kopf.join('|') !== …)` zu
+   `if (false && kopf.join('|') !== …)`), `node --test test/strukturpruefen.test.js`:
+   ```
+   ℹ tests 10
+   ℹ pass 9
+   ℹ fail 1
+   ✖ eine erfundene/fehlende Spalte in der Kopfzeile wird gemeldet
+   ```
+   Genau der eine Test (der AFL-001-Fall) fiel rot, alle neun übrigen blieben grün — danach
+   wiederhergestellt.
+2. In `controller.hochladen` die Befund-Abzweigung stillgelegt (`if (befund && befund.length)` zu
+   `if (false && befund && befund.length)`), `node --test test/hochladen.test.js`:
+   ```
+   ℹ tests 22
+   ℹ pass 21
+   ℹ fail 1
+   ✖ struktur vorhanden, Befunde: der Upload wird abgebrochen, nichts geht an graph.hochladen
+     AssertionError [ERR_ASSERTION]: trotz Befund hochgeladen
+     + 'AFL-001_lernziele-drehbuch_v1.xlsx'
+     - null
+   ```
+   Genau der eine Test fiel rot, danach wiederhergestellt; komplette Suite erneut geprüft:
+   `node --test` → 574/574 grün.
+
+**Offen / bewusst nicht angefasst in T11:** das reale `ablage-kontrakt.json` in SharePoint trägt
+`struktur` noch nicht — dieser Task ändert nur den App-Code und die Test-Fixture (Weg B: die
+echte Datei liegt ausserhalb des Repos und ist nicht Teil dieser Task). Solange sie fehlt, greift
+die Prüfung nirgends (`strukturVon` liefert `null`) — kein Regressionsrisiko, aber auch noch kein
+Live-Nutzen, bis jemand das Feld in SharePoint nachträgt.

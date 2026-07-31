@@ -39,7 +39,23 @@
       schritte: {
         /* Kein Gate: die zuletzt abgelegte Fassung gilt und heisst _final. */
         '1': { ordner: '01_briefing', lieferobjekt: 'briefing', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null, letzteGiltAlsFinal: true },
-        '2': { ordner: '02_lernziele', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen' },
+        /* struktur (Etappe 2, T11): Abschrift aus IT_Architektur_bbz/output/
+           tools/contract-schema.cjs — dieselbe Form, wie der echte Kontrakt
+           sie fuehrt (kern/katalog/steckbrief/reihenfolge). */
+        '2': { ordner: '02_lernziele', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen',
+               struktur: {
+                 kern: [
+                   { name: '1_Lernziele', spalten: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten'] },
+                   { name: '2_Eingangskompetenzen', spalten: ['EK-ID','Thema','Definition','Wissensziel','Bloom-Stufe','Wie prüfbar (MC/MR)','Wie lernbar bei Lücken?'] },
+                   { name: '3_Drehbuch', spalten: ['Uhrzeit','Dauer','Thema','Phase (W/U/G)','Lernziel-ID','Erwartetes Verhalten / Ergebnis','Aktivität Trainer / Moderation','Material & Hilfsmittel'] }
+                 ],
+                 katalog: [
+                   { name: '4_Rechtsstand', spalten: ['Regelwerk / Norm','Stand (Datum)','Fundstelle','Bezug (LZ/EK-ID)'] },
+                   { name: '_aenderungen', spalten: ['Version','Datum','Person','Was','Warum'] }
+                 ],
+                 steckbrief: { name: '_steckbrief', spalten: ['feld','wert'] },
+                 reihenfolge: ['1_Lernziele','2_Eingangskompetenzen','3_Drehbuch','4_Rechtsstand','_aenderungen','_steckbrief']
+               } },
         /* Schritt 3 und 4 spiegeln den echten Kontrakt einschliesslich qualitaet —
            daraus leitet die Ansicht den Bauauftrag fuer den Weg Claude-Code ab. */
         '3': { ordner: '03_content', lieferobjekt: 'skript-{variante}', varianten: ['claude','chatgpt'],

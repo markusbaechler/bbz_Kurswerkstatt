@@ -2011,54 +2011,100 @@
         if (meld) { meld.textContent = text; meld.hidden = false; }
         else { alert(text); }
       }
+      /* Zusaetzlich im State (T11, Muster quelleErfassen-I10): ein
+         Zwischen-Render kann #hochladefehler aushaengen, bevor die Person
+         die Meldung liest — state.fehlerHinweis lebt im State und uebersteht
+         das. */
+      function klemmtSichtbar(text) {
+        state.fehlerHinweis = text;
+        klemmt(text);
+        controller.render();
+      }
       if (!datei) { feld.click(); return; }
 
       var ab = root.inhalt.ablageVon(inh, n, k.kursId);
       var schl = k.kursId + '/' + ab.ordner;
       var vari = root.inhalt.varianten(inh, n);
       var gewaehlt = root.inhalt.gewaehlteVariante(inh, n, state.position.variante);
-      if (meld) meld.hidden = true;
-      knopf.disabled = true; knopf.textContent = 'wird hochgeladen …';
 
-      /* Den Ordner frisch lesen — die Versionsnummer darf nicht aus einem alten Stand kommen. */
-      delete state.data.dateien[schl];
-      graph.ordnerInhalt(k.kursId, ab.ordner)
-        .then(function (dateien) {
-          /* Final ist final — auch wenn jemand den Knopf trotzdem erreicht. */
-          var zu = root.inhalt.abgeschlossen(inh, n, k.kursId, dateien, gewaehlt);
-          if (zu) {
-            throw new Error('Abgeschlossen: ' + zu + ' ist freigegeben. Setze die ' +
-              'Freigabe von Hand zurück, wenn du wirklich nachbessern musst.');
-          }
-          var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
-          if (!ziel) {
-            throw new Error(vari
-              ? 'Wähle zuerst die Variante — der Dateiname hängt davon ab.'
-              : 'Für diesen Schritt ist kein Hochladen vorgesehen.');
-          }
-          /* Erst zurueckstufen, dann hochladen — sonst gaebe es kurz zwei _final. */
-          var vorher = ziel.zurueckstufen
-            ? graph.umbenennen(k.kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
-            : Promise.resolve(null);
-          return vorher.then(function () {
-            return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, datei, function (anteil) {
-              knopf.textContent = anteil >= 1 ? 'wird abgeschlossen …'
-                                              : 'lädt … ' + Math.round(anteil * 100) + '%';
+      /* Upload-Strukturpruefung (T11) — das Drift-Netz fuer chat-generierte
+         Contract-Excels (AFL-001-Lehre: eine erfundene Spalte ging unbemerkt
+         durch Gate 1). Nur wenn der Kontrakt fuer diesen Schritt ein
+         struktur-Feld fuehrt UND die gewaehlte Datei eine .xlsx ist — sonst
+         unveraendertes Verhalten. Laeuft VOR jedem Netzzugriff: ein
+         struktureller Befund soll den Ordner nicht erst frisch lesen. */
+      var struktur = root.inhalt.strukturVon(inh, n);
+      var istXlsx = /\.xlsx$/i.test((datei.name || ''));
+
+      function weiterMitUpload() {
+        if (meld) meld.hidden = true;
+        knopf.disabled = true; knopf.textContent = 'wird hochgeladen …';
+
+        /* Den Ordner frisch lesen — die Versionsnummer darf nicht aus einem alten Stand kommen. */
+        delete state.data.dateien[schl];
+        graph.ordnerInhalt(k.kursId, ab.ordner)
+          .then(function (dateien) {
+            /* Final ist final — auch wenn jemand den Knopf trotzdem erreicht. */
+            var zu = root.inhalt.abgeschlossen(inh, n, k.kursId, dateien, gewaehlt);
+            if (zu) {
+              throw new Error('Abgeschlossen: ' + zu + ' ist freigegeben. Setze die ' +
+                'Freigabe von Hand zurück, wenn du wirklich nachbessern musst.');
+            }
+            var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
+            if (!ziel) {
+              throw new Error(vari
+                ? 'Wähle zuerst die Variante — der Dateiname hängt davon ab.'
+                : 'Für diesen Schritt ist kein Hochladen vorgesehen.');
+            }
+            /* Erst zurueckstufen, dann hochladen — sonst gaebe es kurz zwei _final. */
+            var vorher = ziel.zurueckstufen
+              ? graph.umbenennen(k.kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
+              : Promise.resolve(null);
+            return vorher.then(function () {
+              return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, datei, function (anteil) {
+                knopf.textContent = anteil >= 1 ? 'wird abgeschlossen …'
+                                                : 'lädt … ' + Math.round(anteil * 100) + '%';
+              });
+            }).then(function () { return ziel; });
+          })
+          .then(function (ziel) {
+            var neu = graph.standNachAblage(k, +n);
+            var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
+            return weiter.then(function () { return ziel; });
+          })
+          .then(function (ziel) {
+            return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
+              state.hinweis = 'Hochgeladen als ' + ziel.datei;
+              controller.render();
             });
-          }).then(function () { return ziel; });
-        })
-        .then(function (ziel) {
-          var neu = graph.standNachAblage(k, +n);
-          var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
-          return weiter.then(function () { return ziel; });
-        })
-        .then(function (ziel) {
-          return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
-            state.hinweis = 'Hochgeladen als ' + ziel.datei;
-            controller.render();
+          })
+          .catch(function (e) { klemmt('Nicht hochgeladen. ' + (e.message || e)); });
+      }
+
+      if (struktur && istXlsx) {
+        if (meld) meld.hidden = true;
+        knopf.disabled = true; knopf.textContent = 'wird geprüft …';
+        var lesen = (datei.arrayBuffer && typeof datei.arrayBuffer === 'function')
+          ? datei.arrayBuffer()
+          : Promise.reject(new Error('Diese Datei kann nicht gelesen werden.'));
+        lesen
+          .then(function (buf) { return root.xlsxLesen.blaetterUndKoepfe(buf); })
+          .then(function (blaetter) {
+            var befund = root.inhalt.strukturPruefe(blaetter, struktur);
+            if (befund && befund.length) {
+              klemmtSichtbar('Struktur weicht vom Contract ab — nicht hochgeladen: ' +
+                befund.join(' · '));
+              return;
+            }
+            weiterMitUpload();
+          })
+          .catch(function (e) {
+            klemmtSichtbar('Datei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
           });
-        })
-        .catch(function (e) { klemmt('Nicht hochgeladen. ' + (e.message || e)); });
+        return;
+      }
+
+      weiterMitUpload();
     },
 
     erledigt: function (n) {

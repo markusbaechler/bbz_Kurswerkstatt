@@ -135,3 +135,126 @@ test('Schritte ohne den Weg bekommen kein Dateifeld', () => {
     assert.ok(!/id="datei"/.test(h), 'Schritt ' + n);
   });
 });
+
+/* ---------- controller.hochladen: Upload-Strukturpruefung (T11) ----------
+   Das Drift-Netz fuer chat-generierte Contract-Excels: eine erfundene Spalte
+   ging bei AFL-001 unbemerkt durch Gate 1. Nur wenn der Kontrakt fuer den
+   Schritt ein struktur-Feld fuehrt UND die gewaehlte Datei eine .xlsx ist,
+   greift die Pruefung — sonst unveraendertes Verhalten (bestehende Tests
+   oben bleiben dafuer der Beleg: sie fuehren keine .arrayBuffer-Mocks und
+   liefen schon vor T11 gruen). */
+
+const { controller, state, graph } = require('../app.js');
+const { xlsxLesen } = require('../xlsx-lesen.js');
+
+function xlsxDatei(name, arrayBufferErgebnis) {
+  return {
+    name: name,
+    arrayBuffer: function () {
+      return arrayBufferErgebnis instanceof Error
+        ? Promise.reject(arrayBufferErgebnis)
+        : Promise.resolve(arrayBufferErgebnis || new ArrayBuffer(0));
+    }
+  };
+}
+
+/* Legt den Controller in einen Zustand, in dem nur noch der Klick auf
+   "Hochladen" fehlt. inh wird pro Aufruf frisch geklont, damit ein Test das
+   struktur-Feld gefahrlos entfernen/aendern kann, ohne INHALT fuer die
+   anderen Tests der Datei zu verfaellschen. */
+async function hochladenLauf(n, dateiObjekt, inhOverride) {
+  const meldung = { textContent: '', hidden: true };
+  const hochgeladenMit = { ordner: null, datei: null };
+
+  state.data.inhalt = inhOverride || JSON.parse(JSON.stringify(INHALT));
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
+                        schritt: +n, status: 'inArbeit' }];
+  state.data.dateien = {};
+  state.fehlerHinweis = null;
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: String(n),
+                     werkzeugId: null, werk: null, variante: null, weg: null };
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'datei') return { files: [dateiObjekt] };
+      if (id === 'hochladefehler') return meldung;
+      return null;
+    }
+  };
+
+  graph.ordnerInhalt = function (kursId, ordner) {
+    hochgeladenMit.ordnerGelesen = ordner;
+    return Promise.resolve([]);
+  };
+  graph.hochladen = function (kursId, ordner, datei) {
+    hochgeladenMit.ordner = ordner; hochgeladenMit.datei = datei;
+    return Promise.resolve();
+  };
+  graph.standNachAblage = function () { return null; };
+  graph.standSetzenRoh = function () { return Promise.resolve(); };
+  controller.render = function () {};
+
+  const knopf = { disabled: false, textContent: 'Hochladen' };
+  controller.hochladen(String(n), knopf);
+  await new Promise(function (r) { setTimeout(r, 30); });
+  return { hochgeladenMit: hochgeladenMit, meldung: meldung.textContent,
+           fehlerHinweis: state.fehlerHinweis, knopf: knopf };
+}
+
+test('struktur vorhanden, Datei sauber: der Upload laeuft normal durch', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten'] },
+      { name: '2_Eingangskompetenzen', kopf: ['EK-ID','Thema','Definition','Wissensziel','Bloom-Stufe','Wie prüfbar (MC/MR)','Wie lernbar bei Lücken?'] },
+      { name: '3_Drehbuch', kopf: ['Uhrzeit','Dauer','Thema','Phase (W/U/G)','Lernziel-ID','Erwartetes Verhalten / Ergebnis','Aktivität Trainer / Moderation','Material & Hilfsmittel'] },
+      { name: '_steckbrief', kopf: ['feld','wert'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'));
+  assert.strictEqual(l.meldung, '', 'kein Upload-Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochgeladenMit.ordner, '02_lernziele');
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_lernziele-drehbuch_v1.xlsx');
+  assert.strictEqual(l.knopf.disabled, true, 'der Knopf bleibt waehrend des Uploads gesperrt');
+});
+
+test('struktur vorhanden, Befunde: der Upload wird abgebrochen, nichts geht an graph.hochladen', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Lernort','Definition'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'));
+  assert.strictEqual(l.hochgeladenMit.datei, null, 'trotz Befund hochgeladen');
+  assert.match(l.meldung, /Struktur weicht vom Contract ab/);
+  assert.match(l.meldung, /Pflichtblatt fehlt/);
+  assert.match(l.fehlerHinweis || '', /Struktur weicht vom Contract ab/,
+    'state.fehlerHinweis fehlt — ein Zwischen-Render koennte sonst die Meldung verlieren');
+  assert.strictEqual(l.knopf.disabled, false, 'der Knopf muss nach dem Abbruch wieder bedienbar sein');
+});
+
+test('die Datei selbst ist nicht lesbar: Upload wird abgebrochen, klare Meldung', async () => {
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx', new Error('kaputte Datei')));
+  assert.strictEqual(l.hochgeladenMit.datei, null);
+  assert.match(l.meldung, /nicht lesbar/);
+  assert.match(l.meldung, /kaputte Datei/);
+  assert.match(l.fehlerHinweis || '', /nicht lesbar/);
+});
+
+test('struktur vorhanden, aber die Datei ist keine .xlsx: keine Pruefung, unveraendertes Verhalten', async () => {
+  let gerufen = false;
+  xlsxLesen.blaetterUndKoepfe = function () { gerufen = true; return Promise.resolve([]); };
+  const l = await hochladenLauf(2, xlsxDatei('AFL-001_lernziele-drehbuch_v1.xls'));
+  assert.strictEqual(gerufen, false, 'xlsxLesen haette fuer eine Nicht-xlsx nicht aufgerufen werden duerfen');
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_lernziele-drehbuch_v1.xlsx',
+    'der Upload haette trotzdem normal laufen sollen');
+});
+
+test('kein struktur-Feld am Schritt: keine Pruefung, auch bei .xlsx', async () => {
+  let gerufen = false;
+  xlsxLesen.blaetterUndKoepfe = function () { gerufen = true; return Promise.resolve([]); };
+  const ohneStruktur = JSON.parse(JSON.stringify(INHALT));
+  delete ohneStruktur['ablage-kontrakt'].schritte['2'].struktur;
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'), ohneStruktur);
+  assert.strictEqual(gerufen, false, 'xlsxLesen haette ohne struktur-Feld nicht aufgerufen werden duerfen');
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_lernziele-drehbuch_v1.xlsx');
+});
