@@ -947,12 +947,26 @@
            Zugriff auf SharePoint — eine Datei-Quelle ist fuer den Chat nur lesbar,
            wenn sie zusaetzlich als Projekt-Wissen in genau diesem Projekt hochgeladen
            wurde. Das stand bisher nirgends, obwohl "AUSSCHLIESSLICH diese Quellen"
-           oben genau das voraussetzt. Drei Regeln, unconditional wie Rechtsstand/SAQ
-           unten — sie gelten unabhaengig vom content_modus, weil eine im Projekt-
-           Wissen liegende Karteileiche (Punkt 8b) auch im Modus quellenfrei oder ohne
-           erfasste Quellen ein Risiko bleibt: */
-        z.push('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt. Fehlt dir eine ' +
-               'davon, sag es — lies nie eine andere an ihrer Stelle.');
+           oben genau das voraussetzt.
+           Fix-Runde 1 (Review): Satz 1 ist eine Ist-Behauptung ("Die Datei-Quellen
+           liegen als Projekt-Wissen ...") — die darf nur stehen, wenn es ueberhaupt
+           eine Datei-Quelle gibt. Unconditional kollidierte er im Modus quellenfrei
+           mit "es liegen keine validen Fachquellen vor" und behauptete bei leerer
+           oder reiner Link-Liste einen Bestand, den es nicht gibt — genau in dem
+           Modus, der Halluzination verhindern soll. Die Filterung ist dieselbe wie
+           bei der PROJEKT-WISSEN-Zeile in lernzielePromptKopf (Task T13): inhalt.js
+           baut sie bewusst selbst aus d.quellen, statt dossier.positivliste() zu
+           rufen — inhalt.js kennt dossier.js nirgends (s. Kommentar dort). Regel 2
+           (eine nicht gelistete Datei im Projekt-Wissen melden) und Regel 3 (Dossier
+           ist massgebend, Nachziehpflicht) sind reine Verhaltensregeln ohne
+           Ist-Behauptung und bleiben deshalb unconditional — eine Karteileiche im
+           Projekt-Wissen (Punkt 8b) ist auch im Modus quellenfrei oder ganz ohne
+           erfasste Quellen ein Risiko. */
+        var dateiQuellen = (d.quellen || []).map(function (q) { return q.datei; }).filter(Boolean);
+        if (dateiQuellen.length) {
+          z.push('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt. Fehlt dir eine ' +
+                 'davon, sag es — lies nie eine andere an ihrer Stelle.');
+        }
         z.push('Liegt im Projekt-Wissen eine Datei, die NICHT in dieser Quellenliste steht: ' +
                'nutze sie nicht, sondern melde sie — sie gehört zuerst in der Kurswerkstatt ' +
                'erfasst.');

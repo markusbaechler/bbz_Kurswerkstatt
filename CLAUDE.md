@@ -1015,17 +1015,17 @@ weil die Regel nirgends feststand. (c) Der eingefrorene Projekt-Stand veraltet s
 sich die Quellenliste im Dossier ändert.
 
 **`inhalt.projektInstruktionenTeile` trägt seither drei zusätzliche Sätze im Quellen-Teil**
-(nach den drei `content_modus`-Zweigen, vor der bestehenden Rechtsstand/SAQ-Zeile — derselbe
-`if (d)`-Rahmen, unconditional wie diese, weil eine Karteileiche im Projekt-Wissen (Punkt 8b)
-auch im Modus quellenfrei oder ganz ohne erfasste Quellen ein Risiko bleibt):
-„Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt. Fehlt dir eine davon, sag es —
-lies nie eine andere an ihrer Stelle." · „Liegt im Projekt-Wissen eine Datei, die NICHT in
-dieser Quellenliste steht: nutze sie nicht, sondern melde sie — sie gehört zuerst in der
-Kurswerkstatt erfasst." · „Diese Instruktionen und das Projekt-Wissen sind ein Abzug des
-Kursdossiers. Massgebend ist immer das Dossier — nach jeder Quellen-Änderung werden
-Instruktionen und Projekt-Wissen neu übernommen." Da beide Fassungen (Claude/ChatGPT) aus
-derselben Teile-Struktur gebaut werden (Konvention 9), gilt der Wortlaut für beide gleich —
-kein zweiter Text zum Auseinanderdriften.
+(nach den drei `content_modus`-Zweigen, vor der bestehenden Rechtsstand/SAQ-Zeile, derselbe
+`if (d)`-Rahmen): „Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt. Fehlt dir
+eine davon, sag es — lies nie eine andere an ihrer Stelle." · „Liegt im Projekt-Wissen eine
+Datei, die NICHT in dieser Quellenliste steht: nutze sie nicht, sondern melde sie — sie
+gehört zuerst in der Kurswerkstatt erfasst." · „Diese Instruktionen und das Projekt-Wissen
+sind ein Abzug des Kursdossiers. Massgebend ist immer das Dossier — nach jeder
+Quellen-Änderung werden Instruktionen und Projekt-Wissen neu übernommen." Da beide Fassungen
+(Claude/ChatGPT) aus derselben Teile-Struktur gebaut werden (Konvention 9), gilt der Wortlaut
+für beide gleich — kein zweiter Text zum Auseinanderdriften. **Fix-Runde 1 unten schränkt den
+ersten Satz auf Kurse mit mindestens einer Datei-Quelle ein** — Regel 2 und 3 bleiben
+unconditional.
 
 **Verwandt, aber bewusst nicht dieselbe Stelle: `inhalt.lernzielePromptKopf` (Task T13,
 Schritt 2) trägt bereits eine eigene PROJEKT-WISSEN-Zeile**, dort aus `d.quellen` automatisch
@@ -1056,3 +1056,48 @@ ein Test, dass ohne Dossier auch diese Regeln ganz fehlen (`doesNotMatch(t, /Pro
 ```
 Genau der eine betroffene Test fiel rot, alle anderen (inkl. der drei übrigen neuen) blieben
 grün; danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → 532/532 grün.
+
+### Fix-Runde 1 (Review, 1 Important-Finding)
+
+**Finding:** Satz 1 ist eine Indikativ-Tatsachenbehauptung („Die Datei-Quellen liegen als
+Projekt-Wissen in diesem Projekt.") und stand unconditional — im Modus `quellenfrei` kollidiert
+das direkt mit der Zeile darüber („es liegen keine validen Fachquellen vor … Erfinde keine
+Quellenangaben"), und bei leerer oder reiner Link-Quellenliste behauptete er einen Bestand, den
+es nicht gibt. Genau in dem Modus, der Halluzination verhindern soll, erzeugte der Satz eine
+falsche Faktenlage.
+
+**Entscheid: Variante (a) — Satz 1 nur rendern, wenn mindestens eine Datei-Quelle vorliegt.**
+Gegen Variante (b, Umformulierung zur reinen Verhaltensregel „Falls Datei-Quellen als
+Projekt-Wissen vorliegen: …"): eine bedingte „Falls"-Formulierung mitten im sonst direktiven
+Instruktionston wäre weicher als der Rest des Quellen-Teils (der durchgehend Ist-Zustand
+meldet, z. B. „Massgebend sind AUSSCHLIESSLICH diese Quellen" oder „Noch keine Fachquellen
+erfasst") und hätte den Chat zwingen können, selbst zu prüfen, ob der Fall zutrifft — genau die
+Art Spielraum, die die übrigen Regeln bewusst nicht lassen. Variante (a) hält den Satz als klare
+Tatsachenaussage, zeigt ihn aber nur, wenn er wahr ist — konsistent mit dem Rest des Teils, der
+ohnehin schon zwischen „quellenfrei" / „Quellen vorhanden" / „noch keine erfasst" unterscheidet.
+
+**Umsetzung:** `dateiQuellen = (d.quellen || []).map(q => q.datei).filter(Boolean)` — dieselbe
+Filterung wie bei der PROJEKT-WISSEN-Zeile in `lernzielePromptKopf` (Task T13); Satz 1 steht nur,
+wenn `dateiQuellen.length`. Regel 2 (nicht gelistete Datei im Projekt-Wissen melden) und Regel 3
+(Dossier ist massgebend, Nachziehpflicht) bleiben **unconditional** — reine Verhaltensregeln ohne
+Ist-Behauptung, die auch im Modus `quellenfrei` oder ganz ohne erfasste Quellen gelten (eine
+Karteileiche im Projekt-Wissen bleibt dort ein Risiko, Punkt 8b).
+
+**Tests (vier neue Fälle):** `quellenfrei` ohne Quellen, `quellengestuetzt` mit leerer Liste, und
+eine reine Link-Quelle (kein `datei`-Feld) — in allen dreien fehlt Satz 1, Regel 2/3 bleiben
+stehen; eine Gegenprobe mit mindestens einer Datei-Quelle zeigt Satz 1 weiterhin wie zuvor.
+**536 Tests grün** (528 + 4 aus der ersten Runde + 4 aus dieser Fix-Runde).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die Bedingung `if (dateiQuellen.length)` durch
+`if (true)` ersetzt (Satz 1 wieder unconditional), `node --test test/instruktionen.test.js`:
+```
+ℹ tests 50
+ℹ pass 47
+ℹ fail 3
+
+✖ ohne Datei-Quellen (Modus quellenfrei) fehlt die Ist-Behauptung — Regel 2/3 bleiben (Fix-Runde 1)
+✖ ohne Datei-Quellen (leere Liste, quellengestuetzt) fehlt die Ist-Behauptung ebenso (Fix-Runde 1)
+✖ eine reine Link-Quelle (keine Datei) loest ebenfalls keine Ist-Behauptung aus (Fix-Runde 1)
+```
+Genau die drei neuen Fix-Runde-Tests fielen rot, die Gegenprobe und alle 46 übrigen blieben grün;
+danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → 536/536 grün.

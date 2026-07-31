@@ -120,6 +120,57 @@ test('ohne Dossier fehlen auch die drei Projekt-Wissen-Regeln', () => {
   assert.doesNotMatch(t, /Projekt-Wissen/);
 });
 
+/* ---------- Fix-Runde 1 (Review): Satz 1 ist eine Ist-Behauptung ("Die Datei-Quellen liegen
+   als Projekt-Wissen in diesem Projekt.") — unconditional kollidierte er im Modus quellenfrei
+   mit "es liegen keine validen Fachquellen vor" und behauptete bei leerer/reiner Link-Liste
+   einen Bestand, den es nicht gibt. Fix: Satz 1 nur, wenn mindestens eine Datei-Quelle im
+   Dossier steht (dieselbe Datei-Filterung wie bei der PROJEKT-WISSEN-Zeile in
+   lernzielePromptKopf/T13 — inhalt.js baut sie bewusst selbst, statt dossier.js zu importieren).
+   Regel 2 (nicht gelistete Datei im Projekt-Wissen melden) und Regel 3 (Dossier ist massgebend,
+   Nachziehpflicht) bleiben unconditional — sie sind reine Verhaltensregeln, keine
+   Ist-Behauptungen, und gelten unabhaengig davon, ob gerade eine Datei-Quelle vorliegt. */
+
+test('ohne Datei-Quellen (Modus quellenfrei) fehlt die Ist-Behauptung — Regel 2/3 bleiben (Fix-Runde 1)', () => {
+  const dQuellenfrei = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellenfrei',
+                          quellen: [], status: {}, offen: [], entschieden: [] };
+  ['claude', 'chatgpt'].forEach(function (f) {
+    const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, f, 'AFL-001_x', dQuellenfrei)
+                    .replace(/\s+/g, ' ');
+    assert.ok(t.indexOf('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt') < 0,
+      f + ': Ist-Behauptung steht trotz fehlender Datei-Quellen (kollidiert mit quellenfrei)');
+    assert.ok(t.indexOf('NICHT in dieser Quellenliste steht') >= 0, f + ': Regel 2 fehlt');
+    assert.ok(t.indexOf('sind ein Abzug des Kursdossiers') >= 0, f + ': Regel 3 fehlt');
+  });
+});
+
+test('ohne Datei-Quellen (leere Liste, quellengestuetzt) fehlt die Ist-Behauptung ebenso (Fix-Runde 1)', () => {
+  const dLeer = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+                  quellen: [], status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', dLeer)
+                  .replace(/\s+/g, ' ');
+  assert.ok(t.indexOf('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt') < 0,
+    'Ist-Behauptung steht trotz leerer Quellenliste');
+});
+
+test('eine reine Link-Quelle (keine Datei) loest ebenfalls keine Ist-Behauptung aus (Fix-Runde 1)', () => {
+  const dLinkOnly = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+                       quellen: [{ id: 'Q-001', titel: 'Ausschreibung', herausgeber: 'SSPA',
+                                   stand: '2026', url: 'https://sspa.ch/ausschreibung',
+                                   abgerufen: '2026-07-30' }],
+                       status: {}, offen: [], entschieden: [] };
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', dLinkOnly)
+                  .replace(/\s+/g, ' ');
+  assert.ok(t.indexOf('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt') < 0,
+    'Ist-Behauptung steht trotz reiner Link-Quelle');
+});
+
+test('mit mindestens einer Datei-Quelle steht die Ist-Behauptung wie zuvor (Gegenprobe, Fix-Runde 1)', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x', QUELLE_D)
+                  .replace(/\s+/g, ' ');
+  assert.ok(t.indexOf('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt') >= 0,
+    'Ist-Behauptung fehlt trotz vorhandener Datei-Quelle');
+});
+
 /* ---------- Etappe 1e, Task 6: Rechtsstand/SAQ-Rezertifizierung aus dem Dossier ---------- */
 
 test('die Instruktionen tragen Rechtsstand und SAQ-Rezertifizierung aus regulatorik', () => {
