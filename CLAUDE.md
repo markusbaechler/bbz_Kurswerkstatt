@@ -1630,3 +1630,47 @@ Controller-Tests in `gate.test.js` (GEWÄHLTE-Fassung, ohne-Radio-Abbruch), 2 ne
 
 Komplette Suite nach allen drei Wiederherstellungen erneut geprüft: `node --test` → **590/590
 grün**.
+
+### Fix-Runde Z9 (Review, 1 Important-Finding)
+
+**Finding:** die gewählte Fassung (`gewaehlt`) kam aus dem DOM — also aus dem Stand zur
+RENDER-Zeit — wurde aber NIE gegen die im selben Klick frisch gelesene `dateien`-Liste
+validiert. Race: verschwindet die Datei zwischen Render und Klick (eine zweite Person hat sie
+zwischenzeitlich umbenannt/gelöscht, oder ein eigener früherer Teil-Durchlauf hat sie bereits
+verschoben), schrieb `gateKlick` das Protokoll trotzdem mit „Freigegeben: {gewaehlt}" — erst
+danach scheiterte `graph.umbenennen` mit 404, das falsche Protokoll blieb aber schon liegen.
+Das unterläuft die Task-6-Fix-Runden-Prämisse „von ist zum Lese-Zeitpunkt vollständig bekannt
+und existiert" (s. o., „Reihenfolge Protokoll-VOR-Umbenennen").
+
+**Fix:** direkt nach dem frischen `graph.ordnerInhalt` und VOR jedem Schreiben (Protokoll,
+`graph.umbenennen`, Dossier-Status) prüft `gateKlick`
+`dateien.some(function (x) { return x.name === gewaehlt; })` — fehlt die gewählte Datei in der
+gerade gelesenen Liste, bricht der Aufruf mit einer neuen Fehlermeldung ab („gewählte Fassung
+{gewaehlt} liegt nicht mehr im Ordner — Ansicht wurde neu geladen, bitte Auswahl prüfen"), bevor
+der Bestätigungs-Dialog überhaupt erscheint. Kein `graph.ablegen`, kein `graph.umbenennen` — der
+bestehende generische `.catch`-Pfad übernimmt Lauf-Merker-Freigabe, `state.fehlerHinweis` und
+`render()` wie bei jedem anderen Fehler in diesem Ablauf (Muster „keine Fassung ausgewählt"
+direkt darüber). Betrifft ausschliesslich Fall (c) (voller Durchlauf/Wiedereinstieg vor dem
+Umbenennen) — die Fälle (a)/(b) (`_final` liegt schon) lesen `gewaehlt` gar nicht, dort ist
+nichts zu validieren.
+
+**Test:** `test/gate.test.js`, „Fix-Runde Z9: die Radio-Auswahl (Render-Zeitpunkt) existiert
+nicht mehr im frisch gelesenen Ordner …" — Radio zeigt `v5`, `graph.ordnerInhalt` liefert frisch
+nur noch `v6` (kein `_final`, sonst wäre der Fall (a)/(b)-Zweig getroffen, nicht dieser): kein
+`graph.ablegen`-Aufruf, kein `graph.umbenennen`-Aufruf, `state.fehlerHinweis` nennt die
+verschwundene Datei, der Lauf-Merker ist danach wieder frei.
+
+**Mutationsprobe (tatsächlich ausgeführt):** die `some(...)`-Prüfung auf `if (false && …)`
+gesetzt, `node --test test/gate.test.js`:
+```
+ℹ tests 22
+ℹ pass 21
+ℹ fail 1
+
+✖ Fix-Runde Z9: die Radio-Auswahl (Render-Zeitpunkt) existiert nicht mehr im frisch gelesenen Ordner — Abbruch OHNE Protokoll/Umbenennung, Merker frei
+  AssertionError [ERR_ASSERTION]: trotz veralteter Auswahl wurde ein Protokoll (oder ein Dossier-Schreiben) abgelegt
+  true !== false
+```
+Genau der eine neue Test fiel rot, alle anderen 21 (inkl. der übrigen 20 aus Z9 und dem
+Baseline-Bestand) blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft:
+`node --test` → **591/591 grün**.

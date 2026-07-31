@@ -1798,6 +1798,20 @@
         var gewaehlt = null;
         Array.prototype.forEach.call(radios, function (r) { if (r.checked) gewaehlt = r.value; });
         if (!gewaehlt) throw new Error('keine Fassung ausgewählt in ' + ablage.ordner);
+        /* Fix-Runde Z9 (Review-Finding): gewaehlt kommt aus dem DOM, also aus dem Stand
+           zur RENDER-Zeit — nicht aus derselben dateien-Liste, die hier gerade frisch
+           gelesen wurde. Zwischen Render und Klick kann die Datei verschwunden sein
+           (Race: eine zweite Person hat sie umbenannt/geloescht, oder ein eigener
+           frueherer Teil-Durchlauf hat sie bereits verschoben). Ohne diese Pruefung
+           haette das Protokoll unten "Freigegeben: {gewaehlt}" fuer eine Datei
+           geschrieben, die es nicht mehr gibt — graph.umbenennen waere danach mit 404
+           gescheitert, das falsche Protokoll waere aber schon liegen geblieben. Deshalb
+           VOR jedem Schreiben abbrechen, sobald die aktuelle Ordnerliste die gewaehlte
+           Datei nicht mehr fuehrt — kein Protokoll, keine Umbenennung. */
+        if (!dateien.some(function (x) { return x.name === gewaehlt; })) {
+          throw new Error('gewählte Fassung ' + gewaehlt + ' liegt nicht mehr im Ordner — ' +
+            'Ansicht wurde neu geladen, bitte Auswahl prüfen');
+        }
         var nach = root.inhalt.finalName(kursId, lief, endung);
         nachName = nach;
         if (!controller._bestaetige('Als final bestätigen?\n' + gewaehlt + ' → ' + nach)) {

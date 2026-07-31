@@ -242,6 +242,40 @@ test('Z9: ohne angehaktes Radio (kein DOM-Fund) bricht gateKlick mit derselben F
   delete global.document;
 });
 
+/* ---------- Fix-Runde Z9 (Review-Finding, Important): gewaehlt wird gegen die FRISCH
+   gelesene Ordnerliste validiert ---------- */
+
+test('Fix-Runde Z9: die Radio-Auswahl (Render-Zeitpunkt) existiert nicht mehr im frisch gelesenen Ordner — Abbruch OHNE Protokoll/Umbenennung, Merker frei', async () => {
+  setzeKursMitInhalt();
+  /* Szene aus dem Review: das Radio zeigt noch v5 (Stand beim Rendern), eine zweite
+     Person hat die Datei zwischenzeitlich bereits umbenannt/geloescht — der frisch
+     gelesene Ordner fuehrt nur noch v6 (kein _final, sonst waere final=true und dieser
+     Zweig gar nicht erreicht). */
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v5.xlsx'));
+  controller._bestaetige = function () { return true; };
+  let ablegenGerufen = false;
+  let umbenennenGerufen = false;
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([{ name: 'DBS-001_lernziele-drehbuch_v6.xlsx' }]);
+  };
+  graph.ablegen = function () { ablegenGerufen = true; return Promise.resolve({ eTag: 'W/"1"' }); };
+  graph.umbenennen = function () { umbenennenGerufen = true; return Promise.resolve(); };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(ablegenGerufen, false,
+    'trotz veralteter Auswahl wurde ein Protokoll (oder ein Dossier-Schreiben) abgelegt');
+  assert.strictEqual(umbenennenGerufen, false, 'trotz veralteter Auswahl wurde umbenannt');
+  assert.match(state.fehlerHinweis || '', /gew.hlte Fassung DBS-001_lernziele-drehbuch_v5\.xlsx liegt nicht mehr im Ordner/);
+  assert.strictEqual(state.gateLaeuft['DBS-001/2'], undefined,
+    'der Lauf-Merker wurde nach dem Abbruch nicht wieder geloescht');
+  delete global.document;
+});
+
 /* ---------- Fix-Runde 1: F2 — eine stale _gate.md unterdrueckt nie ein neues Protokoll ---------- */
 
 test('F2: eine stale _gate.md von einem frueheren, von Hand zurueckgestuften Zyklus wird NICHT als bereits erledigt gewertet — das Protokoll wird neu geschrieben', async () => {
