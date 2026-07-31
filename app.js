@@ -711,33 +711,28 @@
       Array.prototype.forEach.call(document.querySelectorAll('[name="content-modus"]'), function (r) {
         werte['radio:content-modus:' + r.value] = { checked: !!r.checked, disabled: !!r.disabled };
       });
-      /* Gate-Box-Felder (Fix-Runde 1, Review-Finding "Gate-Box-Felder ueberleben
-         Zwischen-Renders nicht"): EIN gemeinsamer Selektor (data-gate-feld,
-         ansichten.js gateBlock) statt einer eigenen ID-Liste je Feld wie
-         QUELLEN_FORMULAR_IDS — deckt damit automatisch auch die indizierten
-         Felder (offen-wer-N, offen-wann-N, offen-ziel-N, offen-begruendung-N)
-         ab, ohne dass dieser Code eine Obergrenze fuer N kennen muesste.
-         Geschluesselt nach el.id (jedes Gate-Feld traegt eine eigene, in der
-         Ansicht generierte id). Kritisch, weil offenErfassen/offenEntscheiden/
-         offenVerschieben selbst render() aufrufen: wer "Entscheiden" auf einem
-         bestehenden Punkt klickt, waehrend in der Erfassung (offen-was/-wo)
-         schon getippt ist, darf diesen Text nicht verlieren.
-
-         Zusaetzlich data-was mitsichern (Fix-Runde 2, Review-Finding "Restore
-         verfaelscht Daten nach Listenverschiebung"): eine Positions-id wie
-         offen-wer-0 ist NICHT stabil — sobald der Eintrag an Index 0 nach einem
-         Entscheiden/Verschieben eines anderen (nicht-letzten) Eintrags entfernt
-         wird, rueckt der naechste Eintrag auf Index 0 nach und traegt DIESELBE
-         id, zeigt aber einen ANDEREN Punkt. data-was (ansichten.js gateBlock,
-         dieselbe Kennung wie am Entscheiden/Verschieben-Knopf) ist die einzige
-         stabile Kennung des Eintrags, den ein indiziertes Feld gerade zeigt —
-         nur diese vier Feldtypen tragen es, die Erfassungsfelder
-         (offen-was/-wo/-fuer) nicht, weil die immer denselben "neuer Punkt
-         wird entworfen"-Zustand meinen, unabhaengig von jeder Listenposition. */
+      /* Gate-Box-Felder (Fix-Runde 1, Task 6; Z9 verkleinert den Bestand auf
+         #gate-zweitpruefung — die Punkte-Erfassung/-Verwaltung ist mit Z9 ganz aus
+         der Box entfernt, s. ansichten.js gateBlock). EIN gemeinsamer Selektor
+         (data-gate-feld) statt einer eigenen ID-Liste je Feld wie
+         QUELLEN_FORMULAR_IDS bleibt bewusst bestehen — er deckt automatisch auch
+         kuenftige Gate-Felder ab, ohne dass dieser Code eine feste Liste kennen
+         muesste. Geschluesselt nach el.id. data-was bleibt Teil des generischen
+         Mechanismus (kein Gate-Feld traegt es aktuell, s. Fix-Runde 2, Task 6, fuer
+         die urspruengliche Begruendung, falls ein indiziertes Feld zurueckkehrt). */
       Array.prototype.forEach.call(document.querySelectorAll('[data-gate-feld]'), function (el) {
         if (!el.id) return;
         werte['gate:' + el.id] = String(el.value == null ? '' : el.value);
         if (el.dataset && el.dataset.was !== undefined) werte['gate-was:' + el.id] = el.dataset.was;
+      });
+      /* gate-version-Radios (Z9): dieselbe Beide-Richtungen-Regel wie content-modus
+         oben — checked ist immer eine bewusste, beobachtbare Antwort, keine
+         Zweideutigkeit wie bei leerem Text. Ohne diesen Erhalt wuerde ein
+         Zwischen-Render (z. B. ein auslaufendes ordnerNachladen) waehrend eines
+         laufenden Gates die manuell gewaehlte (nicht-hoechste) Fassung wieder auf
+         die hoechste zuruecksetzen. */
+      Array.prototype.forEach.call(document.querySelectorAll('[name="gate-version"]'), function (r) {
+        werte['radio:gate-version:' + r.value] = { checked: !!r.checked };
       });
       var aktiv = document.activeElement;
       return {
@@ -851,6 +846,14 @@
         var alt = snap.werte['gate:' + el.id];
         var neu = String(el.value == null ? '' : el.value);
         if (alt && alt !== neu) el.value = alt;
+      });
+      /* gate-version-Radios (Z9): dieselbe Beide-Richtungen-Regel wie content-modus
+         (s. _formularSnapshot) — eine manuell gewaehlte, nicht-hoechste Fassung
+         darf ein Zwischen-Render nicht stillschweigend auf die hoechste zuruecksetzen. */
+      Array.prototype.forEach.call(document.querySelectorAll('[name="gate-version"]'), function (r) {
+        var alt = snap.werte['radio:gate-version:' + r.value];
+        if (!alt) return;
+        if (alt.checked !== !!r.checked) r.checked = alt.checked;
       });
       /* Ohne das steht nach der Wiederherstellung weiter "8 offen" fuer ein
          Feld, das gerade wieder befuellt wurde (wie beim Tippen, s. briefingFelderZaehlen). */
@@ -1642,16 +1645,29 @@
         });
     },
 
-    /* ---------- Gate-KLICK (Etappe 2, Task 6, Fix-Runde 1): _final, _gate.md, Dossier-Status final ----------
-       Ablauf: Lauf-Merker-Sperre (F3, s. u.) · S2-Sperre (offene Punkte an GENAU dieses
-       Gate, aus dem bereits geladenen Dossier — kein Netzzugriff dafuer noetig) ·
-       Zweitpruefung (Pflicht, Gate 1 ist 4-Augen, ebenfalls vor jedem Netzzugriff geprueft)
-       · Ordner frisch lesen · Protokoll schreiben (Kontraktfeld gate_datei, Default
-       _gate.md, gelesen ueber inhalt.gateDatei) · umbenennen (_vN -> _final) · Dossier-
-       Status des Lieferobjekts auf final — der FUENFTE Schreiber durch
-       controller.dossierSchreiben, kein eigener graph.ablegen-Pfad. KWKurse
-       (Schritt/Status) fasst dieser Klick NICHT an: das bleibt beim Erledigt-Haken
-       (Abgrenzung KWKurse=Programmstand, Dossier=Lieferobjektstatus, Meta-Spec §3).
+    /* ---------- Gate-KLICK (Etappe 2, Task 6, Fix-Runde 1 -> Z9 radikal vereinfacht) ----------
+       Z9 (Entscheid Markus, 2026-07-30, Live-Einsatz): die Gate-Box zeigt seither nur noch
+       Versionsliste, Feld "Freigabe erteilt durch" und den Knopf — der Ablauf selbst bleibt
+       unveraendert: Lauf-Merker-Sperre (F3, s. u.) · S2-Sperre (offene Punkte an GENAU dieses
+       Gate, aus dem bereits geladenen Dossier — kein Netzzugriff dafuer noetig; die Ansicht
+       zeigt dafuer bewusst KEINEN eigenen Hinweis mehr, s. ansichten.gateFreigabe — die
+       Meldung hier nennt deshalb neu, WO zu behandeln ist) · Freigabe-erteilt-durch
+       (Pflicht — die interne Feld-Id gate-zweitpruefung bleibt, sie IST die
+       4-Augen-Zweitpruefung, ebenfalls vor jedem Netzzugriff geprueft) · Ordner frisch lesen ·
+       Protokoll schreiben (Kontraktfeld gate_datei, Default _gate.md, gelesen ueber
+       inhalt.gateDatei) · umbenennen (GEWAEHLTE Version -> _final, s. u.) · Dossier-Status des
+       Lieferobjekts auf final — der FUENFTE Schreiber durch controller.dossierSchreiben, kein
+       eigener graph.ablegen-Pfad. KWKurse (Schritt/Status) fasst dieser Klick NICHT an: das
+       bleibt beim Erledigt-Haken (Abgrenzung KWKurse=Programmstand, Dossier=Lieferobjektstatus,
+       Meta-Spec §3).
+
+       Versions-Auswahl (Z9): frueher entschied inhalt.geltendeDatei() (hoechste Nummer)
+       automatisch, welche Fassung final wird. Jetzt waehlt der Mensch explizit ueber die
+       Radio-Liste (name="gate-version", ansichten.gateFreigabe) — der Controller liest den
+       gerade angehakten Wert im vollen Durchlauf (Fall c unten) und benennt GENAU DIESE Datei
+       um, nicht mehr automatisch die hoechste. Waehlt jemand eine nicht-hoechste Fassung, greift
+       danach unveraendert die Maschinenregel "final ist final" (CLAUDE.md) — die Ansicht traegt
+       dafuer einen statischen Hinweis direkt an der Wahl (kein zweiter Mechanismus hier noetig).
 
        Reihenfolge Protokoll-VOR-Umbenennen (Fix-Runde 1, Review-Empfehlung — vorher war es
        umgekehrt): der Protokoll-Inhalt (gate, von, nach, Zweitpruefung, Geprueft, offen) ist
@@ -1685,6 +1701,10 @@
       var inh = state.data.inhalt;
       var melde = typeof document !== 'undefined' && document.getElementById('gate-melde');
       function sag(txt) { if (melde) { melde.hidden = false; melde.textContent = txt; } }
+      /* Fuer die Erfolgsmeldung (Z9, Ledger-Minor "Erfolgsmeldung ohne Dateiname") —
+         in jedem Zweig (a/b/c) auf den tatsaechlichen _final-Namen gesetzt, bevor die
+         Promise-Kette aufloest. */
+      var nachName = null;
 
       /* F3 (Fix-Runde 1): der Lauf-Merker ist die ERSTE Pruefung, noch vor dem
          Dossier-Guard — ein zweiter, ueberlappender Klick darf unter keinen Umstaenden
@@ -1710,7 +1730,10 @@
 
       var adressat = root.inhalt.gateAdressat(n);
       if (root.dossier.offenFuer(d, adressat).length) {
-        var textS2 = 'Offene Punkte an dieses Gate — erst behandeln (S2).';
+        /* Z9: keine Punkte-UI mehr in der Gate-Box — die Meldung sagt deshalb, WO zu
+           behandeln ist, statt eine Liste zu zeigen, die es hier nicht mehr gibt. */
+        var textS2 = 'Offene Punkte im Dossier an dieses Gate adressiert — Behandlung ' +
+          'folgt mit der Review-Ansicht; bis dahin via Dossier.';
         sag(textS2);
         state.fehlerHinweis = textS2;
         controller.render();
@@ -1719,10 +1742,11 @@
 
       var ablage = root.inhalt.ablageVon(inh, n, kursId);
       var schl = kursId + '/' + ablage.ordner;
-      var zweit = String((document.getElementById('gate-zweitpruefung') || {}).value || '').trim();
-      if (!zweit) { sag('Zweitprüfung fehlt — Gate 1 ist 4-Augen.'); return; }
-      var geprueft = String((document.getElementById('gate-geprueft') || {}).value || '')
-        .split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      var freigabeDurch = String((document.getElementById('gate-zweitpruefung') || {}).value || '').trim();
+      if (!freigabeDurch) { sag('Freigabe erteilt durch fehlt.'); return; }
+      /* Z9: kein Geprueft-Textfeld mehr in der Box — das Protokoll fuehrt dafuer
+         unveraendert den Strich-Fall ("- —") wie bisher bei leerer Liste. */
+      var geprueft = [];
 
       /* Sentinel statt eines fruehen return in der Promise-Kette (Abbruch nach dem
          Bestaetigungs-Dialog): ein blosses return aus dem inneren .then wuerde die
@@ -1755,33 +1779,41 @@
              VOR dem Umbenennen entstand) -> nur noch der Status.
              (a, Randfall): Protokoll fehlt trotzdem — 'von' ist nicht mehr rekonstruierbar,
              geltendeDatei() liefert ab hier nur noch final selbst zurueck. */
+          nachName = final;
           if (protokollDa) return statusSchreiben();
           var mdRandfall = root.inhalt.gateProtokoll({
             gate: ablage.gate, kursId: kursId, von: 'unbekannt (Wiedereinstieg)', nach: final,
             datum: new Date().toISOString().slice(0, 10),
             person: (state.auth.account && state.auth.account.name) || '',
-            zweitpruefung: zweit, geprueft: geprueft, offen: (d.offen || [])
+            zweitpruefung: freigabeDurch, geprueft: geprueft, offen: (d.offen || [])
           });
           return graph.ablegen(kursId, ablage.ordner, gateDateiName, mdRandfall).then(statusSchreiben);
         }
 
-        var geltend = root.inhalt.geltendeDatei(dateien, kursId, lief);
-        if (!geltend) throw new Error('keine versionierte Datei in ' + ablage.ordner);
+        /* Z9: die GEWAEHLTE Version (Radio name="gate-version", ansichten.gateFreigabe),
+           nicht mehr automatisch die hoechste (inhalt.geltendeDatei). Ohne DOM (Node-Test
+           ohne Mock) oder ohne angehaktes Radio bleibt gewaehlt null — derselbe Fehlerfall
+           wie zuvor "keine versionierte Datei". */
+        var radios = typeof document !== 'undefined' ? document.querySelectorAll('[name="gate-version"]') : [];
+        var gewaehlt = null;
+        Array.prototype.forEach.call(radios, function (r) { if (r.checked) gewaehlt = r.value; });
+        if (!gewaehlt) throw new Error('keine Fassung ausgewählt in ' + ablage.ordner);
         var nach = root.inhalt.finalName(kursId, lief, endung);
-        if (!controller._bestaetige('Gate durchlaufen?\n' + geltend + ' → ' + nach)) {
+        nachName = nach;
+        if (!controller._bestaetige('Als final bestätigen?\n' + gewaehlt + ' → ' + nach)) {
           return ABGEBROCHEN;
         }
 
         /* (c): das Protokoll wird IMMER frisch geschrieben (F2) — von ist bekannt, solange
            final noch fehlt, egal ob voller Durchlauf oder Wiedereinstieg. */
         var md = root.inhalt.gateProtokoll({
-          gate: ablage.gate, kursId: kursId, von: geltend, nach: nach,
+          gate: ablage.gate, kursId: kursId, von: gewaehlt, nach: nach,
           datum: new Date().toISOString().slice(0, 10),
           person: (state.auth.account && state.auth.account.name) || '',
-          zweitpruefung: zweit, geprueft: geprueft, offen: (d.offen || [])
+          zweitpruefung: freigabeDurch, geprueft: geprueft, offen: (d.offen || [])
         });
         return graph.ablegen(kursId, ablage.ordner, gateDateiName, md).then(function () {
-          return graph.umbenennen(kursId, ablage.ordner, geltend, nach);
+          return graph.umbenennen(kursId, ablage.ordner, gewaehlt, nach);
         }).then(statusSchreiben);
       }).then(function (ergebnis) {
         laufBeenden();
@@ -1790,7 +1822,7 @@
           sag('');
           return;
         }
-        state.hinweis = 'Gate durchlaufen — Protokoll geschrieben, Status final.';
+        state.hinweis = 'Als final bestätigt: ' + nachName + '.';
         controller.render();
       }).catch(function (e) {
         laufBeenden();

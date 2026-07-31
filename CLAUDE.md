@@ -666,6 +666,17 @@ Identitäts-Guard. `dossier.offenFuer(d, ziel)` filtert die Liste für die Gate-
 Eine Mutationsprobe (die `ZIELE.indexOf`-Prüfung in `offenNeu` auskommentiert) hält den S1-Test
 scharf: ohne die Prüfung bleiben die übrigen drei Tests grün, nur der S1-Test schlägt fehl.
 
+**⚠ SUPERSEDED durch Task Z9 (s. ganz unten, „Task Z9: Gate-Box radikal vereinfacht").** Die
+Punkte-Prüfliste/-Erfassung, die dieser Absatz und „Gate-Ablauf" weiter unten beschreiben
+(`offen-was`/`-wo`/`-fuer`, die Knöpfe „Entscheiden"/„Verschieben", das Label „Zweitprüfung
+(Pflicht — Gate 1 ist 4-Augen)", die Textarea „Geprüft" und der Knopftext „Gate durchlaufen —
+_final setzen"), existiert in der Ansicht **nicht mehr** — Entscheid Markus nach dem
+Live-Einsatz: „das schaut kein Schwein an". Absatz und Abschnitt bleiben als historischer
+Baubericht stehen (Konvention dieser Datei), sind aber für den Ist-Stand der UI nicht mehr
+bindend. Was unverändert gilt: der Datenteil (`dossier.offenNeu`/`offenFuer`/`offenEntscheiden`/
+`offenVerschieben`, die gleichnamigen Controller-Handler, die S2-Sperre in
+`controller.gateKlick`) sowie die komplette Idempotenz-/Lauf-Merker-Logik (F1–F3) unten.
+
 **Die Gate-Box (`ansichten.gateBlock`, Schritt-Ansicht) — Prüfliste, Erfassung und Behandlung
 offener Punkte am Gate.** `inhalt.gateAdressat(schrittId)` bildet die feste Zuordnung
 `{2:'gate-1', 4:'sign-off', 7:'gate-2'}` (die Gates der Acht-Schritte-Reform, s. o.) auf einen
@@ -760,9 +771,15 @@ eine Test fiel rot (36 grün/1 rot von 37), danach wiederhergestellt, komplette 
 
 ## Gate-Ablauf (Task 6, Fix-Runde 1): der Gate-Klick — `_final`, `_gate.md`, Dossier-Status `final`
 
+**⚠ Die Signatur von `ansichten.gateFreigabe` und die UI-Details in diesem Abschnitt (Zweitprüfung-
+Label, Geprüft-Textarea, Vorschau „Freigegeben wird … → …") sind mit Task Z9 (s. ganz unten)
+ersetzt** — `offen` ist als Parameter entfallen, die Box zeigt eine Versions-Radioliste statt
+einer automatisch berechneten `geltend`-Datei. Der Ablauf selbst (Reihenfolge Protokoll-vor-
+Umbenennen, Idempotenz a/b/c, Lauf-Merker F3) gilt unverändert und ist unten weiter bindend.
+
 Der Freigabe-Teil ergänzt die Gate-Box aus Task 5 (Prüfliste, Erfassung/Behandlung offener
 Punkte) um den eigentlichen Klick: `ansichten.gateFreigabe(inh, kurs, schrittId, ablage, offen,
-ablageDaten, d)` wird von `gateBlock` unmittelbar nach der Erfassungs-Zeile gerendert und zeigt,
+ablageDaten, d)` wurde von `gateBlock` unmittelbar nach der Erfassungs-Zeile gerendert und zeigte,
 sobald `ablageDaten.dateien` als Array vorliegt (asynchron geladen wie überall sonst), eine
 Vorschau „Freigegeben wird: `{geltend}` → `{final}`" (`I().geltendeDatei`/`I().finalName`), ein
 Pflichtfeld `#gate-zweitpruefung` (Gate 1 ist 4-Augen), eine optionale Textarea
@@ -1492,3 +1509,124 @@ die Prüfung nirgends (`strukturVon` liefert `null`) — kein Regressionsrisiko,
 Live-Nutzen, bis jemand das Feld in SharePoint nachträgt. Aus dem Review der Fix-Runde 1 bleiben
 drei niedriger eingestufte Findings (F6–F8) bewusst geparkt — auf Entscheid des Koordinators nicht
 Teil dieser Runde.
+
+## Task Z9: Gate-Box radikal vereinfacht — Fassung wählen, Name, bestätigen
+
+**Entscheid Markus, 2026-07-30, nach dem Live-Einsatz:** „Ich erwarte: Drehbuch v(n) auswählen
+und als final bestätigen, evtl. Freigabe erteilt durch Name. Alles andere ist nicht
+nachvollziehbar." Die Prüfliste/Erfassung offener Punkte aus Etappe 2 Task 5/6 wurde von
+niemandem benutzt — „das schaut kein Schwein an" (Scope-Änderung während dieser Task, ersetzt den
+ursprünglichen Auftrag Punkt 2/3). Sie ist deshalb **vollständig** aus der Gate-Box entfernt,
+auch nicht eingeklappt, auch nicht bedingt. Was bleibt: (a) eine Radio-Liste der vorhandenen
+v-Fassungen, höchste vorausgewählt, (b) EIN Pflichtfeld „Freigabe erteilt durch" (die interne
+Feld-Id `gate-zweitpruefung` bleibt — sie IST die 4-Augen-Zweitprüfung, nur einfacher benannt),
+(c) EIN Knopf „Als final bestätigen". `offen[]`/`entschieden[]` bleiben als Datenträger im Dossier
+bestehen (`dossier.offenNeu`/`offenFuer`/`offenEntscheiden`/`offenVerschieben` UND die
+gleichnamigen Controller-Handler `controller.offenErfassen`/`offenEntscheiden`/`offenVerschieben`
+in `app.js` sind **unverändert** — sie hängen weiter an keinem UI-Element in der Gate-Box, aber
+`test/gate.test.js` prüft sie weiter direkt: Etappe 4 baut auf ihnen eine eigene
+Review-Ansicht auf, ein Wegwerfen hätte diese Arbeit vernichtet). Die S2-Sperre in
+`controller.gateKlick` (offene Punkte an GENAU dieses Gate) bleibt deshalb als reiner
+DATEN-Wächter bestehen — die Ansicht zeigt dafür bewusst KEINEN eigenen Hinweis mehr, ein Klick
+trotz offener Punkte landet am bestehenden `#gate-melde`/`state.fehlerHinweis`-Pfad, der jetzt
+sagt, WO zu behandeln ist: „Offene Punkte im Dossier an dieses Gate adressiert — Behandlung folgt
+mit der Review-Ansicht; bis dahin via Dossier." (vorher: „Offene Punkte an dieses Gate — erst
+behandeln (S2).", ohne Verweis auf eine Behandlungsstelle, weil es damals noch eine gab).
+
+**`inhalt.versionenVon(dateien, kursId, lieferobjekt)`** ist die neue reine Funktion dafür: alle
+vorhandenen `_vN`-Fassungen, absteigend sortiert (höchste zuerst), `_final` zählt nicht mit —
+anders als `inhalt.geltendeDatei()` (entscheidet die höchste Nummer sei „die geltende") liefert
+sie ALLE Fassungen, der Mensch wählt explizit eine davon.
+
+**`ansichten.gateFreigabe(inh, kurs, schrittId, ablage, ablageDaten, d)`** verliert den
+`offen`-Parameter (nicht mehr gebraucht, da nichts davon mehr gerendert wird) und baut den
+HAUPTFLUSS: pro Fassung ein `<label class="arow"><input type="radio" name="gate-version"
+value="{datei}" id="gate-version-{i}"…>`, die erste (höchste) trägt `checked`. Jede
+NICHT-höchste Option trägt direkt daneben einen statischen Hinweis „(nicht die höchste — es
+existiert bereits {höchste})" — kein JS nötig, rein aus der Versionsliste zur Renderzeit
+abgeleitet; wählt jemand trotzdem eine niedrigere, gilt nach der Bestätigung unverändert die
+Maschinenregel „final ist final" (s. „⚠ Fallen" oben). Darunter „Wird zu: `{finalName}`", das
+Pflichtfeld „Freigabe erteilt durch" (`#gate-zweitpruefung`, weiterhin `data-gate-feld`) und der
+Knopf — Beschriftung „Als final bestätigen", bzw. unverändert „Freigabe abschliessen" im
+Wiedereinstiegsfall (F1, Task 6, gilt weiter). Die Sperrgründe im Knopf bleiben `gateLaeuft`,
+`vollständig` (jetzt korrekt mit ä geschrieben, vorher `vollstaendig` im UI-Text) und „keine
+versionierte Datei vorhanden" — die S2-Sperre (offene Punkte) ist bewusst NICHT mehr darunter,
+s. o. Ein Test hält das ausdrücklich fest: ein Dossier mit offenen Punkten sperrt den Knopf in
+der Ansicht nicht mehr.
+
+**`controller.gateKlick` (app.js) liest die GEWÄHLTE Fassung, nicht mehr automatisch die
+höchste.** Case (c) (voller Durchlauf, `_final` fehlt noch) las bisher
+`root.inhalt.geltendeDatei(dateien, kursId, lief)` — das ist mit Z9 durch
+`document.querySelectorAll('[name="gate-version"]')` plus die angehakte Option ersetzt:
+```js
+var radios = typeof document !== 'undefined' ? document.querySelectorAll('[name="gate-version"]') : [];
+var gewaehlt = null;
+Array.prototype.forEach.call(radios, function (r) { if (r.checked) gewaehlt = r.value; });
+if (!gewaehlt) throw new Error('keine Fassung ausgewählt in ' + ablage.ordner);
+```
+Protokoll (`von: gewaehlt`) und `graph.umbenennen(kursId, ablage.ordner, gewaehlt, nach)` folgen
+daraus — die Fälle (a)/(b) (Wiedereinstieg, `_final` liegt schon) bleiben unverändert, weil dort
+gar keine Auswahl mehr nötig ist (`final` selbst ist der Name). Die Erfolgsmeldung nennt jetzt den
+`_final`-Dateinamen: „Als final bestätigt: `{nach}`." (vorher: „Gate durchlaufen — Protokoll
+geschrieben, Status final.", ohne Dateiname). Das Feld heisst intern weiter `gate-zweitpruefung`,
+die JS-Variable im Controller aber `freigabeDurch`; die Guard-Meldung bei leerem Feld lautet
+„Freigabe erteilt durch fehlt." (vorher: „Zweitprüfung fehlt — Gate 1 ist 4-Augen.", hart auf
+Schritt 2 verdrahtet — Schritt 4/7 heissen „Sign-off"/„Gate 2 · Schluss", nicht „Gate 1"). Das
+`gate-geprueft`-Textfeld ist mit der Box entfallen — der Controller liest es nicht mehr,
+`geprueft` ist im Protokoll-Aufruf jetzt fest `[]`; `inhalt.gateProtokoll` selbst ist unverändert
+und zeigt für eine leere Liste weiterhin den Strich-Fall („- —").
+
+**Formular-Erhalt für die neue Radio-Liste (`controller._formularSnapshot`/
+`_formularWiederherstellen`, app.js):** die `gate-version`-Radios folgen NICHT dem generischen
+`[data-gate-feld]`-Mechanismus (ihr `.value` ändert sich zwischen Renders nie, nur `.checked`),
+sondern demselben dedizierten Muster wie die `content-modus`-Radios — ein Selektor nach `name`,
+`checked` in BEIDE Richtungen restauriert (`werte['radio:gate-version:' + r.value] = {
+checked: !!r.checked }`). Ohne diesen Erhalt würde ein Zwischen-Render während eines laufenden
+Gates (`state.gateLaeuft`) eine manuell gewählte, NICHT-höchste Fassung stillschweigend wieder auf
+die höchste zurücksetzen, weil die Ansicht die höchste immer als Default vorauswählt.
+
+**Tests:** `test/final.test.js` (`inhalt.versionenVon` — absteigende Liste, `_final` zählt nicht
+mit, fremde Kurse/Lieferobjekte, kein Array → `[]`), `test/ansichten.test.js` (Radio-Liste mit
+Vorauswahl und Zielname, Label „Freigabe erteilt durch", Knopftext „Als final bestätigen", Hinweis
+bei jeder nicht-höchsten Fassung, `Gate-geprueft`-Feld verschwunden, kein Punkte-UI mehr trotz
+`d.offen` gefüllt, S2 sperrt den Knopf in der Ansicht nicht mehr), `test/gate.test.js` (Wortlaut
+„Freigabe erteilt durch fehlt", Erfolgsmeldung nennt den `_final`-Namen, GEWÄHLTE — nicht
+höchste — Fassung wird umbenannt, ohne DOM-Radio bricht mit „keine Fassung ausgewählt" ab; alle
+bestehenden Fix-Runde-1-Tests F1–F3 und beide Wiedereinstiegsfälle bleiben grün, nur auf die neue
+Radio-Mock-Helferfunktion `radioGewaehlt()` in `elsGate()` umgestellt), `test/formularerhalt.test.js`
+(Snapshot/Restore der `gate-version`-Radios, Muster der `content-modus`-Tests). **590 Tests
+grün** (Baseline 583 + 7 netto: 3 Ansichts-Tests zur alten Punkte-UI entfernt, dafür 2 neue
+Ansichts-Tests zur Radio-Liste/zum Hinweis plus 1 zur „S2 sperrt nicht mehr"-Regel, 2 neue
+Controller-Tests in `gate.test.js` (GEWÄHLTE-Fassung, ohne-Radio-Abbruch), 2 neue
+`inhalt.versionenVon`-Tests, 3 neue `formularerhalt.test.js`-Tests für die Radio-Persistenz).
+
+**Mutationsproben (tatsächlich ausgeführt, je einzeln, danach wiederhergestellt):**
+
+1. In `controller.gateKlick` die Radio-Auswahl durch `root.inhalt.geltendeDatei(dateien, kursId,
+   lief)` ersetzt (zurück auf „automatisch die höchste"), `node --test test/gate.test.js`:
+   ```
+   ✖ Z9: bei mehreren Fassungen wird die GEWAEHLTE (nicht die hoechste) umbenannt
+     AssertionError: die GEWAEHLTE Fassung (v3) haette umbenannt werden muessen, nicht die hoechste (v5)
+     + 'DBS-001_lernziele-drehbuch_v5.xlsx'
+     - 'DBS-001_lernziele-drehbuch_v3.xlsx'
+   ✖ Z9: ohne angehaktes Radio (kein DOM-Fund) bricht gateKlick mit derselben Fehlermeldung … ab
+     AssertionError: trotz fehlender Auswahl wurde geschrieben — true !== false
+   ```
+   Genau die zwei neuen Z9-Tests fielen rot, alle anderen 19 blieben grün; danach
+   wiederhergestellt.
+2. In `controller._formularWiederherstellen` die `gate-version`-Restore-Zeile auf
+   `if (false && alt.checked !== !!r.checked) …` gesetzt, `node --test test/formularerhalt.test.js`:
+   ```
+   ✖ Z9: eine manuell gewaehlte, NICHT-hoechste Fassung uebersteht einen Neuaufbau, der wieder die hoechste vorauswaehlt
+     AssertionError: die frisch vorausgewaehlte hoechste Fassung haette der manuellen Wahl weichen muessen — true !== false
+   ```
+   Genau der eine neue Test fiel rot, danach wiederhergestellt.
+3. In `ansichten.js` `gateFreigabe` den Hinweis-Zweig auf `false ? … : ''` gesetzt (Hinweis nie
+   gerendert), `node --test test/ansichten.test.js`:
+   ```
+   ✖ mit mehreren Fassungen ist die hoechste vorausgewaehlt, jede niedrigere traegt einen Hinweis auf die hoehere
+   ```
+   Genau der eine neue Test fiel rot, danach wiederhergestellt.
+
+Komplette Suite nach allen drei Wiederherstellungen erneut geprüft: `node --test` → **590/590
+grün**.

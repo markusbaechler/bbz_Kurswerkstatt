@@ -648,6 +648,76 @@ test('controller.render() bewahrt einen getippten Gate-Box-Wert ueber den Neuauf
   state.auth.account = null;
 });
 
+/* ---------- Z9: gate-version-Radios im Formular-Erhalt ----------
+   Die Radio-Liste der vorhandenen v-Fassungen (name="gate-version", ansichten.js
+   gateFreigabe) traegt kein data-gate-feld — sie folgt demselben Muster wie die
+   content-modus-Radios oben: EIN Selektor nach name, checked in BEIDE Richtungen
+   restauriert (beide Zustaende sind eine bewusste, beobachtbare Antwort, keine
+   Zweideutigkeit wie bei leerem Text). Ohne diesen Erhalt wuerde ein
+   Zwischen-Render waehrend eines laufenden Gates (state.gateLaeuft) eine manuell
+   gewaehlte, NICHT-hoechste Fassung stillschweigend auf die hoechste (die
+   Ansicht waehlt sie standardmaessig vor) zuruecksetzen. */
+
+function versionRadio(value, checked) {
+  return { name: 'gate-version', value: value, checked: !!checked };
+}
+
+function baueDocumentMitVersionsRadios(radios) {
+  const doc = baueDocument([], {}, null);
+  const alt = doc.querySelectorAll;
+  doc.querySelectorAll = function (sel) {
+    if (sel === '[name="gate-version"]') return radios;
+    return alt(sel);
+  };
+  return doc;
+}
+
+test('Z9: _formularSnapshot sichert checked je gate-version-Radio', () => {
+  const a = versionRadio('K_lief_v5.xlsx', true);
+  const b = versionRadio('K_lief_v3.xlsx', false);
+  global.document = baueDocumentMitVersionsRadios([a, b]);
+
+  const snap = controller._formularSnapshot();
+
+  assert.deepStrictEqual(snap.werte['radio:gate-version:K_lief_v5.xlsx'], { checked: true });
+  assert.deepStrictEqual(snap.werte['radio:gate-version:K_lief_v3.xlsx'], { checked: false });
+  delete global.document;
+});
+
+test('Z9: eine manuell gewaehlte, NICHT-hoechste Fassung uebersteht einen Neuaufbau, der wieder die hoechste vorauswaehlt', () => {
+  const hoechste = versionRadio('K_lief_v5.xlsx', true);
+  const gewaehlt = versionRadio('K_lief_v3.xlsx', false);
+  global.document = baueDocumentMitVersionsRadios([hoechste, gewaehlt]);
+  /* Person hat manuell v3 angehakt (Radios sind exklusiv — v5 damit ab). */
+  hoechste.checked = false;
+  gewaehlt.checked = true;
+  const snap = controller._formularSnapshot();
+
+  /* Neuaufbau zeichnet den Standard neu: die hoechste wieder vorausgewaehlt. */
+  hoechste.checked = true;
+  gewaehlt.checked = false;
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(hoechste.checked, false,
+    'die frisch vorausgewaehlte hoechste Fassung haette der manuellen Wahl weichen muessen');
+  assert.strictEqual(gewaehlt.checked, true, 'v3 haette wieder angehakt werden muessen');
+  delete global.document;
+});
+
+test('Z9: Radios bleiben unangetastet, wenn sie mit dem frisch gerenderten Stand uebereinstimmen', () => {
+  const a = versionRadio('K_lief_v5.xlsx', true);
+  const b = versionRadio('K_lief_v3.xlsx', false);
+  global.document = baueDocumentMitVersionsRadios([a, b]);
+  const snap = controller._formularSnapshot();
+
+  controller._formularWiederherstellen(snap);
+
+  assert.strictEqual(a.checked, true);
+  assert.strictEqual(b.checked, false);
+  delete global.document;
+});
+
 /* ---------- Integration: controller.render() selbst erhaelt das Formular ----------
    "render-Äquivalent" reicht laut Brief; hier zusaetzlich der echte Aufruf, mit einem
    document-Mock, dessen innerHTML-Setter den Neuaufbau simuliert: das Feld faellt auf

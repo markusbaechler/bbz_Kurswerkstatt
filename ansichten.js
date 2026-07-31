@@ -552,16 +552,23 @@
   }
 
   /* ---------- Die Gate-Box (Schritt 2, 4, 7) ----------
-     offen[]/entschieden[] sitzen im Dossier, nicht im Dokument-Steckbrief
-     (Meta-Spec §3.2, Entscheid Markus 2026-07-30) — dieser Block ist die
-     Prüfliste je Gate: was noch offen ist, adressiert an GENAU dieses Gate
-     (dossier.offenFuer + inhalt.gateAdressat), plus die Erfassung neuer Punkte.
-     Sichtbar nur an einem Gate-Schritt (ablage.gate gesetzt) mit Kurs; ohne
-     geladenes Dossier oder ohne Kursordner steht nur der kurze Hinweis — die
-     Knoepfe waeren ohnehin am Guard in controller.offenErfassen/... gescheitert
-     (Doppelschutz wie beim Briefing-Kaltstart, s. briefingFormular oben).
-     Der Gate-KLICK-Knopf selbst ist Task 6 — hier steht nur Pruefliste plus
-     Erfassung/Behandlung, damit Task 6 daneben ergaenzen kann. */
+     Z9 (Entscheid Markus, 2026-07-30, nach dem Live-Einsatz: "Ich erwarte:
+     Drehbuch v(n) auswaehlen und als final bestaetigen, evtl. Freigabe erteilt
+     durch Name. Alles andere ist nicht nachvollziehbar." — "das schaut kein
+     Schwein an"): die vormalige Pruefliste/Erfassung offener Punkte (Task 5/6)
+     ist HIER VOLLSTAENDIG entfernt, auch nicht eingeklappt, auch nicht bedingt.
+     Die Box zeigt nur noch, was am Gate wirklich passiert — s. gateFreigabe.
+     offen[]/entschieden[] bleiben als Datentraeger im Dossier bestehen
+     (dossier.offenNeu/offenFuer/offenEntscheiden/offenVerschieben UND die
+     controller-Handler dazu sind unveraendert, s. app.js) — Etappe 4 baut
+     darauf eine eigene Review-Ansicht; die S2-Sperre in controller.gateKlick
+     bleibt deshalb als reiner DATEN-Waechter bestehen, meldet aber neu, WO zu
+     behandeln ist, statt eine Liste zu zeigen, die es in dieser Box nicht mehr
+     gibt (s. dort). Sichtbar nur an einem Gate-Schritt (ablage.gate gesetzt)
+     mit Kurs; ohne geladenes Dossier oder ohne Kursordner steht nur der kurze
+     Hinweis — der Knopf waere ohnehin am Guard in controller.gateKlick
+     gescheitert (Doppelschutz wie beim Briefing-Kaltstart, s. briefingFormular
+     oben). */
   function gateBlock(inh, kurs, schrittId, ablageDaten) {
     ablageDaten = ablageDaten || {};
     if (!kurs) return '';
@@ -576,92 +583,42 @@
       return h;
     }
 
-    var adressat = I().gateAdressat(schrittId);
-    var ziele = root.dossier.ZIELE.filter(function (z) { return z !== adressat; });
-    var offen = root.dossier.offenFuer(d, adressat);
-
-    if (!offen.length) {
-      h += '<p class="hinweis-leise">Keine offenen Punkte an dieses Gate adressiert.</p>';
-    } else {
-      /* Jedes indizierte Feld traegt zusaetzlich data-was — dieselbe Kennung wie
-         am Entscheiden/Verschieben-Knopf (Fix-Runde 2, Review-Finding "Restore
-         verfaelscht Daten nach Listenverschiebung"): eine Positions-id
-         (offen-wer-0 usw.) ist NICHT stabil, sobald ein anderer Punkt an diesem
-         Index nachrueckt (splice() nach Entscheiden/Verschieben eines
-         nicht-letzten Eintrags). data-was gibt controller._formularWiederherstellen
-         eine stabile Kennung, gegen die es pruefen kann, ob das Feld an dieser id
-         noch denselben Eintrag zeigt wie beim Snapshot — sonst verwirft es den
-         Wert, statt ihn dem falschen Eintrag zu unterschieben. */
-      h += '<ul class="gate-liste">' + offen.map(function (e, i) {
-        return '<li><span>' + esc(e.was) + ' &mdash; ' + esc(e.wo) + '</span>' +
-          '<div class="arow">' +
-            '<input type="text" id="offen-wer-' + i + '" data-gate-feld data-was="' + esc(e.was) +
-              '" placeholder="wer">' +
-            '<input type="date" id="offen-wann-' + i + '" data-gate-feld data-was="' + esc(e.was) + '">' +
-            '<button class="knopf still" data-action="offen-entscheiden" data-index="' + i +
-              '" data-was="' + esc(e.was) + '">Entscheiden</button>' +
-          '</div>' +
-          '<div class="arow">' +
-            '<select id="offen-ziel-' + i + '" data-gate-feld data-was="' + esc(e.was) + '">' + ziele.map(function (z) {
-              return '<option value="' + esc(z) + '">' + esc(z) + '</option>';
-            }).join('') + '</select>' +
-            '<input type="text" id="offen-begruendung-' + i + '" data-gate-feld data-was="' + esc(e.was) +
-              '" placeholder="Begr&uuml;ndung">' +
-            '<button class="knopf still" data-action="offen-verschieben" data-index="' + i +
-              '" data-was="' + esc(e.was) + '">Verschieben</button>' +
-          '</div></li>';
-      }).join('') + '</ul>';
-    }
-
-    /* data-gate-feld (Fix-Runde 1, Review-Finding "Gate-Box-Felder ueberleben
-       Zwischen-Renders nicht"): EIN gemeinsamer Selektor statt einer festen
-       ID-Liste (wie QUELLEN_FORMULAR_IDS) — deckt damit auch die indizierten
-       Felder (offen-wer-N, offen-wann-N, offen-ziel-N, offen-begruendung-N) ab,
-       ohne dass controller._formularSnapshot eine Obergrenze fuer N kennen
-       muesste. s. controller._formularSnapshot/_formularWiederherstellen in
-       app.js fuer die Restaurierungsregel (Selects werden dabei bewusst wie
-       Textfelder behandelt). */
-    h += '<div class="formular gate-erfassung">' +
-      '<input type="text" id="offen-was" data-gate-feld placeholder="was">' +
-      '<input type="text" id="offen-wo" data-gate-feld placeholder="wo (Modul, LZ/EK-ID oder Blatt)">' +
-      '<select id="offen-fuer" data-gate-feld>' + root.dossier.ZIELE.map(function (z) {
-        return '<option value="' + esc(z) + '"' + (z === adressat ? ' selected' : '') + '>' + esc(z) + '</option>';
-      }).join('') + '</select>' +
-      '<button class="knopf" data-action="offen-erfassen">Punkt erfassen</button>' +
-      '<span class="hinweis-leise" id="offen-melde" hidden></span>' +
-      '</div>';
-
-    h += gateFreigabe(inh, kurs, schrittId, ablage, offen, ablageDaten, d);
+    h += gateFreigabe(inh, kurs, schrittId, ablage, ablageDaten, d);
 
     return h + '</div>';
   }
 
-  /* ---------- Der Freigabe-Teil der Gate-Box (Etappe 2, Task 6, Fix-Runde 1) ----------
-     Unterhalb der Pruefliste: der eigentliche Gate-KLICK. Zeigt, wohin die
-     geltende Fassung umbenannt wird (Vorschau, nur wenn eine versionierte
-     Datei bereits gelesen ist — ablageDaten.dateien kommt asynchron), und
-     sperrt den Knopf mit einer Begruendungszeile fuer die Faelle, die
-     controller.gateKlick sonst erst nach einem Netzzugriff ablehnen wuerde:
-     (a) offene Punkte an GENAU diesem Gate (S2), (b) die Freigabe ist bereits
-     VOLLSTAENDIG abgeschlossen, (c) es gibt noch keine versionierte Datei
-     ueberhaupt, (d) ein Lauf ist gerade aktiv (Lauf-Merker, s. u.).
+  /* ---------- Der Freigabe-Teil der Gate-Box (Etappe 2, Task 6 -> Z9) ----------
+     Der HAUPTFLUSS, immer sichtbar: (a) Radio-Liste der vorhandenen v-Fassungen
+     (inhalt.versionenVon, hoechste vorausgewaehlt), (b) EIN Pflichtfeld
+     "Freigabe erteilt durch" (die interne Feld-Id gate-zweitpruefung bleibt —
+     sie IST die 4-Augen-Zweitpruefung, nur der sichtbare Name ist einfacher
+     geworden), (c) EIN Knopf "Als final bestaetigen". Waehlt jemand nicht die
+     hoechste Fassung: die Maschinenregel "final ist final" gilt trotzdem
+     unveraendert (CLAUDE.md) — jede Nicht-hoechste-Option traegt deshalb einen
+     statischen Hinweis "es existiert bereits {hoechste}", direkt an der Stelle,
+     wo die Wahl getroffen wird (kein JS noetig, rein aus den vorhandenen
+     Fassungen abgeleitet).
 
-     F1 (Fix-Runde 1, Review-Finding): "bereits freigegeben" sperrte bisher
-     schon, sobald `_final` ueberhaupt existierte — genau dort leben aber die
-     Wiedereinstiegs-Zweige von controller.gateKlick (Teilfehler: Umbenennung
-     ist durch, Protokoll/Status fehlen noch). Eine Sperre allein auf `_final`
-     haette den Knopf fuer immer zugesperrt, sobald `_final` einmal liegt, ohne
-     dass die Reise je ueber die UI abgeschlossen werden koennte. "Vollstaendig
-     abgeschlossen" heisst deshalb jetzt: `_final` UND das Protokoll UND
-     `dossier.statusVon(d, lief) === 'final'` — erst wenn alle drei stimmen,
-     ist wirklich nichts mehr zu tun. Fehlt eines davon, bleibt der Knopf offen,
-     aber mit der Beschriftung "Freigabe abschliessen" statt "Gate durchlaufen
-     — _final setzen", weil keine neue Datei mehr entsteht, nur der Rest wird
-     nachgezogen. */
-  function gateFreigabe(inh, kurs, schrittId, ablage, offen, ablageDaten, d) {
+     Sperrt den Knopf weiterhin fuer die Faelle, die controller.gateKlick sonst
+     erst nach einem Netzzugriff ablehnen wuerde: (a) die Freigabe ist bereits
+     VOLLSTAENDIG abgeschlossen, (b) es gibt noch keine versionierte Datei
+     ueberhaupt, (c) ein Lauf ist gerade aktiv (Lauf-Merker). Offene Punkte (S2)
+     sperren den Knopf in DIESER Ansicht bewusst NICHT mehr (Z9-Entscheid) — die
+     Pruefung bleibt im Controller, ein Klick trotz offener Punkte landet am
+     bestehenden #gate-melde/state.fehlerHinweis-Pfad.
+
+     F1 (Fix-Runde 1, Task 6, unveraendert gueltig): "bereits freigegeben"
+     sperrt erst, wenn `_final` UND das Protokoll UND
+     `dossier.statusVon(d, lief) === 'final'` alle drei stimmen — sonst waere
+     ein Wiedereinstieg nach einem Teilfehler ueber die UI unerreichbar. Fehlt
+     eines davon, bleibt der Knopf offen, aber mit der Beschriftung "Freigabe
+     abschliessen" statt "Als final bestaetigen", weil keine neue Datei mehr
+     entsteht, nur der Rest wird nachgezogen. */
+  function gateFreigabe(inh, kurs, schrittId, ablage, ablageDaten, d) {
     var dateien = Array.isArray(ablageDaten.dateien) ? ablageDaten.dateien : null;
     var lief = I().lieferobjektVon(inh, schrittId, ablageDaten.variante);
-    var geltend = (dateien && lief) ? I().geltendeDatei(dateien, kurs.kursId, lief) : null;
+    var versionen = (dateien && lief) ? I().versionenVon(dateien, kurs.kursId, lief) : [];
     var final = (dateien && lief) ? I().finalVorhanden(dateien, kurs.kursId, lief) : null;
     var endung = I().erwarteteEndung(inh, schrittId);
     var nach = (lief && endung) ? I().finalName(kurs.kursId, lief, endung) : null;
@@ -671,38 +628,43 @@
     var vollstaendig = !!(dateien && final && protokollDa && statusFinal);
     var nochOffenTrotzFinal = !!(dateien && final && !vollstaendig);
 
-    /* F3 (Fix-Runde 1): der Lauf-Merker (state.gateLaeuft, gesetzt/geloescht von
-       controller.gateKlick) sperrt hier zusaetzlich zum knopf.disabled im DOM —
-       ein Render mitten im Lauf (z. B. ein auslaufendes ordnerNachladen) baut
-       die Box sonst mit einem wieder aktivierten Knopf neu auf. */
+    /* F3 (Fix-Runde 1, Task 6, unveraendert): der Lauf-Merker (state.gateLaeuft,
+       gesetzt/geloescht von controller.gateKlick) sperrt hier zusaetzlich zum
+       knopf.disabled im DOM — ein Render mitten im Lauf (z. B. ein auslaufendes
+       ordnerNachladen) baut die Box sonst mit einem wieder aktivierten Knopf
+       neu auf. */
     var grund = null;
     if (ablageDaten.gateLaeuft) {
       grund = 'Gate läuft …';
-    } else if (offen.length) {
-      grund = offen.length + ' offene Punkte an ' + ablage.gate +
-              ' — erst entscheiden oder begründet verschieben';
     } else if (vollstaendig) {
       grund = 'bereits freigegeben: ' + final;
-    } else if (dateien && !geltend) {
+    } else if (dateien && !versionen.length && !final) {
       grund = 'keine versionierte Datei vorhanden';
     }
 
-    var beschriftung = nochOffenTrotzFinal ? 'Freigabe abschliessen' : 'Gate durchlaufen &mdash; _final setzen';
+    var beschriftung = nochOffenTrotzFinal ? 'Freigabe abschliessen' : 'Als final best&auml;tigen';
 
     var h = '<div class="gate-freigabe">';
-    if (geltend && !final && nach) {
-      h += '<p>Freigegeben wird: <code>' + esc(geltend) + '</code> &rarr; <code>' + esc(nach) + '</code></p>';
+    if (dateien && versionen.length && !nochOffenTrotzFinal) {
+      h += '<div class="gate-versionen">' + versionen.map(function (v, i) {
+        var hoehereHinweis = i > 0
+          ? ' <span class="dim">(nicht die h&ouml;chste &mdash; es existiert bereits ' +
+            esc(versionen[0].name) + ')</span>'
+          : '';
+        return '<label class="arow"><input type="radio" name="gate-version" value="' + esc(v.name) +
+          '" id="gate-version-' + i + '"' + (i === 0 ? ' checked' : '') + '> <code>' + esc(v.name) +
+          '</code>' + hoehereHinweis + '</label>';
+      }).join('') + '</div>';
+      if (nach) h += '<p class="dim">Wird zu: <code>' + esc(nach) + '</code></p>';
     } else if (nochOffenTrotzFinal) {
       h += '<p class="dim"><code>' + esc(final) + '</code> liegt bereits, die Freigabe ist aber ' +
-           'noch nicht vollstaendig (Protokoll oder Status fehlen) &mdash; ein weiterer Klick ' +
+           'noch nicht vollst&auml;ndig (Protokoll oder Status fehlen) &mdash; ein weiterer Klick ' +
            'zieht das nach, ohne etwas erneut umzubenennen.</p>';
     } else if (!dateien) {
       h += '<p class="dim">Ordner wird gelesen &hellip;</p>';
     }
-    h += '<label>Zweitpr&uuml;fung (Pflicht &mdash; Gate 1 ist 4-Augen) ' +
+    h += '<label>Freigabe erteilt durch (Pflicht) ' +
          '<input type="text" id="gate-zweitpruefung" data-gate-feld></label>';
-    h += '<label>Gepr&uuml;ft (optional, eine Zeile je Punkt) ' +
-         '<textarea id="gate-geprueft" data-gate-feld rows="3"></textarea></label>';
     h += '<button class="knopf" data-action="gate-klick" data-schritt="' + esc(schrittId) + '"' +
          (grund ? ' disabled' : '') + '>' + beschriftung + '</button>';
     if (grund) h += '<p class="dim">' + esc(grund) + '</p>';

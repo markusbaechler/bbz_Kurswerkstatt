@@ -58,6 +58,30 @@ test('genau dieser stille Schaden waere sonst entstanden', () => {
   assert.ok(inhalt.abgeschlossen(INHALT, 2, 'AFL-001', nurFinal));
 });
 
+/* ---------- versionenVon (Z9): Grundlage der Versions-Auswahl in der Gate-Box ----------
+   Anders als geltendeDatei() (entscheidet die hoechste Nummer sei "die geltende")
+   liefert versionenVon() ALLE vorhandenen v-Fassungen, absteigend sortiert — der
+   Mensch waehlt in der Gate-Box explizit eine davon aus, statt dass die Maschine
+   das fuer ihn tut. */
+
+test('versionenVon listet alle v-Fassungen absteigend, _final zaehlt nicht mit', () => {
+  const dateien = d('AFL-001_lernziele-drehbuch_v1.xlsx', 'AFL-001_lernziele-drehbuch_v3.xlsx',
+                     'AFL-001_lernziele-drehbuch_v2.xlsx', 'AFL-001_lernziele-drehbuch_final.xlsx');
+  assert.deepStrictEqual(inhalt.versionenVon(dateien, 'AFL-001', 'lernziele-drehbuch'), [
+    { name: 'AFL-001_lernziele-drehbuch_v3.xlsx', version: 3 },
+    { name: 'AFL-001_lernziele-drehbuch_v2.xlsx', version: 2 },
+    { name: 'AFL-001_lernziele-drehbuch_v1.xlsx', version: 1 }
+  ]);
+});
+
+test('versionenVon ignoriert fremde Kurse/Lieferobjekte und liefert [] ohne Array', () => {
+  assert.deepStrictEqual(
+    inhalt.versionenVon(d('DBS-001_lernziele-drehbuch_v1.xlsx', 'AFL-001_content_v1.xlsx'),
+                        'AFL-001', 'lernziele-drehbuch'), []);
+  assert.deepStrictEqual(inhalt.versionenVon(null, 'AFL-001', 'lernziele-drehbuch'), []);
+  assert.deepStrictEqual(inhalt.versionenVon(undefined, 'AFL-001', 'lernziele-drehbuch'), []);
+});
+
 /* ---------- Ansicht: Weg Hochladen ---------- */
 
 test('bei _final zeigt der Upload die Sperre statt eines Zielnamens', () => {

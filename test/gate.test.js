@@ -65,14 +65,26 @@ function setzeKursMitInhalt() {
   state.gateLaeuft = {};
 }
 
-function elsGate(werte) {
+/* radios (Z9): das Fake-Dokument beantwortet querySelectorAll('[name="gate-version"]')
+   mit den mitgegebenen Radio-Objekten ({ value, checked }) — controller.gateKlick liest
+   darueber die GEWAEHLTE Fassung, statt automatisch die hoechste (inhalt.geltendeDatei)
+   zu nehmen. Ohne radios-Argument bleibt querySelectorAll leer (kein DOM-Radio gefunden),
+   was denselben Fehlerfall wie zuvor "keine versionierte Datei" ausloest. */
+function elsGate(werte, radios) {
   const melde = { hidden: true, textContent: '' };
   const felder = Object.assign({ 'gate-melde': melde }, werte || {});
   global.document = {
     getElementById: function (id) { return felder[id] || null; },
-    querySelectorAll: function () { return []; }
+    querySelectorAll: function (sel) {
+      if (sel === '[name="gate-version"]') return radios || [];
+      return [];
+    }
   };
   return melde;
+}
+
+function radioGewaehlt(datei) {
+  return [{ value: datei, checked: true }];
 }
 
 test('gateKlick ohne geladenes Dossier bricht ab, kein Netzzugriff', () => {
@@ -107,7 +119,7 @@ test('gateKlick mit einem offenen Punkt an diesem Gate blockiert ohne jeden Grap
   delete global.document;
 });
 
-test('gateKlick ohne Zweitpruefung blockiert, kein Graph-Aufruf (Gate 1 ist 4-Augen)', () => {
+test('gateKlick ohne "Freigabe erteilt durch" blockiert, kein Graph-Aufruf (Z9: die 4-Augen-Zweitpruefung, Feld-Id gate-zweitpruefung bleibt)', () => {
   setzeKursMitInhalt();
   state.data.dossier = { 'DBS-001': dossierMit([]) };
   const melde = elsGate({ 'gate-zweitpruefung': { value: '' } });
@@ -116,8 +128,8 @@ test('gateKlick ohne Zweitpruefung blockiert, kein Graph-Aufruf (Gate 1 ist 4-Au
 
   controller.gateKlick('2', { disabled: false });
 
-  assert.strictEqual(gerufen, false, 'trotz fehlender Zweitpruefung wurde der Ordner gelesen');
-  assert.match(melde.textContent, /Zweitpr.fung fehlt/);
+  assert.strictEqual(gerufen, false, 'trotz fehlender Freigabe-durch-Angabe wurde der Ordner gelesen');
+  assert.match(melde.textContent, /Freigabe.*fehlt/);
   delete global.document;
 });
 
@@ -127,7 +139,7 @@ test('voller Durchlauf: Protokoll ablegen -> umbenennen -> Dossier-Status final,
   state.data.dossierETag = {};
   state.hinweis = null;
   state.fehlerHinweis = null;
-  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' }, 'gate-geprueft': { value: '9 Lernziele' } });
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v3.xlsx'));
   controller._bestaetige = function () { return true; };
 
   const rufe = [];
@@ -162,7 +174,71 @@ test('voller Durchlauf: Protokoll ablegen -> umbenennen -> Dossier-Status final,
   assert.strictEqual(dossierGeschrieben.status['lernziele-drehbuch'], 'final');
   assert.strictEqual(state.data.dossier['DBS-001'].status['lernziele-drehbuch'], 'final',
     'der State wurde nach dem Schreiben nicht aktualisiert');
-  assert.match(state.hinweis || '', /Gate durchlaufen/);
+  assert.match(state.hinweis || '', /Als final best.tigt.*DBS-001_lernziele-drehbuch_final\.xlsx/,
+    'die Erfolgsmeldung muss den _final-Dateinamen nennen (Z9)');
+  delete global.document;
+});
+
+/* ---------- Z9: gateKlick benennt die GEWAEHLTE Fassung um, nicht automatisch die hoechste ----------
+   Mutationsprobe-Anker: ohne die Radio-Auswahl (liest man z. B. wieder
+   inhalt.geltendeDatei() statt document.querySelectorAll('[name="gate-version"]'))
+   wuerde dieser Test rot, weil er absichtlich NICHT die hoechste Fassung waehlt. */
+test('Z9: bei mehreren Fassungen wird die GEWAEHLTE (nicht die hoechste) umbenannt', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  /* v3 gewaehlt, obwohl v5 (hoeher) ebenfalls im Ordner liegt. */
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v3.xlsx'));
+  controller._bestaetige = function () { return true; };
+  const rufe = [];
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_lernziele-drehbuch_v3.xlsx' },
+      { name: 'DBS-001_lernziele-drehbuch_v4.xlsx' },
+      { name: 'DBS-001_lernziele-drehbuch_v5.xlsx' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) {
+    rufe.push({ art: 'umbenennen', von: von, nach: nach });
+    return Promise.resolve(nach);
+  };
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    rufe.push({ art: 'ablegen', datei: datei, text: text });
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  const umbenennung = rufe.filter(function (r) { return r.art === 'umbenennen'; })[0];
+  assert.ok(umbenennung, 'graph.umbenennen wurde nicht aufgerufen — ' + JSON.stringify(rufe));
+  assert.strictEqual(umbenennung.von, 'DBS-001_lernziele-drehbuch_v3.xlsx',
+    'die GEWAEHLTE Fassung (v3) haette umbenannt werden muessen, nicht die hoechste (v5)');
+  assert.strictEqual(umbenennung.nach, 'DBS-001_lernziele-drehbuch_final.xlsx');
+  const protokoll = rufe.filter(function (r) { return r.datei === '_gate.md'; })[0];
+  assert.match(protokoll.text, /Freigegeben:  DBS-001_lernziele-drehbuch_v3\.xlsx/,
+    'das Protokoll muss die GEWAEHLTE Fassung als "von" nennen');
+  delete global.document;
+});
+
+test('Z9: ohne angehaktes Radio (kein DOM-Fund) bricht gateKlick mit derselben Fehlermeldung wie zuvor "keine versionierte Datei" ab', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });   /* keine radios mitgegeben */
+  controller._bestaetige = function () { return true; };
+  let geschrieben = false;
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }]);
+  };
+  graph.umbenennen = function () { geschrieben = true; return Promise.resolve(); };
+  graph.ablegen = function () { geschrieben = true; return Promise.resolve({ eTag: 'W/"1"' }); };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(geschrieben, false, 'trotz fehlender Auswahl wurde geschrieben');
+  assert.match(state.fehlerHinweis || '', /keine Fassung ausgew.hlt/);
   delete global.document;
 });
 
@@ -177,7 +253,7 @@ test('F2: eine stale _gate.md von einem frueheren, von Hand zurueckgestuften Zyk
   state.data.dossier = { 'DBS-001': dossierMit([]) };
   state.data.dossierETag = {};
   state.hinweis = null;
-  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v4.xlsx'));
   controller._bestaetige = function () { return true; };
   const rufe = [];
   graph.ordnerInhalt = function () {
@@ -245,7 +321,8 @@ test('F3: ein zweiter Klick waehrend ein Lauf noch aktiv ist loest keinen zweite
   /* Ein zweiter Klick, waehrend der erste noch auf graph.ordnerInhalt wartet — genau die
      Szene aus dem Review-Finding: ein Zwischen-Render koennte den Knopf wieder enabled
      zeigen, bevor der erste Lauf fertig ist. */
-  const melde2 = elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  const melde2 = elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } },
+    radioGewaehlt('DBS-001_lernziele-drehbuch_v3.xlsx'));
   controller.gateKlick('2', { disabled: false });
 
   assert.strictEqual(ordnerInhaltAufrufe, 1,
@@ -264,7 +341,7 @@ test('bricht die Person die Bestaetigung ab, wird nichts geschrieben und keine E
   state.data.dossier = { 'DBS-001': dossierMit([]) };
   state.data.dossierETag = {};
   state.hinweis = null;
-  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v3.xlsx'));
   controller._bestaetige = function () { return false; };
   let geschrieben = false;
   graph.ordnerInhalt = function () {

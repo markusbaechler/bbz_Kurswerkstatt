@@ -306,6 +306,25 @@
       return final || best;
     },
 
+    /* Alle vorhandenen v-Fassungen eines Lieferobjekts, absteigend sortiert
+       (hoechste zuerst) — _final zaehlt nicht mit, das ist keine Fassung mehr
+       zur Auswahl. Grundlage der Versions-Auswahl in der Gate-Box (Z9,
+       Entscheid Markus 2026-07-30): dort waehlt der Mensch ausdruecklich,
+       WELCHE Fassung final wird, statt dass geltendeDatei() (hoechste Nummer)
+       das stillschweigend fuer ihn entscheidet. */
+    versionenVon: function (dateien, kursId, lieferobjekt) {
+      if (!Array.isArray(dateien)) return [];
+      var re = new RegExp('^' + reEsc(kursId) + '_' + reEsc(lieferobjekt) +
+                          '_v(\\d+)\\.[a-z0-9]+$', 'i');
+      var treffer = [];
+      dateien.forEach(function (d) {
+        var m = re.exec(d.name || '');
+        if (m) treffer.push({ name: d.name, version: parseInt(m[1], 10) });
+      });
+      treffer.sort(function (a, b) { return b.version - a.version; });
+      return treffer;
+    },
+
     /* Der Weg Chat ist nur dort vorgesehen, wo der Kontrakt ihn nennt. */
     darfAblegen: function (i, schrittId) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];

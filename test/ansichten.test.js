@@ -737,21 +737,18 @@ test('die Schrittansicht haelt einen Platz fuer die Fehlermeldung bereit', () =>
   assert.ok(/id="ablegefehler" hidden/.test(h), 'Meldung ist nicht von Anfang an versteckt');
 });
 
-/* ---------- Etappe 2, Task 5: Gate-Box ---------- */
-
-test('Schritt 2 mit Dossier und einem offenen Punkt fuer gate-1 zeigt Text, Eingabefeld und Knoepfe', () => {
-  const props = { dossier: {
-    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
-    quellen: [], status: {}, offen: [{ was: 'Bloom-Stufe 3 pruefen', wo: 'LZ-004', fuer: 'gate-1' }],
-    entschieden: []
-  } };
-  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
-  assert.match(html, /Bloom-Stufe 3 pruefen/, 'der Punkt-Text fehlt (escaped)');
-  assert.match(html, /id="offen-was"/);
-  assert.match(html, /data-action="offen-erfassen"/);
-  assert.match(html, /data-action="offen-entscheiden"[^>]*data-index="0"/);
-  assert.match(html, /data-action="offen-verschieben"[^>]*data-index="0"/);
-});
+/* ---------- Etappe 2, Task 5 -> Z9: Gate-Box ----------
+   Z9 (Entscheid Markus, 2026-07-30, Live-Einsatz "das schaut kein Schwein an"):
+   die Pruefliste/Erfassung offener Punkte (Task 5) ist VOLLSTAENDIG aus der
+   Gate-Box entfernt — auch nicht eingeklappt, auch nicht bedingt. Die Tests
+   dafuer (Punkt-Text, offen-was/-erfassen/-entscheiden/-verschieben,
+   Leerfall-Text, Escaping eines offenen Punkts) sind ersatzlos entfallen; die
+   Schutzwirkung (Escaping von Fremdwerten) bleibt an anderer Stelle bestehen
+   (Dossier-Felder werden nach wie vor durchgehend escaped, s. Quellen-/
+   Regulatorik-Tests). Was bleibt: dossier.offenNeu/offenFuer/offenEntscheiden/
+   offenVerschieben und die gleichnamigen Controller-Handler (Datentraeger fuer
+   die Etappe-4-Review-Vorlage, s. test/gate.test.js) sowie die S2-Sperre in
+   controller.gateKlick — beide unveraendert. */
 
 test('Schritt 3 (kein Gate im Kontrakt) zeigt keine Gate-Box', () => {
   const props = { dossier: {
@@ -762,22 +759,11 @@ test('Schritt 3 (kein Gate im Kontrakt) zeigt keine Gate-Box', () => {
   assert.doesNotMatch(html, /id="gate-block"/);
 });
 
-test('ein Fremdwert in einem offenen Punkt erscheint escaped, nicht als Markup', () => {
-  const props = { dossier: {
-    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
-    quellen: [], status: {}, offen: [{ was: '<img src=x>', wo: 'LZ-001', fuer: 'gate-1' }],
-    entschieden: []
-  } };
-  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
-  assert.doesNotMatch(html, /<img src=x>/);
-  assert.match(html, /&lt;img src=x&gt;/);
-});
-
-test('Gate-Box ohne Dossier zeigt den kurzen Hinweis statt der Pruefliste', () => {
+test('Gate-Box ohne Dossier zeigt den kurzen Hinweis statt des Freigabe-Teils', () => {
   const html = ansichten.einSchritt(INHALT, DBS, 2, null, {});
   assert.match(html, /id="gate-block"/);
   assert.match(html, /Gate braucht das Dossier/);
-  assert.doesNotMatch(html, /id="offen-was"/);
+  assert.doesNotMatch(html, /id="gate-zweitpruefung"/);
 });
 
 test('Gate-Box bleibt aussen vor, solange der Kursordner fehlt', () => {
@@ -787,16 +773,31 @@ test('Gate-Box bleibt aussen vor, solange der Kursordner fehlt', () => {
   } };
   const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
   assert.match(html, /Gate braucht das Dossier/);
-  assert.doesNotMatch(html, /id="offen-was"/);
+  assert.doesNotMatch(html, /id="gate-zweitpruefung"/);
 });
 
-test('Gate-Box ohne offene Punkte zeigt den Leerfall-Text', () => {
+test('Z9: die Gate-Box zeigt keinerlei Punkte-UI mehr — kein offen-was/-erfassen, keine Liste, kein "Keine offenen Punkte"-Satz', () => {
   const props = { dossier: {
     dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
-    quellen: [], status: {}, offen: [], entschieden: []
+    quellen: [], status: {}, offen: [{ was: 'Bloom-Stufe 3 pruefen', wo: 'LZ-004', fuer: 'gate-1' }],
+    entschieden: []
   } };
   const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
-  assert.match(html, /Keine offenen Punkte an dieses Gate adressiert/);
+  assert.doesNotMatch(html, /Bloom-Stufe 3 pruefen/, 'ein offener Punkt wird nicht mehr gerendert');
+  assert.doesNotMatch(html, /id="offen-was"/);
+  assert.doesNotMatch(html, /data-action="offen-erfassen"/);
+  assert.doesNotMatch(html, /data-action="offen-entscheiden"/);
+  assert.doesNotMatch(html, /data-action="offen-verschieben"/);
+  assert.doesNotMatch(html, /Keine offenen Punkte/);
+});
+
+test('Z9: offene Punkte im Dossier sperren den Gate-Knopf in der ANSICHT NICHT mehr — S2 bleibt reiner Controller-Waechter', () => {
+  const d = dossierOhneOffen();
+  d.offen = [{ was: 'Bloom-Stufe pruefen', wo: 'LZ-004', fuer: 'gate-1' }];
+  const props = { dossier: d, dateien: [{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }] };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  assert.doesNotMatch(html, /data-action="gate-klick"[^>]*disabled/,
+    'die Ansicht sperrt wegen offener Punkte — das darf sie seit Z9 nicht mehr, die Sperre bleibt im Controller');
 });
 
 /* ---------- Etappe 2, Task 6: der Freigabe-Teil der Gate-Box ---------- */
@@ -806,25 +807,42 @@ function dossierOhneOffen() {
     quellen: [], status: {}, offen: [], entschieden: [] };
 }
 
-test('mit einer versionierten Datei und ohne offene Punkte zeigt die Gate-Box den Zielnamen und einen freien Knopf', () => {
+/* ---------- Z9: Radio-Liste, "Freigabe erteilt durch", "Als final bestaetigen" ---------- */
+
+test('mit genau einer versionierten Datei zeigt die Gate-Box sie vorausgewaehlt, das Namensfeld und einen freien Knopf', () => {
   const props = { dossier: dossierOhneOffen(), dateien: [{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }] };
   const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
-  assert.match(html, /Freigegeben wird:.*DBS-001_lernziele-drehbuch_v3\.xlsx.*DBS-001_lernziele-drehbuch_final\.xlsx/s);
+  assert.match(html, /name="gate-version"[^>]*value="DBS-001_lernziele-drehbuch_v3\.xlsx"[^>]*checked/);
+  assert.match(html, /Wird zu:.*DBS-001_lernziele-drehbuch_final\.xlsx/s);
   assert.match(html, /data-action="gate-klick"[^>]*data-schritt="2"/);
   assert.doesNotMatch(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.match(html, /Freigabe erteilt durch/);
   assert.match(html, /id="gate-zweitpruefung"[^>]*data-gate-feld/);
-  assert.match(html, /id="gate-geprueft"[^>]*data-gate-feld/);
+  assert.doesNotMatch(html, /id="gate-geprueft"/, 'das Geprueft-Textfeld ist mit Z9 entfernt');
+  assert.match(html, />Als final best&auml;tigen</);
   assert.match(html, /id="gate-melde"/);
 });
 
-test('offene Punkte an diesem Gate sperren den Gate-Knopf (S2) mit Begruendungszeile', () => {
+test('mit mehreren Fassungen ist die hoechste vorausgewaehlt, jede niedrigere traegt einen Hinweis auf die hoehere', () => {
+  const props = { dossier: dossierOhneOffen(), dateien: [
+    { name: 'DBS-001_lernziele-drehbuch_v3.xlsx' },
+    { name: 'DBS-001_lernziele-drehbuch_v5.xlsx' },
+    { name: 'DBS-001_lernziele-drehbuch_v4.xlsx' }
+  ] };
+  const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
+  const v5 = /<label[^>]*><input type="radio" name="gate-version" value="DBS-001_lernziele-drehbuch_v5\.xlsx"[^>]*checked[^>]*>[^<]*<code>DBS-001_lernziele-drehbuch_v5\.xlsx<\/code>\s*<\/label>/;
+  assert.match(html, v5, 'die hoechste Fassung (v5) ist nicht vorausgewaehlt bzw. traegt selbst einen Hinweis');
+  assert.match(html, /value="DBS-001_lernziele-drehbuch_v4\.xlsx"[^>]*>[\s\S]*?es existiert bereits DBS-001_lernziele-drehbuch_v5\.xlsx/);
+  assert.match(html, /value="DBS-001_lernziele-drehbuch_v3\.xlsx"[^>]*>[\s\S]*?es existiert bereits DBS-001_lernziele-drehbuch_v5\.xlsx/);
+});
+
+test('Z9: offene Punkte im Dossier sperren den Gate-Knopf in der Ansicht nicht mehr (S2 bleibt Controller-Waechter, s. o.)', () => {
   const d = dossierOhneOffen();
   d.offen = [{ was: 'Bloom-Stufe pruefen', wo: 'LZ-004', fuer: 'gate-1' }];
   const props = { dossier: d, dateien: [{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }] };
   const html = ansichten.einSchritt(INHALT, DBS, 2, null, props);
-  assert.match(html, /data-action="gate-klick"[^>]*disabled/);
-  assert.match(html, /1 offene[rs]? Punkte? an Gate 1 · 4-Augen/);
-  assert.match(html, /entscheiden oder begr.ndet verschieben/);
+  assert.doesNotMatch(html, /data-action="gate-klick"[^>]*disabled/);
+  assert.doesNotMatch(html, /entscheiden oder begr.ndet verschieben/);
 });
 
 /* F1 (Fix-Runde 1, Review-Finding): "bereits freigegeben" darf den Knopf nur sperren, wenn
