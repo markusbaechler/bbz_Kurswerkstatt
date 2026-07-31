@@ -604,9 +604,25 @@
        Titel/Kompetenzfeld (aus KWKurse, kurs), Rechtsstand/Zusatz/SAQ und die
        Fachquellenliste (aus dem Dossier, d) stehen zu diesem Zeitpunkt bereits
        fest, keines davon ist hier ein Formularfeld. Ohne Dossier (kein d) gibt
-       es keinen Kopf — ohne Dossier ist Schritt 1 nie durchlaufen worden. */
-    lernzielePromptKopf: function (kurs, d) {
+       es keinen Kopf — ohne Dossier ist Schritt 1 nie durchlaufen worden.
+
+       Drittes, optionales Argument extras (T13, VL-002-Fund
+       2026-07-30, Entscheid Markus "es muss IMMER von Beginn funktionieren"):
+       im Live-Einsatz fragte der Chat nach dem Briefing-Dateinamen und setzte
+       version=1, obwohl v1-v5 im Ordner lagen — beides weiss die App bereits
+       aus den dateien-Caches, die die Schritt-2-Ansicht ohnehin laedt
+       (ordnerNachladen fuer den Schritt-2-Ordner, briefingNachladen fuer
+       01_briefing). extras = { version, basiertAuf } wird von app.js aus genau
+       diesen Caches berechnet — ueber die bestehenden, einzigen Quellen
+       inhalt.naechsteVersion()/inhalt.geltendeDatei(), nicht neu erfunden hier
+       (Konvention 9: eine Quelle pro Begriff). Fehlt ein Cache, bleibt das
+       jeweilige Feld in extras schlicht weg — die Funktion rät nie, sie
+       schreibt nur, was ihr mitgegeben wird. Die PROJEKT-WISSEN-Zeile braucht
+       kein extras: sie kommt wie FACHQUELLEN direkt aus d.quellen (Datei-Quellen
+       ohne url) — dieselbe Erb-Quelle Dossier, kein zweiter Weg dorthin. */
+    lernzielePromptKopf: function (kurs, d, extras) {
       if (!d) return '';
+      extras = extras || {};
       var z = [];
       z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
       z.push('Diese Werte sind gesetzt. Übernimm sie. Frage sie NICHT erneut ab, rechne sie');
@@ -620,8 +636,35 @@
         z.push('Zusatz: ' + regulatorik.zusatz);
       }
       z.push('SAQ-Rezertifizierung: ' + (regulatorik.saq_rezert ? 'ja' : 'nein'));
+      /* Version/basiert_auf — nur, wenn app.js sie aus einem frischen
+         dateien-Cache mitgibt (s. Kommentar oben). Feldnamen wie im
+         Steckbrief-Schema (Prozess-Spec §3): version, basiert_auf. */
+      if (typeof extras.version === 'number') {
+        z.push('');
+        z.push('Version des Lieferobjekts: ' + extras.version + '.');
+        z.push('Setze im YAML-Feld \'version\' des _steckbrief GENAU diese Zahl, keine andere.');
+      }
+      if (extras.basiertAuf) {
+        z.push('');
+        z.push('basiert_auf: ' + extras.basiertAuf);
+        z.push('Setze im YAML-Feld \'basiert_auf\' des _steckbrief GENAU diesen Dateinamen.');
+      }
       z.push('');
       z.push.apply(z, fachquellenZeilen(d));
+      /* PROJEKT-WISSEN (T13): nur Datei-Quellen — eine Link-Quelle wird direkt
+         aufgerufen, nicht als Ablage im Projekt-Wissen erwartet. Muster wie
+         dossier.positivliste(), hier ohne Abhaengigkeit zu dossier.js erneut
+         gebildet (inhalt.js kennt dossier.js bewusst nicht, s. app.js-Aufrufer
+         fuer die uebrigen Dossier-Funktionen). Ohne Dossier keine Zeile — kein
+         zweiter if(d)-Zweig noetig, wir sind schon hinter dem fruehen return. */
+      var projektWissen = (d.quellen || []).map(function (q) { return q.datei; }).filter(Boolean);
+      if (projektWissen.length) {
+        z.push('');
+        z.push('PROJEKT-WISSEN: Diese Datei-Quellen müssen im Projekt-Wissen liegen: ' +
+               projektWissen.join('; ') + '.');
+        z.push('Fehlt dir eine davon: nenne sie in der Phase-1-Frageliste — lies nie eine ' +
+               'andere an ihrer Stelle.');
+      }
       z.push('');
       z.push('=== ENDE DER ANGABEN ===');
       z.push('');

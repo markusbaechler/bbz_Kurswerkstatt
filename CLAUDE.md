@@ -942,3 +942,62 @@ blieben grün; danach wiederhergestellt. Der `nurNeu`-Parameter (`!eTagAlt`) bei
 `graph.ablegen` in `_dossierVersuch` entfernt → genau die beiden neuen Erstanlage-Tests fielen
 rot (522/524 grün); danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` →
 524/524 grün.
+
+## Task T13: der Schritt-2-Prompt-Kopf gibt Version, `basiert_auf` und die Projekt-Wissen-Liste vor
+
+**Fund aus dem Live-Einsatz an VL-002 (2026-07-30), Entscheid Markus „es muss IMMER von Beginn
+funktionieren":** der Chat stellte im Schritt-2-Prompt Rückfragen nach dem Briefing-Dateinamen
+und setzte im Steckbrief `version=1`, obwohl `v1`–`v5` bereits im Ordner lagen — beides weiss die
+Kurswerkstatt, die Frage entstand nur, weil der Prompt-Kopf es nicht mitgab.
+
+**`inhalt.lernzielePromptKopf(kurs, d, extras)` bekommt ein drittes, optionales Argument.**
+Entschieden gegen eine eigene Hilfsfunktion und für die Erweiterung der bestehenden Funktion:
+`extras = { version, basiertAuf }` sind reine Anzeigewerte für zwei zusätzliche Zeilen, keine
+eigene Berechnungslogik — eine zweite Funktion hätte denselben `if (d) …`-Rahmen und dieselben
+Kurs-/Rechtsstand-/Quellen-Zeilen noch einmal aufbauen müssen (Konvention 9: eine Quelle pro
+Begriff). `extras.version` (Zahl) und `extras.basiertAuf` (Dateiname) werden **ausschliesslich**
+von `app.js` berechnet, über dieselben, einzigen Quellen wie überall sonst —
+`inhalt.naechsteVersion()` bzw. `inhalt.geltendeDatei()` — nie neu erfunden in `inhalt.js`.
+Fehlt eine der beiden Angaben (kein `extras`, oder `extras.version`/`extras.basiertAuf` nicht
+gesetzt), bleibt die jeweilige Zeile schlicht weg: die Funktion **rät nie**. Die Feldnamen
+(`version`, `basiert_auf`) folgen dem Steckbrief-Schema der Prozess-Spec §3.
+
+**Die PROJEKT-WISSEN-Zeile braucht kein `extras`** — sie kommt wie der FACHQUELLEN-Block direkt
+aus `d.quellen` (Datei-Quellen ohne `url`, dieselbe Erb-Quelle Dossier, Muster wie
+`dossier.positivliste()`, in `inhalt.js` bewusst ohne Abhängigkeit zu `dossier.js` erneut
+gebildet — `inhalt.js` kennt `dossier.js` nirgends, s. Kommentar in `lernzielePromptKopf`).
+Sie listet nur Dateien (`q.datei`), keine Link-Quellen — ein Link steht schon im
+FACHQUELLEN-Block und wird direkt aufgerufen, nicht als Ablage im Projekt-Wissen erwartet. Der
+Satz „Fehlt dir eine davon: nenne sie in der Phase-1-Frageliste — lies nie eine andere an ihrer
+Stelle." verhindert, dass der Chat bei einer fehlenden Projekt-Wissen-Datei eine falsche Quelle
+liest, statt nachzufragen.
+
+**`app.js` (`kopieren`-Handler, Schritt-2-Zweig) berechnet `extras3` aus zwei bereits geladenen
+dateien-Caches, ohne eigenen Netzzugriff.** Beide Caches liegen zum Zeitpunkt des Klicks in aller
+Regel schon vor: der Schritt-2-Ordner über `ordnerNachladen` (in `render()` bei jedem Aufbau der
+Schritt-Ansicht ausgelöst) und `01_briefing/` als Nebeneffekt von `briefingNachladen` — dessen
+`graph.ordnerInhalt()`-Aufruf schreibt den Ordnerinhalt in **denselben** Cache
+(`state.data.dateien[kursId + '/' + ordner]`), unabhängig davon, wozu er ursprünglich gerufen
+wurde (`graph.ordnerInhalt` cacht immer, s. `app.js` Zeile ~286). Ist ein Cache kein Array
+(`undefined` = noch nicht geladen, `null` = Ordner wurde gesucht und nicht gefunden), bleibt das
+jeweilige `extras3`-Feld unbesetzt — kein Rateversuch, der Kopf bleibt trotzdem gültig
+(`lernzielePromptKopf` toleriert fehlende `extras`-Felder von Beginn an).
+
+**Tests (`test/lernzielekopf.test.js`, drei neue Fälle):** Kopf mit `extras` trägt Version,
+`basiert_auf` und die Projekt-Wissen-Zeile (inklusive Beleg, dass eine Link-Quelle dort NICHT
+auftaucht); ohne `extras` bzw. mit leerem `extras`-Objekt fehlen Version und `basiert_auf`
+vollständig; ohne Datei-Quellen fehlt die Projekt-Wissen-Zeile ganz. Die drei bestehenden Tests
+bleiben unverändert grün — `extras` ist rein additiv. **528 Tests grün** (Baseline 525 + 3 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die beiden `z.push(...)`-Zeilen der
+PROJEKT-WISSEN-Zeile im Builder auskommentiert, `node --test test/lernzielekopf.test.js`:
+```
+ℹ tests 6
+ℹ pass 5
+ℹ fail 1
+
+✖ mit extras traegt der Kopf Version, basiert_auf und die Projekt-Wissen-Liste
+  AssertionError [ERR_ASSERTION]: PROJEKT-WISSEN-Zeile fehlt
+```
+Genau der eine neue Test fiel rot, alle anderen (inklusive der bestehenden drei) blieben grün;
+danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → 528/528 grün.

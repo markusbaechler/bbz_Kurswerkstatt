@@ -2160,7 +2160,35 @@
           var kurs3 = nav.kurs();
           var d3 = kurs3 ? state.data.dossier[kurs3.kursId] : null;
           if (d3 && typeof d3 === 'object') {
-            text2 = root.inhalt.lernzielePromptKopf(kurs3, d3) + text2;
+            /* T13 (VL-002-Fund, 2026-07-30): der Chat fragte im Live-Einsatz nach
+               dem Briefing-Dateinamen und setzte version=1, obwohl v1-v5 im
+               Ordner lagen — beides weiss die App bereits aus den beiden
+               dateien-Caches, die die Schritt-2-Ansicht ohnehin laedt
+               (ordnerNachladen fuer den Schritt-2-Ordner, briefingNachladen fuer
+               01_briefing/, s. controller.render()). Beide Werte werden hier aus
+               dem Cache berechnet, ueber dieselben Funktionen wie ueberall sonst
+               (inhalt.naechsteVersion/geltendeDatei) — kein zweiter Rechenweg.
+               Fehlt ein Cache (kein Array — noch nicht geladen oder Ordner nicht
+               gefunden), bleibt das jeweilige Feld in extras3 weg: der Kopf
+               bleibt gueltig, rät aber nichts (inhalt.lernzielePromptKopf laesst
+               ein fehlendes Feld dann ebenfalls weg). */
+            var inh3 = state.data.inhalt;
+            var extras3 = {};
+            var ab2 = root.inhalt.ablageVon(inh3, '2', kurs3.kursId);
+            var lief2 = ab2 ? root.inhalt.lieferobjektVon(inh3, '2') : null;
+            var dateien2 = ab2 ? state.data.dateien[kurs3.kursId + '/' + ab2.ordner] : undefined;
+            if (lief2 && Array.isArray(dateien2)) {
+              extras3.version = root.inhalt.naechsteVersion(dateien2, kurs3.kursId, lief2);
+            }
+            var e1 = ((inh3['ablage-kontrakt'] || {}).schritte || {})['1'] || {};
+            var ordner1 = e1.ordner || '01_briefing';
+            var lief1 = e1.lieferobjekt || 'briefing';
+            var dateien1 = state.data.dateien[kurs3.kursId + '/' + ordner1];
+            if (Array.isArray(dateien1)) {
+              var basiertAuf3 = root.inhalt.geltendeDatei(dateien1, kurs3.kursId, lief1);
+              if (basiertAuf3) extras3.basiertAuf = basiertAuf3;
+            }
+            text2 = root.inhalt.lernzielePromptKopf(kurs3, d3, extras3) + text2;
           }
         }
         kopieren(text2, t);
