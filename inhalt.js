@@ -837,6 +837,45 @@
       return (s3.ordner || '03_content') + '/quellen';
     },
 
+    /* --- Der Quellen-Spiegel-Waechter (Z7, Live-Befund VL-002, 2026-07-31) ---
+       Zweimal live beobachtet: das Dossier bekam eine neue Quelle, aber das
+       abgelegte Briefing (der Frontmatter-Spiegel, den die KI daraus schreibt)
+       trug still die alten Quellen — niemand sah es, bis die KI-Ausgabe
+       Widersprueche zeigte. quellenSpiegel(text, d) vergleicht per Q-ID
+       (Regex \bQ-\d{3}\b ueber den ganzen Dokumenttext), NIE per Zeilen-Syntax:
+       ein Briefing, das dieselbe Quelle mit einem anderen Trennzeichen, in
+       YAML-Frontmatter oder mitten im Fliesstext nennt, zaehlt trotzdem als
+       gespiegelt, solange die Q-ID irgendwo im Text vorkommt. Links und
+       Datei-Quellen zaehlen gleich — jede Quelle hat eine Q-ID, die Art der
+       Quelle spielt fuer den Spiegel-Check keine Rolle.
+
+       text == null heisst "keine Aussage moeglich" (Briefing laedt noch oder
+       wurde noch nicht nachgesehen) — die Ansicht zeigt dafuer bereits einen
+       eigenen Hinweis (briefing == null, s. instruktionenBlock in ansichten.js);
+       dieser Check darf nicht zusaetzlich mitreden. Ein leerer String ('' —
+       nachgesehen, nichts gefunden) liefert dagegen ein echtes Ergebnis: alle
+       Quellen gelten dann als fehlend, was inhaltlich stimmt, auch wenn die
+       Ansicht dafuer aus gutem Grund den bestehenden "Kein freigegebenes
+       Briefing"-Kasten zeigt statt diesen hier (s. ansichten.js).
+
+       Der Contract-Steckbrief (xlsx, Schritt 2) ist im Browser nicht lesbar —
+       diese Funktion prueft bewusst NUR das Briefing. Der Contract-Spiegel
+       (Steckbrief gegen Dossier) laeuft ueber contract-pruefen/T11, nicht
+       hier. */
+    quellenSpiegel: function (text, d) {
+      if (text == null) return null;
+      var quellen = (d && d.quellen) || [];
+      var gefunden = {};
+      var re = /\bQ-\d{3}\b/g;
+      var t = String(text);
+      var m;
+      while ((m = re.exec(t))) gefunden[m[0]] = true;
+      var fehlend = quellen
+        .map(function (q) { return q.id; })
+        .filter(function (id) { return id && !gefunden[id]; });
+      return { fehlend: fehlend, gesamt: quellen.length };
+    },
+
     /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 1) ---
        Uebernommen aus dem Generator des abgeloesten Cockpits v0.2 — aber die
        Ablage-Angaben werden ABGELEITET statt abgeschrieben. Die alte Fassung trug

@@ -377,6 +377,11 @@
     h += '<p class="hinweis-leise">Briefing: ' + esc(st) +
          (root.dossier && root.dossier.banner(st) ? ' &middot; ' + esc(root.dossier.banner(st)) : '') + '</p>';
 
+    /* Z7: das geltende Briefing kann eine neu erfasste Quelle noch nicht
+       spiegeln — genau der VL-002-Fall entstand hier, in Schritt 1 selbst,
+       als nach einer neuen Quelle niemand das Briefing nachzog. */
+    h += quellenSpiegelBox(ablageDaten);
+
     if (gelesen === false) {
       h += '<div class="hinweis-leise">Noch nicht nachgesehen &mdash; die Felder werden ' +
            'geladen, sobald der Ordner erreichbar ist.</div>';
@@ -510,6 +515,30 @@
          '> quellenfrei (reiner KI-Entwurf)</label></p>';
     h += '</div>';
     return h;
+  }
+
+  /* ---------- Der Quellen-Spiegel-Waechter (Z7, Schritt 1 und 2) ----------
+     Live-Befund VL-002 (2026-07-31, zweimal): das Dossier bekam eine neue
+     Quelle, aber das geltende Briefing (der Frontmatter-Spiegel) trug still
+     die alten — niemand sah es, bis die KI-Ausgabe Widersprueche zeigte.
+     EIN Helfer statt zweier Kopien (Konvention 9): Schritt 1 UND Schritt 2
+     laden das geltende Briefing bereits (s. app.js briefingNachladen), beide
+     rufen denselben Baustein. Kein Kasten, solange das Briefing noch laedt
+     oder nicht gefunden wurde (briefing null/leer — dafuer gibt es die
+     bestehenden Anzeigen) oder solange nichts fehlt. Der Contract-Steckbrief
+     (xlsx) wird hier bewusst NICHT geprueft — er ist im Browser nicht lesbar,
+     dafuer ist contract-pruefen/T11 zustaendig (s. CLAUDE.md). */
+  function quellenSpiegelBox(ablageDaten) {
+    var briefing = ablageDaten && ablageDaten.briefing;
+    var d = ablageDaten && ablageDaten.dossier;
+    if (briefing == null || briefing === '' || !d || typeof d !== 'object') return '';
+    var spiegel = I().quellenSpiegel(briefing, d);
+    if (!spiegel || !spiegel.fehlend.length) return '';
+    var n = spiegel.gesamt, f = spiegel.fehlend.length;
+    return '<div class="box achtung"><span class="bt">&#9888; Quellen-Spiegel unvollst&auml;ndig</span>' +
+      'Das geltende Briefing spiegelt ' + esc(String(n - f)) + ' von ' + esc(String(n)) +
+      ' Quellen &mdash; ' + esc(spiegel.fehlend.join(', ')) + ' fehlen. Briefing-Prompt neu ' +
+      'kopieren, Briefing neu erzeugen und ablegen.</div>';
   }
 
   /* ---------- Die Gate-Box (Schritt 2, 4, 7) ----------
@@ -765,6 +794,12 @@
            'Schritt 2 startet erst, wenn das Briefing in Schritt 1 abgelegt ist ' +
            '(Halluzinations-Bremse). Ohne Dossier zuerst Schritt 1 durchlaufen.</div>';
     }
+
+    /* Z7: auch mit freigegebenem Briefing kann der Spiegel veraltet sein — eine
+       nach dem letzten Briefing-Entwurf erfasste Quelle taucht darin nicht auf.
+       Unabhaengig vom Kasten oben (der prueft nur status.briefing, nicht den
+       Inhalt). */
+    if (String(schrittId) === '2') h += quellenSpiegelBox(ablageDaten);
 
     /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
        nicht hinter den Leitplanken. Der Masterprompt zuerst. */

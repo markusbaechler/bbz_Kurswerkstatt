@@ -1101,3 +1101,68 @@ stehen; eine Gegenprobe mit mindestens einer Datei-Quelle zeigt Satz 1 weiterhin
 ```
 Genau die drei neuen Fix-Runde-Tests fielen rot, die Gegenprobe und alle 46 übrigen blieben grün;
 danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → 536/536 grün.
+
+## Task Z7: der Quellen-Spiegel-Wächter
+
+**Live-Befund VL-002 (2026-07-31, zweimal):** das Dossier bekam eine 15. Quelle, aber das
+abgelegte Briefing (der Frontmatter-Spiegel, den die KI daraus schreibt) trug still die alten
+14 — niemand sah es, bis die KI-Ausgabe Widersprüche zeigte. Bisher gab es keinen Mechanismus,
+der ein Auseinanderlaufen von Dossier und geltendem Briefing überhaupt sichtbar macht.
+
+**`inhalt.quellenSpiegel(text, d)`** ist die neue reine Funktion dafür: `{ fehlend: [...],
+gesamt: n }`. Sie vergleicht **per Q-ID** (Regex `\bQ-\d{3}\b`, global über den ganzen
+Dokumenttext) — **nie per Zeilen-Syntax**. Ein Briefing, das dieselbe Quelle mit einem anderen
+Trennzeichen, in YAML-Frontmatter oder mitten im Fliesstext nennt, zählt trotzdem als gespiegelt,
+solange die Q-ID irgendwo im Text vorkommt; ein Zeilen-Parser hätte genau die Formatvarianz
+verpasst, die ein von der KI frei formuliertes Dokument zwangsläufig hat. Links und Datei-Quellen
+zählen gleich — jede Quelle im Dossier hat eine Q-ID, die Art der Quelle spielt für den
+Spiegel-Check keine Rolle. `text == null` liefert `null` („keine Aussage möglich" — das Briefing
+lädt noch oder wurde nicht nachgesehen); ein leerer String (`''`, nachgesehen und nichts
+gefunden) liefert dagegen ein echtes Ergebnis mit allen Quellen als fehlend — inhaltlich korrekt,
+auch wenn die Ansicht dafür aus gutem Grund den bestehenden „Kein freigegebenes
+Briefing"-Kasten zeigt statt diesen hier.
+
+**Ansicht: `ansichten.js` `quellenSpiegelBox(ablageDaten)` — ein Helfer für Schritt 1 UND
+Schritt 2 (Konvention 9, eine Quelle statt zweier Kopien).** Beide Schritte laden das geltende
+Briefing bereits (`app.js` `briefingNachladen`, seit Etappe 2 auf Schritt 1 und 2 erweitert).
+Der Kasten (dieselbe `box achtung`-Optik wie der „Kein freigegebenes Briefing"-Kasten aus
+Etappe 2 Task 3) erscheint nur, wenn `ablageDaten.briefing` ein geladener, nicht-leerer Text
+ist, ein Dossier vorliegt UND `quellenSpiegel` mindestens eine fehlende Q-ID meldet: „⚠
+Quellen-Spiegel unvollständig — Das geltende Briefing spiegelt {n−f} von {n} Quellen —
+{Q-015, …} fehlen. Briefing-Prompt neu kopieren, Briefing neu erzeugen und ablegen." Jeder Wert
+(Zahlen, Q-ID-Liste) läuft durch `esc()` (Konvention 4). In Schritt 1 sitzt der Aufruf in
+`briefingFormular`, direkt unter der Status-Zeile „Briefing: …" — genau dort, wo der
+VL-002-Fall entstand: eine in Schritt 1 selbst frisch erfasste Quelle, deren vorheriges
+Briefing sie noch nicht kennt. In Schritt 2 steht er unabhängig vom bestehenden
+„Kein freigegebenes Briefing"-Kasten (der prüft nur `status.briefing`, nie den Inhalt) — ein
+längst freigegebenes Briefing kann trotzdem veraltet sein, wenn danach eine Quelle dazukam.
+
+**Bewusst NICHT geprüft: der Contract-Steckbrief (xlsx, Schritt 2).** Er ist im Browser nicht
+lesbar (kein Excel-Parser in der Kurswerkstatt) — ein Contract-Spiegel-Check dafür würde raten
+oder eine Bibliothek nachziehen, die diese Task nicht liefert. Der Contract-Spiegel läuft über
+`contract-pruefen`/T11 (separates Werkzeug, ausserhalb der Browser-App); `quellenSpiegel` deckt
+ausschliesslich das Briefing ab. Das ist kein Zwischenstand, den diese Task vergisst
+nachzuziehen, sondern eine bewusste Grenze der Browser-App.
+
+**Tests:** `test/quellenspiegel.test.js` — sechs Fälle für `inhalt.quellenSpiegel` (null-Fall,
+fehlende Q-ID, vollständiger Spiegel, keine Quellen, Format-Unabhängigkeit mit YAML-Frontmatter
+und Freitext-Trennzeichen, sowie eine Wortgrenzen-Probe „Q-0158" ≠ „Q-015" gegen einen naiven
+Substring-Vergleich) plus sechs Ansichts-Fälle (Schritt 1 und 2 je: Kasten bei fehlender Q-ID,
+kein Kasten bei vollständigem Spiegel, kein Kasten bei `briefing == null`/leer). **548 Tests
+grün** (536 + 12 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die `.filter(...)`-Zeile in `inhalt.quellenSpiegel`
+durch `.filter(function (id) { return false; })` ersetzt, `node --test test/quellenspiegel.test.js`:
+```
+ℹ tests 12
+ℹ pass 8
+ℹ fail 4
+
+✖ quellenSpiegel: fehlende Q-ID wird gemeldet, gesamt zaehlt alle Quellen
+✖ quellenSpiegel: Q-0158 ist NICHT Q-015 (Wortgrenze, kein Praefix-/Substring-Treffer)
+✖ Schritt 1: fehlende Q-ID im geltenden Briefing zeigt den Spiegel-Kasten
+✖ Schritt 2: fehlende Q-ID im geltenden Briefing zeigt den Spiegel-Kasten
+```
+Genau die vier von der Mutation betroffenen Tests fielen rot, die übrigen acht (inkl. der
+„kein Kasten"-Fälle) blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft:
+`node --test` → 548/548 grün.
