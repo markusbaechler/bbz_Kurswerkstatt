@@ -71,6 +71,55 @@ test('ohne Dossier bleiben die Instruktionen wie bisher — kein Quellen-Teil', 
   assert.doesNotMatch(t, /Fachquellen/);
 });
 
+/* ---------- Etappe 2, Task Z6/Z8: Projekt-Wissen-Regeln (VL-002-Fund 2026-07-30) ----------
+   Zusatzauftrag Punkt 8 + Live-Einsatz an VL-002 (zweimal gescheitert): ein Claude-/
+   ChatGPT-Projekt kann eine Datei-Quelle nur lesen, wenn sie als Projekt-Wissen hochgeladen
+   ist — das stand nirgends im Text. (b) Eine im Projektordner liegende, nicht gelistete
+   Datei (Erbrecht-PDF) hatte der Chat nur zufaellig richtig gemeldet — die Regel soll
+   feststehen, nicht dem Zufall ueberlassen bleiben. (c) Der eingefrorene Projekt-Stand
+   veraltet still, wenn sich die Quellenliste im Dossier aendert — die Nachziehpflicht
+   gehoert in denselben Text. */
+
+const QUELLE_D = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+                    quellen: [{ id: 'Q-001', titel: 'SSPA Map', herausgeber: 'SSPA',
+                                stand: '2025', datei: 'sspa-map-2025.pdf' }],
+                    status: {}, offen: [], entschieden: [] };
+
+test('die Datei-Quellen-als-Projekt-Wissen-Regel steht in beiden Fassungen (Punkt 8a)', () => {
+  ['claude', 'chatgpt'].forEach(function (f) {
+    const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, f, 'AFL-001_x', QUELLE_D)
+                    .replace(/\s+/g, ' ');
+    assert.ok(t.indexOf('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt') >= 0,
+      f + ': Projekt-Wissen-Satz fehlt');
+    assert.ok(t.indexOf('lies nie eine andere an ihrer Stelle') >= 0, f + ': Fehlt-Regel fehlt');
+  });
+});
+
+test('eine nicht gelistete Datei im Projekt-Wissen wird gemeldet, nicht genutzt (Punkt 8b)', () => {
+  ['claude', 'chatgpt'].forEach(function (f) {
+    const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, f, 'AFL-001_x', QUELLE_D)
+                    .replace(/\s+/g, ' ');
+    assert.ok(t.indexOf('NICHT in dieser Quellenliste steht') >= 0, f + ': Melde-Regel fehlt');
+    assert.ok(t.indexOf('gehört zuerst in der Kurswerkstatt erfasst') >= 0,
+      f + ': Erfassungs-Hinweis fehlt');
+  });
+});
+
+test('Instruktionen und Projekt-Wissen sind als Dossier-Abzug gekennzeichnet — Nachziehpflicht (Punkt 8c)', () => {
+  ['claude', 'chatgpt'].forEach(function (f) {
+    const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, f, 'AFL-001_x', QUELLE_D)
+                    .replace(/\s+/g, ' ');
+    assert.ok(t.indexOf('sind ein Abzug des Kursdossiers') >= 0, f + ': Abzug-Satz fehlt');
+    assert.ok(t.indexOf('nach jeder Quellen-Änderung werden Instruktionen und Projekt-Wissen ' +
+                         'neu übernommen') >= 0, f + ': Nachziehpflicht fehlt');
+  });
+});
+
+test('ohne Dossier fehlen auch die drei Projekt-Wissen-Regeln', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x');
+  assert.doesNotMatch(t, /Projekt-Wissen/);
+});
+
 /* ---------- Etappe 1e, Task 6: Rechtsstand/SAQ-Rezertifizierung aus dem Dossier ---------- */
 
 test('die Instruktionen tragen Rechtsstand und SAQ-Rezertifizierung aus regulatorik', () => {

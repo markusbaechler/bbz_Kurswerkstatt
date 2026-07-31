@@ -942,6 +942,23 @@
           z.push('Noch keine Fachquellen erfasst. Vor Schritt 3 in der Kurswerkstatt erfassen ' +
                  'oder den Modus quellenfrei setzen — nicht selbst welche wählen.');
         }
+        /* Projekt-Wissen-Regeln (Etappe 2, Task Z6/Z8; Zusatzauftrag Punkt 8 +
+           Live-Befund VL-002, 2026-07-30): ein Claude-/ChatGPT-Projekt hat KEINEN
+           Zugriff auf SharePoint — eine Datei-Quelle ist fuer den Chat nur lesbar,
+           wenn sie zusaetzlich als Projekt-Wissen in genau diesem Projekt hochgeladen
+           wurde. Das stand bisher nirgends, obwohl "AUSSCHLIESSLICH diese Quellen"
+           oben genau das voraussetzt. Drei Regeln, unconditional wie Rechtsstand/SAQ
+           unten — sie gelten unabhaengig vom content_modus, weil eine im Projekt-
+           Wissen liegende Karteileiche (Punkt 8b) auch im Modus quellenfrei oder ohne
+           erfasste Quellen ein Risiko bleibt: */
+        z.push('Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt. Fehlt dir eine ' +
+               'davon, sag es — lies nie eine andere an ihrer Stelle.');
+        z.push('Liegt im Projekt-Wissen eine Datei, die NICHT in dieser Quellenliste steht: ' +
+               'nutze sie nicht, sondern melde sie — sie gehört zuerst in der Kurswerkstatt ' +
+               'erfasst.');
+        z.push('Diese Instruktionen und das Projekt-Wissen sind ein Abzug des Kursdossiers. ' +
+               'Massgebend ist immer das Dossier — nach jeder Quellen-Änderung werden ' +
+               'Instruktionen und Projekt-Wissen neu übernommen.');
         /* Rechtsstand/SAQ (Etappe 1e, Task 6): steht im selben Teil wie die
            Fachquellen — beides sind Angaben aus dem Dossier, beide fehlen ganz,
            solange kein Dossier vorliegt (derselbe if (d) wie oben, keine zweite

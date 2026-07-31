@@ -1001,3 +1001,58 @@ PROJEKT-WISSEN-Zeile im Builder auskommentiert, `node --test test/lernzielekopf.
 ```
 Genau der eine neue Test fiel rot, alle anderen (inklusive der bestehenden drei) blieben grün;
 danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → 528/528 grün.
+
+## Task Z6/Z8: Projekt-Wissen- und Quellen-Regeln in den Projekt-Instruktionen (Schritt 1)
+
+**Fund aus dem Live-Einsatz an VL-002 (2026-07-30), Zusatzauftrag Punkt 8:** die
+Projekt-Instruktionen (Schritt 1, für die beiden KI-Projekte) sagen „Massgebend sind
+AUSSCHLIESSLICH diese Quellen" — aber ein Claude-/ChatGPT-Projekt hat keinen Zugriff auf
+SharePoint. Eine Datei-Quelle ist für den Chat nur lesbar, wenn sie zusätzlich als
+Projekt-Wissen in genau diesem Projekt hochgeladen wurde; das stand nirgends im Text. Zwei
+Live-Scheitern an VL-002 gingen darauf zurück. (b) Eine im Projektordner liegende, nicht im
+Dossier gelistete Datei (Erbrecht-PDF) hatte der Chat korrekt gemeldet — aber nur zufällig,
+weil die Regel nirgends feststand. (c) Der eingefrorene Projekt-Stand veraltet still, wenn
+sich die Quellenliste im Dossier ändert.
+
+**`inhalt.projektInstruktionenTeile` trägt seither drei zusätzliche Sätze im Quellen-Teil**
+(nach den drei `content_modus`-Zweigen, vor der bestehenden Rechtsstand/SAQ-Zeile — derselbe
+`if (d)`-Rahmen, unconditional wie diese, weil eine Karteileiche im Projekt-Wissen (Punkt 8b)
+auch im Modus quellenfrei oder ganz ohne erfasste Quellen ein Risiko bleibt):
+„Die Datei-Quellen liegen als Projekt-Wissen in diesem Projekt. Fehlt dir eine davon, sag es —
+lies nie eine andere an ihrer Stelle." · „Liegt im Projekt-Wissen eine Datei, die NICHT in
+dieser Quellenliste steht: nutze sie nicht, sondern melde sie — sie gehört zuerst in der
+Kurswerkstatt erfasst." · „Diese Instruktionen und das Projekt-Wissen sind ein Abzug des
+Kursdossiers. Massgebend ist immer das Dossier — nach jeder Quellen-Änderung werden
+Instruktionen und Projekt-Wissen neu übernommen." Da beide Fassungen (Claude/ChatGPT) aus
+derselben Teile-Struktur gebaut werden (Konvention 9), gilt der Wortlaut für beide gleich —
+kein zweiter Text zum Auseinanderdriften.
+
+**Verwandt, aber bewusst nicht dieselbe Stelle: `inhalt.lernzielePromptKopf` (Task T13,
+Schritt 2) trägt bereits eine eigene PROJEKT-WISSEN-Zeile**, dort aus `d.quellen` automatisch
+gebaut (nur Datei-Quellen, kein `extras` nötig). Diese Task ergänzt die drei allgemeineren
+Regeln stattdessen in den Projekt-**Instruktionen** von Schritt 1 — die gelten für jeden Chat
+im Projekt, über alle acht Schritte hinweg, nicht nur für den Schritt-2-Kopf.
+
+**NICHT angefasst: `werkzeuge.json`/SharePoint.** Die dort hinterlegte Schritt-1-Anleitung
+(„guide-1") beschreibt das Anlegen der beiden KI-Projekte von Hand und ist ein separater,
+freigabepflichtiger Redaktionsschritt (wie beim Etappe-2-Task-8-Nachzug oben) — sie sollte bei
+Gelegenheit denselben Projekt-Wissen-Hinweis erhalten, ist aber nicht Teil dieser Task.
+
+**Tests (`test/instruktionen.test.js`, vier neue Fälle):** je ein Test pro Satz (in beiden
+Fassungen geprüft, `.replace(/\s+/g, ' ')` gegen den ChatGPT-Zeilenumbruch bei 100 Zeichen) plus
+ein Test, dass ohne Dossier auch diese Regeln ganz fehlen (`doesNotMatch(t, /Projekt-Wissen/)`).
+**532 Tests grün** (Baseline 528 + 4 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** den `z.push(...)`-Aufruf des dritten Satzes
+(Abzug/Nachziehpflicht) in `projektInstruktionenTeile` auskommentiert,
+`node --test test/instruktionen.test.js`:
+```
+ℹ tests 46
+ℹ pass 45
+ℹ fail 1
+
+✖ Instruktionen und Projekt-Wissen sind als Dossier-Abzug gekennzeichnet — Nachziehpflicht (Punkt 8c)
+  AssertionError [ERR_ASSERTION]: claude: Abzug-Satz fehlt
+```
+Genau der eine betroffene Test fiel rot, alle anderen (inkl. der drei übrigen neuen) blieben
+grün; danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → 532/532 grün.
