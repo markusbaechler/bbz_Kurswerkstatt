@@ -104,3 +104,49 @@ test('Schritte mit nur einem Arbeitsweg zeigen keine Wahl', () => {
   const h = ansichten.einSchritt(i, AFL, 6, null, { ordnerFehlt: false, dateien: [] });
   assert.ok(!/data-action="weg"/.test(h), 'Wegwahl bei nur einem Arbeitsweg');
 });
+
+/* ---------- Z10: Chat wird Default-Weg in Schritt 2 (xlsx-Lieferobjekt) ----------
+   Seit T12 liefert der Chat die .xlsx DIREKT: sein Ergebnis kommt ueber den Weg
+   Hochladen herein, nie ueber die Chat-Text-Ablage (#ergebnis). Der Ablage-
+   Kontrakt fuehrt fuer Schritt 2 seither 'chat' als ERSTEN Arbeitsweg — er wird
+   damit zum Default-Tab, ohne dass die Ansicht irgendetwas hartkodiert (dieselbe
+   arbeitswege()/anleitungSchritte()-Mechanik wie bei Schritt 3 oben). Die
+   Fixture fuehrt fuer guide-2 noch kein stepsProWeg (SharePoint-Nachzug steht
+   aus, s. CLAUDE.md) — hier wird das probeweise ergaenzt, um den Mechanismus
+   Ende-zu-Ende zu belegen, ohne die geteilte Fixture staendig zu aendern. */
+function mitChatSchritt2() {
+  const i = JSON.parse(JSON.stringify(INHALT));
+  const g = inhalt.anleitungVon(i, 2);
+  g.stepsProWeg = {
+    chat: ['Prompt kopieren', 'Antwort-Datei aus dem Chat herunterladen', 'Datei hochladen'],
+    'claude-code': ['Auftrag ausfuehren lassen']
+  };
+  return i;
+}
+
+test('Schritt 2: Chat ist seit Z10 ein Arbeitsweg, und zwar der erste (Default-Tab)', () => {
+  assert.deepStrictEqual(inhalt.arbeitswege(mitChatSchritt2(), 2), ['chat', 'claude-code', 'hand']);
+});
+
+test('Schritt-2-Ansicht (kein weg gewaehlt): der Chat-Tab ist vorgewaehlt', () => {
+  const h = ansichten.einSchritt(mitChatSchritt2(), AFL, 2, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(/data-weg="chat"/.test(h) && /data-weg="claude-code"/.test(h) && /data-weg="hand"/.test(h));
+  assert.match(h, /class="ptab on" data-action="weg" data-weg="chat"/,
+    'Chat ist nicht als Default-Tab vorgewaehlt');
+});
+
+test('Schritt-2-Ansicht zeigt KEINE Chat-Text-Ablage (#ergebnis) — xlsx ist eine Datei, kein Text', () => {
+  const h = ansichten.einSchritt(mitChatSchritt2(), AFL, 2, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(!/id="ergebnis"/.test(h), 'Text-Ablagefeld erscheint trotz xlsx-Lieferobjekt');
+});
+
+test('Schritt-2-Ansicht bietet weiterhin den Hochladen-Block', () => {
+  const h = ansichten.einSchritt(mitChatSchritt2(), AFL, 2, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(/Datei hochladen/.test(h) && /data-action="hochladen"/.test(h),
+    'der Hochladen-Block fuer die xlsx ist verschwunden');
+});
+
+test('ein textbasierter Schritt (Schritt 1, md) behaelt die Chat-Text-Ablage unveraendert', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 1, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(/id="ergebnis"/.test(h), 'Text-Ablagefeld fehlt bei einem textbasierten Lieferobjekt');
+});

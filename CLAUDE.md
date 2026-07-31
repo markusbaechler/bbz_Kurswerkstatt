@@ -1674,3 +1674,94 @@ gesetzt, `node --test test/gate.test.js`:
 Genau der eine neue Test fiel rot, alle anderen 21 (inkl. der übrigen 20 aus Z9 und dem
 Baseline-Bestand) blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft:
 `node --test` → **591/591 grün**.
+
+## Task Z10: Chat wird möglich und Default-Weg in Schritt 2
+
+**Auftrag Markus: „Die Defaultansicht Schritt 2 auf Chat stellen".** Hintergrund: seit T11/T13
+liefert der Chat die `.xlsx` für Schritt 2 DIREKT (kein Copy-Paste in ein Textfeld) — der
+Ablage-Kontrakt wird deshalb demnächst auch für Schritt 2 `wege: ['chat','claude-code','hand',
+'hochladen']` führen (SharePoint-Änderung folgt separat, Weg B — die echte Datei liegt ausserhalb
+des Repos). Der Chat-Weg von Schritt 2 endet damit im **Hochladen-Block** (Datei), nie in der
+Chat-Ablage-Textarea (`#ergebnis`) — genau die Fläche, die für Schritt 3/5 den Fliesstext einer
+KI-Antwort entgegennimmt und die für eine `.xlsx` eine Sackgasse wäre.
+
+**`inhalt.darfAblegen(i, schrittId)` schliesst xlsx-Lieferobjekte jetzt explizit aus** — dieselbe
+Frage, aber um eine Bedingung erweitert: `e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt &&
+inhalt.erwarteteEndung(i, schrittId) !== 'xlsx'`. Damit rendert `ansichten.einSchritt` in Schritt
+2 keine `#ergebnis`-Textarea mehr, obwohl `chat` jetzt in `wege` steht — der Hochladen-Block
+(`darfHochladen`, unverändert) bleibt die einzige Ablagefläche für dieses Lieferobjekt. Kein
+zweiter Gate-Mechanismus: `erwarteteEndung()` ist dieselbe, bereits bestehende Funktion, die auch
+das Hochladen-Gate aus T11 speist (Konvention 9) — eine xlsx-Erkennung an zwei Stellen wäre die
+nächste Drift gewesen.
+
+**`test/fixture.js` führt Schritt 2 seither mit `wege: ['chat','claude-code','hand','hochladen']`**
+— `'chat'` bewusst als ERSTER Eintrag, weil `inhalt.arbeitswege()` (filtert nur `'hochladen'`
+heraus) daraus `['chat','claude-code','hand']` macht und `ansichten.einSchritt` ohne jede
+Sonderregel `wege[0]` als Default-Tab wählt, sobald kein Weg explizit gesetzt ist (dieselbe
+Mechanik wie bei Schritt 3, s. „Task“ zu `arbeitswege`/`stepsProWeg` oben) — nichts davon ist in
+dieser Task hartkodiert.
+
+**Der Anleitungs-Tab-Mechanismus greift unverändert, ist aber am realen `guide-1`
+(SharePoint-Bezeichnung für die Schritt-2-Anleitung, s. Etappe-2-Task-8-Absatz oben) noch nicht
+sichtbar:** `ansichten.einSchritt` zeigt die `ptabs`-Wegwahl nur, wenn
+`anleitung.stepsProWeg` gesetzt ist (`wege = anleitung && anleitung.stepsProWeg ? arbeitswege(...)
+: []`). Weder die Fixture noch (Stand dieser Task) der reale `guide-1` führen für Schritt 2 ein
+`stepsProWeg.chat` — deshalb bleibt die Wegwahl-Leiste dort vorerst unsichtbar, obwohl `chat`
+längst ein gültiger Arbeitsweg ist; `anleitungSchritte()` fällt in diesem Fall auf `g.steps`
+zurück (bestehendes Verhalten, kein Bug). Verifiziert (kein Code-Umbau nötig): sobald `guide-1`
+ein `stepsProWeg.chat` bekommt, macht **derselbe** Mechanismus, den `test/wege.test.js` für
+Schritt 3 bereits seit dem Umbau prüft, den Chat-Tab automatisch sichtbar UND vorgewählt — belegt
+durch eine probeweise mit `stepsProWeg` ergänzte Kopie der Fixture
+(`mitChatSchritt2()` in `test/wege.test.js`), ohne die geteilte Fixture selbst dauerhaft zu
+ändern.
+
+**`controller.ablegen` kennt `darfAblegen` nicht direkt** — er sucht immer nach
+`document.getElementById('ergebnis')`. Für Schritt 2 rendert die Ansicht dieses Feld seit diesem
+Task nicht mehr; ein (theoretischer) Aufruf von `controller.ablegen('2', …)` findet `feld ===
+null` und bricht über die bestehende Guard-Zeile `if (!k || !feld) return;` (app.js) sofort und
+still ab — **vor** jedem Netzzugriff, ohne Fehlermeldung, weil es schlicht kein Formular gibt, aus
+dem etwas käme. Das unterscheidet sich vom Fehler „kein versioniertes Ablegen vorgesehen"
+(`inhalt.naechsteDatei` liefert `null`, aber erst NACH einem gelesenen Ordner, wenn Text bereits im
+Feld stand) — dieser Pfad bleibt unverändert und betrifft weiterhin nur Schritte mit
+Varianten-Lücken. Ein Test hält das neue, stille Verhalten für Schritt 2 fest.
+
+**Tests:** `test/ablegen.test.js` — ein neuer Fall belegt, dass Schritt 2 zwar `chat` in `wege`
+führt, `darfAblegen` aber `false` bleibt (Testvoraussetzung explizit geprüft: `chat` in `wege` UND
+`erwarteteEndung === 'xlsx'`), plus der `controller.ablegen`-Fall ohne `#ergebnis`-Feld (kein
+Graph-Aufruf, kein Crash, Knopf bleibt unangetastet). `test/hochladen.test.js` — der bestehende
+Test „Hochladen und Chat schliessen sich nicht aus" umformuliert: Schritt 6 kennt `chat` gar
+nicht, Schritt 2 kennt es seit Z10 sehr wohl, bleibt aber wegen xlsx gesperrt. `test/wege.test.js`
+— vier neue Fälle: `arbeitswege(2)` nennt `chat` zuerst, die Ansicht wählt ihn ohne
+`ablageDaten.weg` als Default-Tab (mit probeweise ergänztem `stepsProWeg`), keine
+`#ergebnis`-Textarea, der Hochladen-Block bleibt; ein Gegenprobe-Test hält fest, dass ein
+textbasierter Schritt (Schritt 1, `md`) seine Textarea unverändert behält. `test/inhalt.test.js`
+und `test/instruktionen.test.js` — zwei bestehende Tests, die die alte Schritt-2-Wege-Liste
+wörtlich prüften, auf die neue Reihenfolge inklusive `chat` angepasst (reine Fixture-Drift, keine
+Verhaltensänderung an den geprüften Funktionen selbst). **598 Tests grün** (Baseline 591 + 7
+netto: 6 neue plus 1 bereits bestehender, umformulierter Test in `hochladen.test.js`, der nicht
+neu gezählt wird).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die neue Endungs-Bedingung in `inhalt.darfAblegen`
+auskommentiert (`e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt /* && … !== 'xlsx' */`),
+`node --test`:
+```
+ℹ tests 598
+ℹ pass 593
+ℹ fail 4
+
+✖ Schritt 2 fuehrt jetzt den Weg Chat, die Text-Ablage bleibt aber gesperrt — xlsx-Lieferobjekt (Z10)
+✖ Schritt 2 bietet keine Ablege-Flaeche — Excel
+✖ Hochladen und der Weg Chat schliessen sich nicht aus
+✖ Schritt-2-Ansicht zeigt KEINE Chat-Text-Ablage (#ergebnis) — xlsx ist eine Datei, kein Text
+```
+Genau die vier von der fehlenden Endungs-Prüfung betroffenen Tests fielen rot, alle anderen 594
+blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` →
+**598/598 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** das reale `ablage-kontrakt.json` in SharePoint führt
+`chat` für Schritt 2 noch nicht in `wege` — diese Task ändert nur App-Code und Test-Fixture (Weg
+B). Solange SharePoint nicht nachgezogen ist, bleibt der Default-Weg dort weiterhin
+`claude-code` (erster Eintrag im echten Kontrakt); kein Regressionsrisiko, aber auch noch kein
+Live-Effekt, bis jemand `chat` dort ergänzt. Ebenso offen: `guide-1` (SharePoint) müsste ein
+`stepsProWeg.chat` bekommen, damit die Wegwahl-Leiste in Schritt 2 überhaupt sichtbar wird — bis
+dahin zeigt die Anleitung dort weiterhin nur `g.steps`, unabhängig vom gewählten Weg.

@@ -366,7 +366,7 @@ test('ohne bekannten Ordner bleibt der Platzhalter — aber sichtbar markiert', 
 test('jeder Schritt nennt seine Wege — hochladen zaehlt nicht dazu', () => {
   const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude');
   const z2 = t.split('\n').find(x => x.indexOf('- Schritt 2') === 0);
-  assert.ok(/\(claude-code, hand\)/.test(z2), 'Wege bei Schritt 2 fehlen: ' + z2);
+  assert.ok(/\(chat, claude-code, hand\)/.test(z2), 'Wege bei Schritt 2 fehlen: ' + z2);
   assert.ok(!/hochladen/.test(z2), 'Ablageweg als Arbeitsweg genannt');
 });
 

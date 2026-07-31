@@ -113,7 +113,7 @@ test('ablageVon liefert die zulaessigen Wege', () => {
   assert.deepStrictEqual(inhalt.ablageVon(INHALT, 6, 'DBS-001').wege,
                          ['claude-code', 'hochladen']);
   assert.deepStrictEqual(inhalt.ablageVon(INHALT, 2, 'DBS-001').wege,
-                         ['claude-code', 'hand', 'hochladen']);
+                         ['chat', 'claude-code', 'hand', 'hochladen']);
 });
 
 /* --- quellenOrdner (Audit I3): EINE Stelle statt drei getippter --- */

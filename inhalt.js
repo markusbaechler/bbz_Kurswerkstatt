@@ -325,11 +325,17 @@
       return treffer;
     },
 
-    /* Der Weg Chat ist nur dort vorgesehen, wo der Kontrakt ihn nennt. */
+    /* Der Weg Chat ist nur dort vorgesehen, wo der Kontrakt ihn nennt — UND nur
+       fuer textbasierte Lieferobjekte (Z10). Ein Chat liefert eine xlsx als
+       DATEI — sein Ergebnis kommt ueber den Weg Hochladen herein; die
+       Text-Ablagefläche wäre eine Sackgasse. Seit T12 liefert der Chat die
+       .xlsx fuer Schritt 2 direkt; der Kontrakt fuehrt dort seither auch
+       'chat' in wege (Default-Weg), die Text-Ablage bleibt aber gesperrt. */
     darfAblegen: function (i, schrittId) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
       if (!e || !Array.isArray(e.wege)) return false;
-      return e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt;
+      return e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt &&
+             inhalt.erwarteteEndung(i, schrittId) !== 'xlsx';
     },
 
     /* Ebenso das Hochladen: nur wo der Kontrakt es nennt. Gedacht fuer die

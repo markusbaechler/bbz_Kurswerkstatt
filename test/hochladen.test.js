@@ -20,11 +20,14 @@ test('nur wo der Kontrakt den Weg nennt', () => {
   });
 });
 
-test('Hochladen und der Weg Chat schliessen sich nicht aus, ueberschneiden sich hier aber nicht', () => {
-  [2, 6].forEach(function (n) {
-    assert.strictEqual(inhalt.darfAblegen(INHALT, n), false,
-      'Schritt ' + n + ' ist kein Weg-Chat-Schritt');
-  });
+test('Hochladen und der Weg Chat schliessen sich nicht aus', () => {
+  /* Schritt 6 fuehrt 'chat' gar nicht in wege — kein Weg-Chat-Schritt.
+     Schritt 2 fuehrt 'chat' seit Z10 sehr wohl (Chat liefert die .xlsx seit
+     T12 direkt) — die Text-Ablage bleibt trotzdem gesperrt, weil das
+     Lieferobjekt xlsx ist, nicht weil der Weg fehlte. */
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 6), false, 'Schritt 6 kennt den Weg Chat nicht');
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 2), false,
+    'Schritt 2 fuehrt chat, aber die Text-Ablage bleibt fuer xlsx gesperrt (Z10)');
 });
 
 /* ---------- Der Zielname — der Mensch tippt ihn nie ---------- */

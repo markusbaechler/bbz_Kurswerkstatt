@@ -87,12 +87,26 @@ test('Ablegen ist erlaubt, wo der Weg Chat vorgesehen ist', () => {
 });
 
 test('Ablegen ist gesperrt, wo nur Claude Code oder Handarbeit vorgesehen ist', () => {
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 2), false, 'Schritt 2 ist Excel');
   assert.strictEqual(inhalt.darfAblegen(INHALT, 6), false, 'Schritt 6 nur Claude Code');
 });
 
 test('Ablegen ist gesperrt, wo die Kurswerkstatt selbst schreibt', () => {
   assert.strictEqual(inhalt.darfAblegen(INHALT, 7), false);
+});
+
+/* ---------- Z10: Chat wird Default-Weg in Schritt 2 — die Text-Ablage bleibt
+   trotzdem gesperrt, weil das Lieferobjekt eine xlsx ist ----------
+   Seit T12 liefert der Chat die .xlsx DIREKT: sein Ergebnis kommt ueber den
+   Weg Hochladen herein, nie ueber die Chat-Text-Ablage (#ergebnis). Der
+   Ablage-Kontrakt fuehrt fuer Schritt 2 seither auch 'chat' in wege (Default-
+   Tab) — darfAblegen() muss trotzdem false bleiben, sonst waere die
+   Text-Ablageflaeche eine Sackgasse. */
+test('Schritt 2 fuehrt jetzt den Weg Chat, die Text-Ablage bleibt aber gesperrt — xlsx-Lieferobjekt (Z10)', () => {
+  const e = INHALT['ablage-kontrakt'].schritte['2'];
+  assert.ok(e.wege.indexOf('chat') >= 0, 'Testvoraussetzung: Schritt 2 fuehrt chat in wege');
+  assert.strictEqual(inhalt.erwarteteEndung(INHALT, 2), 'xlsx', 'Testvoraussetzung: Schritt 2 ist xlsx');
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 2), false,
+    'Ein Chat liefert eine xlsx als Datei — die Text-Ablage waere eine Sackgasse');
 });
 
 /* ---------- Was das Ablegen am Stand aendert ---------- */
@@ -223,6 +237,53 @@ test('der Controller legt nichts neben eine freigegebene Fassung', async () => {
   const l = await ablegenLauf('claude', [{ name: 'AFL-001_greenfield-claude_final.html' }]);
   assert.strictEqual(l.abgelegt.datei, null, 'trotz _final abgelegt');
   assert.ok(/Abgeschlossen/.test(l.meldung), 'kein Sperrhinweis: ' + l.meldung);
+});
+
+/* ---------- Z10: controller.ablegen auf einem xlsx-Schritt (2) ----------
+   Da darfAblegen(INHALT, 2) false ist, rendert die Ansicht dort kein
+   #ergebnis-Feld (s. test/wege.test.js) — der Knopf data-action="ablegen"
+   existiert fuer Schritt 2 gar nicht. controller.ablegen() selbst kennt
+   darfAblegen nicht, sondern sucht direkt nach #ergebnis
+   (document.getElementById('ergebnis')); fehlt das Feld, bricht die
+   bestehende Guard-Zeile "if (!k || !feld) return;" (app.js) sofort und
+   still ab — derselbe Ast, der auch beim Aufruf ganz ohne Kurs greift.
+   Anders als "kein versioniertes Ablegen vorgesehen" (inhalt.naechsteDatei
+   liefert null, NACH einem gelesenen Ordner) tritt dieser Abbruch VOR jedem
+   Netzzugriff ein: kein graph.ordnerInhalt, kein graph.ablegen, keine
+   Fehlermeldung — es gibt schlicht nichts zum Ablegen, weil das Formular nie
+   entstand. Test haelt genau das fest, mit demselben Mock-Muster wie oben. */
+test('controller.ablegen auf Schritt 2 (xlsx, kein #ergebnis-Feld) bricht ab, ohne Graph-Aufruf', async () => {
+  const rufe = { ordnerInhalt: 0, ablegen: 0 };
+  const meldung = { textContent: '', hidden: true };
+
+  state.data.inhalt = INHALT;
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
+                        schritt: 2, status: 'inArbeit' }];
+  state.data.dateien = {};
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '2',
+                     werkzeugId: null, werk: null, variante: null, weg: 'chat' };
+
+  /* Genau das, was die Ansicht fuer Schritt 2 tatsaechlich rendert: kein
+     #ergebnis-Feld, weil darfAblegen(INHALT, 2) false ist. */
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'ablegefehler') return meldung;
+      return null;
+    }
+  };
+
+  graph.ordnerInhalt = function () { rufe.ordnerInhalt++; return Promise.resolve([]); };
+  graph.ablegen = function () { rufe.ablegen++; return Promise.resolve(); };
+  controller.render = function () {};
+
+  const knopf = { disabled: false, textContent: 'Ablegen' };
+  controller.ablegen('2', knopf);
+  await new Promise(function (r) { setTimeout(r, 20); });
+
+  assert.strictEqual(rufe.ordnerInhalt, 0, 'der Ordner haette nie gelesen werden duerfen');
+  assert.strictEqual(rufe.ablegen, 0, 'es haette nichts abgelegt werden duerfen');
+  assert.strictEqual(meldung.textContent, '', 'kein #ergebnis-Feld heisst stiller Abbruch, keine Fehlermeldung');
+  assert.strictEqual(knopf.disabled, false, 'der Knopf haette nie in den Ablege-Zustand wechseln duerfen');
 });
 
 /* ---------- Schritt 1: Ablegen des Briefings rueckt den Dossier-Status ----------

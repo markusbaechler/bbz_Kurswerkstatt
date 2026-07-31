@@ -42,7 +42,12 @@
         /* struktur (Etappe 2, T11): Abschrift aus IT_Architektur_bbz/output/
            tools/contract-schema.cjs — dieselbe Form, wie der echte Kontrakt
            sie fuehrt (kern/katalog/steckbrief/reihenfolge). */
-        '2': { ordner: '02_lernziele', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen',
+        /* Z10: Chat ist seit T12 (Chat liefert die .xlsx direkt) auch fuer
+           Schritt 2 ein Arbeitsweg — als ERSTER Weg, damit er zum Default-Tab
+           wird (nichts hartkodiert, reine Kontrakt-Reihenfolge). Die
+           Text-Ablage (#ergebnis) bleibt trotzdem gesperrt: darfAblegen()
+           schliesst xlsx-Lieferobjekte aus. */
+        '2': { ordner: '02_lernziele', lieferobjekt: 'lernziele-drehbuch', ext: 'xlsx', format: 'excel', wege: ['chat','claude-code','hand','hochladen'], gate: 'Gate 1 · 4-Augen',
                struktur: {
                  kern: [
                    { name: '1_Lernziele', spalten: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten'] },
