@@ -233,10 +233,13 @@ test('_dossierVersuch stempelt scope_quelle aus dem Quellenbestand in JEDES Schr
 
   assert.strictEqual(schreibversuche.length, 1);
   const geschrieben = JSON.parse(schreibversuche[0]);
-  assert.strictEqual(geschrieben.scope.scope_quelle, 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.',
+  /* Fix-Runde Z4: Aufzaehlung mit Zaehler statt Bereich — die Fixture traegt
+     bewusst eine Luecke (Q-002 → Q-015), damit ein "bis" hier sofort auffiele. */
+  assert.strictEqual(geschrieben.scope.scope_quelle,
+    'Der erfasste Quellenbestand ist der Scope: Q-001, Q-002, Q-015 (3 Quellen).',
     'der Handwert haette durch den abgeleiteten Wert ersetzt werden muessen');
   assert.strictEqual(state.data.dossier['DBS-001'].scope.scope_quelle,
-    'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.');
+    'Der erfasste Quellenbestand ist der Scope: Q-001, Q-002, Q-015 (3 Quellen).');
 });
 
 /* Mutationsprobe (tatsaechlich durchgefuehrt): den scope_quelle-Stempel-Block
@@ -248,11 +251,15 @@ test('_dossierVersuch stempelt scope_quelle aus dem Quellenbestand in JEDES Schr
        AssertionError [ERR_ASSERTION]: der Handwert haette durch den abgeleiteten Wert ersetzt werden muessen
        + actual - expected
        + 'Q-001 bis Q-014'
-       - 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.'
+       - 'Der erfasste Quellenbestand ist der Scope: Q-001, Q-002, Q-015 (3 Quellen).'
        ℹ tests 11
        ℹ pass 10
        ℹ fail 1
-   Danach wiederhergestellt, wieder 11/11 in dieser Datei, 550/550 gesamt gruen. */
+   Danach wiederhergestellt, wieder 11/11 in dieser Datei. (Testkommentar-Fix,
+   Reviewer-Hinweis Fix-Runde Z4: die vorherige Fassung dieses Kommentars nannte
+   faelschlich "550/550 gesamt" — die tatsaechliche Gesamtzahl steht am Ende
+   dieser Datei bzw. im CLAUDE.md-Abschnitt "Task Z4"/"Fix-Runde Z4", nicht
+   hier dupliziert, um genau dieses Auseinanderlaufen kuenftig zu vermeiden.) */
 
 /* ---------- Etappe 2, Task 7: Dossier-Erstanlage mit conflictBehavior=fail ----------
    Bisher schrieb der allererste Schreiber (kein eTag im State — Datei nie geladen oder

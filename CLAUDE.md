@@ -1179,12 +1179,18 @@ veralten könnte.
 
 **`inhalt.BRIEFING_FELDER['scope_quelle']` trägt seither `form: 'abgeleitet'` statt `form: 'text'`,
 `pflicht: false` statt `true`, und einen neuen Hook `abgeleitet: function (d) { … }`** — eine reine
-Funktion, die aus `d.quellen`/`d.content_modus` den Anzeigetext berechnet:
-„Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-0nn." bei ≥ 2 Quellen, „… Q-001." bei
-genau einer, „Noch keine Quellen erfasst." bei keiner, und bei `content_modus === 'quellenfrei'`
-ein eigener Quellenfrei-Satz. `dossier.js` bleibt dabei unangetastet und rein — der Hook lebt in
-`inhalt.js` (das `dossier.js` schon bisher nicht kennt, s. `fachquellenZeilen`) und bekommt `d`
-als Daten hereingereicht, wie schon `ziel`/`speicherName` bei `reg_zusatz`/`rechtsstand`.
+Funktion, die aus `d.quellen`/`d.content_modus` den Anzeigetext berechnet: „Der erfasste
+Quellenbestand ist der Scope: Q-001, Q-003, Q-004 (3 Quellen)." — die tatsächlichen IDs **einzeln
+aufgezählt, in Listenreihenfolge, nie als Bereich**, mit Zähler dahinter (Einzahl „1 Quelle" bei
+genau einer, sonst „N Quellen"); „Noch keine Quellen erfasst." bei leerer Liste; bei
+`content_modus === 'quellenfrei'` ein eigener Quellenfrei-Satz. `dossier.js` bleibt dabei
+unangetastet und rein — der Hook lebt in `inhalt.js` (das `dossier.js` schon bisher nicht kennt,
+s. `fachquellenZeilen`) und bekommt `d` als Daten hereingereicht, wie schon `ziel`/`speicherName`
+bei `reg_zusatz`/`rechtsstand`. **Nie ein Bereich („{erste} bis {letzte}"):** Q-IDs werden nach
+`dossier.quelleEntfernen` NICHT neu vergeben (CLAUDE.md dokumentiert das ausdrücklich, s.
+„Der Kursordner"/Quellen-Abschnitte oben) — nach Entfernen von Q-002 bliebe ein Bereich „Q-001 bis
+Q-003" stehen und behauptete eine Quelle, die nicht mehr existiert (Fix-Runde Z4 unten hält diesen
+Fund fest, gefunden im Review VOR dem ersten Merge, nicht erst live).
 
 **EINE Funktion, zwei Aufrufer (Konvention 9):** `ansichten.js` (`briefingFormular`) ruft
 `f.abgeleitet(d)` für die Anzeige — ein neuer `else if (f.form === 'abgeleitet')`-Zweig im
@@ -1220,25 +1226,26 @@ bis zum nächsten Schreiben. `dossier.SCHEMA` bleibt 1, keine Migration nötig (
 Schreibseiten-Änderung, wie schon bei `regulatorik`/`identitaet`).
 
 **Tests:** `test/briefingfelder.test.js` — neuer Block für `abgeleitet(d)` (leer/eine/mehrere
-Quellen, quellenfrei) ersetzt den alten Hilfetext-Test „verweist auf die erfassten Fachquellen
-(Etappe 1d)"; ein neuer Ansichtstest belegt kein `data-feld="scope_quelle"` mehr und den
-gerenderten Text mit/ohne Dossier; drei bestehende Tests angepasst (der Promptkopf-Werte-Test
-schliesst `form: 'abgeleitet'` von der wörtlichen Werte-Prüfung aus wie `haken`; „9 offen" → „8
-offen" an zwei Stellen, weil `scope_quelle` nicht mehr pflicht ist). `test/dossierschreiben.test.js`
-bekommt einen neuen Stempel-Test (Muster des bestehenden `identitaetSetzen`-Tests) plus den
+lückenlose Quellen, eine Lücke in den Q-IDs, quellenfrei) ersetzt den alten Hilfetext-Test
+„verweist auf die erfassten Fachquellen (Etappe 1d)"; ein neuer Ansichtstest belegt kein
+`data-feld="scope_quelle"` mehr und den gerenderten Text mit/ohne Dossier; drei bestehende Tests
+angepasst (der Promptkopf-Werte-Test schliesst `form: 'abgeleitet'` von der wörtlichen
+Werte-Prüfung aus wie `haken`; „9 offen" → „8 offen" an zwei Stellen, weil `scope_quelle` nicht
+mehr pflicht ist). `test/dossierschreiben.test.js` bekommt einen neuen Stempel-Test (Muster des
+bestehenden `identitaetSetzen`-Tests, Fixture bewusst mit einer Lücke Q-002→Q-015) plus den
 `require('../inhalt.js')`, den `_dossierVersuch` jetzt für `root.inhalt.briefingFeld(...)`
-braucht. **551 Tests grün** (Baseline 548, ein alter Hilfetext-Test entfernt, vier neue dafür:
-zwei für `abgeleitet()`, einer für die Ansicht, einer für den Stempel).
+braucht. **552 Tests grün** (Baseline 548, ein alter Hilfetext-Test entfernt, fünf neue dafür:
+drei für `abgeleitet()`, einer für die Ansicht, einer für den Stempel).
 
 **Mutationsproben (tatsächlich ausgeführt):**
 
-1. Im `abgeleitet()`-Hook die Ein-Quelle-Sonderbehandlung entfernt (`quellen.length === 1 ? erste
-   : …` → immer `erste + ' bis ' + letzte`), `node --test test/briefingfelder.test.js`:
+1. Im `abgeleitet()`-Hook die Einzahl/Mehrzahl-Unterscheidung entfernt (`ids.length === 1 ? '1
+   Quelle' : …` → immer `ids.length + ' Quellen'`), `node --test test/briefingfelder.test.js`:
    ```
    ✖ abgeleitet(d): leer, eine, mehrere Quellen sowie quellenfrei (Z4)
-     AssertionError [ERR_ASSERTION]: genau eine Quelle nennt keinen Bereich
-     + 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-001.'
-     - 'Der erfasste Quellenbestand ist der Scope: Q-001.'
+     AssertionError [ERR_ASSERTION]: genau eine Quelle — Einzahl, kein "(1 Quellen)"
+     + 'Der erfasste Quellenbestand ist der Scope: Q-001 (1 Quellen).'
+     - 'Der erfasste Quellenbestand ist der Scope: Q-001 (1 Quelle).'
    ```
    Genau der eine Test fiel rot, danach wiederhergestellt.
 
@@ -1252,7 +1259,48 @@ zwei für `abgeleitet()`, einer für die Ansicht, einer für den Stempel).
    ✖ _dossierVersuch stempelt scope_quelle aus dem Quellenbestand in JEDES Schreiben (Z4)
      AssertionError [ERR_ASSERTION]: der Handwert haette durch den abgeleiteten Wert ersetzt werden muessen
      + 'Q-001 bis Q-014'
-     - 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.'
+     - 'Der erfasste Quellenbestand ist der Scope: Q-001, Q-002, Q-015 (3 Quellen).'
    ```
    Genau der eine neue Test fiel rot, alle anderen zehn blieben grün; danach wiederhergestellt,
-   komplette Suite erneut geprüft: `node --test` → 551/551 grün.
+   komplette Suite erneut geprüft: `node --test` → 552/552 grün.
+
+3. Im `abgeleitet()`-Hook `ids.join(', ')` durch `ids[0] + ' bis ' + ids[ids.length - 1]`
+   ersetzt (zurück auf den Bereichs-Fehler aus dem Review-Finding, s. „Fix-Runde Z4" unten),
+   `node --test test/briefingfelder.test.js`:
+   ```
+   ℹ tests 49
+   ℹ pass 46
+   ℹ fail 3
+
+   ✖ abgeleitet(d): leer, eine, mehrere Quellen sowie quellenfrei (Z4)
+   ✖ abgeleitet(d): eine Luecke in den Q-IDs erzeugt KEINEN Bereich (Fix-Runde Z4)
+   ✖ scope_quelle zeigt den abgeleiteten Text, kein Eingabefeld (Z4)
+   ```
+   Drei Tests fielen rot (auch der Drei-Quellen-Fall Q-001/Q-002/Q-015 hat selbst eine Lücke),
+   alle anderen 46 blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft:
+   `node --test` → 552/552 grün.
+
+### Fix-Runde Z4 (Review, 1 Important-Finding)
+
+**Finding:** die ursprüngliche Fassung von `abgeleitet()` bildete „{erste} bis {letzte}" aus
+`quellen[0]`/`quellen[length-1]`. Q-IDs behalten aber by design Lücken — `dossier.quelleEntfernen`
+vergibt IDs nicht neu, das ist ausdrücklich dokumentiert (s. „Datei ablegen + Dossier-Eintrag …"
+oben). Nach Entfernen von Q-002 hätte der Text weiterhin „Q-001 bis Q-003" gelautet und damit eine
+nicht mehr existierende Quelle eingeschlossen — die Ableitung hätte eine faktisch falsche
+Behauptung erzeugt, exakt die Fehlerklasse, die Z4 beseitigen soll, nur einen Schritt später
+(Review VOR jedem Live-Einsatz gefunden, nicht erst dort).
+
+**Fix:** `abgeleitet()` behauptet nie mehr einen Bereich, sondern zählt die tatsächlichen IDs in
+Listenreihenfolge auf, mit Zähler dahinter: „Der erfasste Quellenbestand ist der Scope: Q-001,
+Q-003, Q-004 (3 Quellen)." Der Ein-Quellen-Fall bleibt grammatikalisch sauber („1 Quelle", nicht
+„1 Quellen"). Derselbe Hook bleibt die eine Stelle für Anzeige UND Stempel (Konvention 9) — keine
+zweite Formatstelle entstanden.
+
+**Tests:** neuer Test mit Lücken-Fixture (`Q-001`, `Q-003` → Aufzählung, kein „bis"); die
+bestehenden Ableitungs-Tests auf das neue Format umgestellt (Einzahl/Mehrzahl statt Bereich); die
+Stempel-Fixture in `test/dossierschreiben.test.js` trägt bewusst eine Lücke (`Q-002` → `Q-015`),
+damit ein zurückgefallener Bereich sofort auffiele. Nebenbei: der Testkommentar in
+`test/dossierschreiben.test.js`, der fälschlich eine feste Gesamt-Testzahl nannte (Reviewer-Fund),
+verweist jetzt auf CLAUDE.md statt eine zweite, driftende Quelle für dieselbe Zahl zu führen.
+**552 Tests grün.** Mutationsproben 1 und 3 oben belegen den Fix (Einzahl/Mehrzahl bzw. der
+zurückgedrehte Bereichs-Fehler selbst).

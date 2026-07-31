@@ -455,7 +455,15 @@
          abgeleitete Satz ist immer eine vollstaendige Antwort, auch wenn er
          "Noch keine Quellen erfasst" lautet. Kein Netz, kein Date, kein
          dossier.js-Zugriff hier drin (inhalt.js kennt dossier.js nicht, wie
-         schon bei fachquellenZeilen) — nur die Felder von d selbst. */
+         schon bei fachquellenZeilen) — nur die Felder von d selbst.
+
+         Fix-Runde Z4 (Review-Finding, Important): ein Bereich "{erste} bis
+         {letzte}" behauptet Lueckenlosigkeit, die es nicht gibt — Q-IDs werden
+         NICHT neu vergeben (quelleEntfernen, s. dossier.js), nach dem Entfernen
+         von Q-002 waere "Q-001 bis Q-003" falsch, weil es eine Quelle
+         einschliesst, die nicht mehr existiert: exakt die Fehlerklasse, die
+         Z4 beseitigen soll, nur einen Schritt spaeter. Der Hook zaehlt die
+         tatsaechlichen IDs deshalb einzeln auf, nie einen Bereich. */
       { id: 'scope_quelle', label: 'Quelle des Scopes', form: 'abgeleitet', pflicht: false,
         hilfe: 'Wird automatisch aus dem erfassten Quellenbestand abgeleitet (Q-001, Q-002 …) — ' +
           'kein Eingabefeld mehr: jede erfasste Quelle ist Scope (Entscheid Markus 2026-07-30, Z4).',
@@ -465,10 +473,9 @@
           }
           var quellen = (d && Array.isArray(d.quellen)) ? d.quellen.filter(function (q) { return q && q.id; }) : [];
           if (!quellen.length) return 'Noch keine Quellen erfasst.';
-          var erste = quellen[0].id;
-          var letzte = quellen[quellen.length - 1].id;
-          return 'Der erfasste Quellenbestand ist der Scope: ' +
-            (quellen.length === 1 ? erste : erste + ' bis ' + letzte) + '.';
+          var ids = quellen.map(function (q) { return q.id; });
+          var zahl = ids.length === 1 ? '1 Quelle' : ids.length + ' Quellen';
+          return 'Der erfasste Quellenbestand ist der Scope: ' + ids.join(', ') + ' (' + zahl + ').';
         } },
     ],
 

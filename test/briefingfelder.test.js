@@ -83,14 +83,14 @@ test('abgeleitet(d): leer, eine, mehrere Quellen sowie quellenfrei (Z4)', () => 
   );
   assert.strictEqual(
     f.abgeleitet({ content_modus: 'quellengestuetzt', quellen: [{ id: 'Q-001' }] }),
-    'Der erfasste Quellenbestand ist der Scope: Q-001.',
-    'genau eine Quelle nennt keinen Bereich'
+    'Der erfasste Quellenbestand ist der Scope: Q-001 (1 Quelle).',
+    'genau eine Quelle — Einzahl, kein "(1 Quellen)"'
   );
   assert.strictEqual(
     f.abgeleitet({ content_modus: 'quellengestuetzt',
       quellen: [{ id: 'Q-001' }, { id: 'Q-002' }, { id: 'Q-015' }] }),
-    'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.',
-    'mehrere Quellen — erste bis letzte, kein hartcodiertes "bis Q-0nn"'
+    'Der erfasste Quellenbestand ist der Scope: Q-001, Q-002, Q-015 (3 Quellen).',
+    'mehrere lueckenlose Quellen — Aufzaehlung mit Zaehler, kein Bereich'
   );
   assert.match(
     f.abgeleitet({ content_modus: 'quellenfrei', quellen: [{ id: 'Q-001' }] }),
@@ -99,11 +99,37 @@ test('abgeleitet(d): leer, eine, mehrere Quellen sowie quellenfrei (Z4)', () => 
   );
 });
 
-/* Mutationsprobe (durchgefuehrt): im abgeleitet()-Hook `quellen.length === 1 ? erste : ...`
-   durch `erste + ' bis ' + letzte` ersetzt (immer Bereich, auch bei genau einer Quelle) —
-   `node --test test/briefingfelder.test.js` fiel bei "abgeleitet(d): leer, eine, mehrere
-   Quellen sowie quellenfrei (Z4)" rot (Erwartung "Q-001.", tatsaechlich "Q-001 bis Q-001.").
-   Danach wiederhergestellt. */
+/* Fix-Runde Z4 (Review-Finding, Important): ein Bereich "{erste} bis {letzte}"
+   behauptet Lueckenlosigkeit, die es nicht gibt — Q-IDs werden NICHT neu
+   vergeben (dossier.quelleEntfernen, s. CLAUDE.md), nach dem Entfernen von
+   Q-002 waere "Q-001 bis Q-003" falsch, weil es eine nicht mehr existierende
+   Quelle einschliesst: exakt die Fehlerklasse, die Z4 beseitigen soll, nur
+   einen Schritt spaeter. Dieser Test haelt genau den Luecken-Fall fest, den
+   die urspruengliche Fassung falsch beantwortet haette. */
+test('abgeleitet(d): eine Luecke in den Q-IDs erzeugt KEINEN Bereich (Fix-Runde Z4)', () => {
+  const f = inhalt.briefingFeld('scope_quelle');
+  const text = f.abgeleitet({ content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001' }, { id: 'Q-003' }] });
+  assert.strictEqual(text, 'Der erfasste Quellenbestand ist der Scope: Q-001, Q-003 (2 Quellen).');
+  assert.ok(!/bis/.test(text), 'ein "bis" behauptet Lueckenlosigkeit, die es nach Q-002-Entfernen nicht gibt');
+  assert.ok(text.indexOf('Q-002') < 0, 'eine nicht mehr existierende Quelle darf nicht auftauchen');
+});
+
+/* Mutationsprobe (tatsaechlich durchgefuehrt): im abgeleitet()-Hook `ids.join(', ')`
+   durch `ids[0] + ' bis ' + ids[ids.length - 1]` ersetzt (zurueck auf den
+   Bereichs-Fehler) — `node --test test/briefingfelder.test.js`:
+   ```
+   ℹ tests 49
+   ℹ pass 46
+   ℹ fail 3
+
+   ✖ abgeleitet(d): leer, eine, mehrere Quellen sowie quellenfrei (Z4)
+   ✖ abgeleitet(d): eine Luecke in den Q-IDs erzeugt KEINEN Bereich (Fix-Runde Z4)
+   ✖ scope_quelle zeigt den abgeleiteten Text, kein Eingabefeld (Z4)
+   ```
+   Drei Tests fielen rot (auch der Drei-Quellen-Fall Q-001/Q-002/Q-015 hat selbst
+   eine Luecke und deckt die Mutation zusaetzlich auf), alle anderen 46 blieben
+   gruen; danach wiederhergestellt. */
 
 test('der Rechtsrahmen steht fest und wird nicht erfragt', () => {
   const f = inhalt.briefingFeld('reg_zusatz');
@@ -361,8 +387,9 @@ test('scope_quelle zeigt den abgeleiteten Text, kein Eingabefeld (Z4)', () => {
     content_modus: 'quellengestuetzt',
     quellen: [{ id: 'Q-001' }, { id: 'Q-002' }]
   } });
-  assert.ok(mitQuellen.indexOf('Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-002.') >= 0,
-    'der abgeleitete Bereich aus dem Dossier fehlt');
+  /* Fix-Runde Z4: Aufzaehlung mit Zaehler statt Bereich (s. inhalt.js abgeleitet()). */
+  assert.ok(mitQuellen.indexOf('Der erfasste Quellenbestand ist der Scope: Q-001, Q-002 (2 Quellen).') >= 0,
+    'die abgeleitete Aufzaehlung aus dem Dossier fehlt');
 });
 
 test('gesicherte Werte stehen wieder in den Feldern', () => {
