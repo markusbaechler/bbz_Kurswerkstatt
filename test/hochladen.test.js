@@ -240,13 +240,21 @@ test('die Datei selbst ist nicht lesbar: Upload wird abgebrochen, klare Meldung'
   assert.match(l.fehlerHinweis || '', /nicht lesbar/);
 });
 
-test('struktur vorhanden, aber die Datei ist keine .xlsx: keine Pruefung, unveraendertes Verhalten', async () => {
+/* Fix-Runde 1, Finding F5: vorher liess eine .xls-Datei die Pruefung
+   unbemerkt aus UND lief trotzdem normal durch (unter dem .xlsx-Zielnamen,
+   ungeprueft) — ein Bypass. Jetzt: das Gate haengt an struktur-Feld +
+   Kontrakt-ext 'xlsx', und ist es scharf, wird eine Nicht-xlsx-Datei laut
+   abgewiesen statt still durchgelassen. */
+test('F5: struktur vorhanden, aber die Datei ist keine .xlsx: laut abgewiesen, kein stiller Bypass', async () => {
   let gerufen = false;
   xlsxLesen.blaetterUndKoepfe = function () { gerufen = true; return Promise.resolve([]); };
   const l = await hochladenLauf(2, xlsxDatei('AFL-001_lernziele-drehbuch_v1.xls'));
-  assert.strictEqual(gerufen, false, 'xlsxLesen haette fuer eine Nicht-xlsx nicht aufgerufen werden duerfen');
-  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_lernziele-drehbuch_v1.xlsx',
-    'der Upload haette trotzdem normal laufen sollen');
+  assert.strictEqual(gerufen, false, 'xlsxLesen haette fuer eine Nicht-xlsx nicht aufgerufen werden duerfen — die Endung allein reicht zur Abweisung');
+  assert.strictEqual(l.hochgeladenMit.datei, null, 'die Datei haette NICHT hochgeladen werden duerfen');
+  assert.match(l.meldung, /\.xlsx/);
+  assert.match(l.meldung, /AFL-001_lernziele-drehbuch_v1\.xls/);
+  assert.match(l.fehlerHinweis || '', /\.xlsx/);
+  assert.strictEqual(l.knopf.disabled, false, 'der Knopf muss nach der Abweisung wieder bedienbar sein');
 });
 
 test('kein struktur-Feld am Schritt: keine Pruefung, auch bei .xlsx', async () => {
@@ -257,4 +265,20 @@ test('kein struktur-Feld am Schritt: keine Pruefung, auch bei .xlsx', async () =
   const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'), ohneStruktur);
   assert.strictEqual(gerufen, false, 'xlsxLesen haette ohne struktur-Feld nicht aufgerufen werden duerfen');
   assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_lernziele-drehbuch_v1.xlsx');
+});
+
+/* F5, zweite Haelfte der Bindung: struktur allein reicht nicht — der
+   Kontrakt muss fuer den Schritt AUCH 'xlsx' als Endung erwarten. Ein Schritt
+   mit struktur-Feld, aber einer anderen Kontrakt-Endung (hier docx,
+   hypothetisch/zukunftssicher), darf das Gate nicht scharf schalten. */
+test('F5: struktur-Feld allein ohne Kontrakt-ext xlsx schaltet das Gate nicht scharf', async () => {
+  let gerufen = false;
+  xlsxLesen.blaetterUndKoepfe = function () { gerufen = true; return Promise.resolve([]); };
+  const mitFremderEndung = JSON.parse(JSON.stringify(INHALT));
+  mitFremderEndung['ablage-kontrakt'].schritte['3'] = Object.assign(
+    {}, mitFremderEndung['ablage-kontrakt'].schritte['3'], { struktur: INHALT['ablage-kontrakt'].schritte['2'].struktur });
+  const l = await hochladenLauf(3, xlsxDatei('AFL-001_skript-claude_v1.docx'), mitFremderEndung);
+  assert.strictEqual(gerufen, false, 'xlsxLesen haette nicht aufgerufen werden duerfen — Kontrakt erwartet docx, nicht xlsx');
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_skript-claude_v1.docx',
+    'der Upload haette normal laufen sollen, das Gate ist hier nicht scharf');
 });

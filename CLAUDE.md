@@ -1319,18 +1319,35 @@ Central-Directory-Verzeichnis von Hand (dieselbe Logik wie
 `IT_Architektur_bbz/output/tools/contract-lesen.cjs`, dort mit `zlib`, weil Node-Werkzeug — hier
 mit `DecompressionStream('deflate-raw')`, nativ in Chrome/Edge und seit Node 18 auch im Test ohne
 Zusatzabhängigkeit), liest `xl/workbook.xml` + `xl/_rels/workbook.xml.rels` für die Blattnamen in
-Reihenfolge und je Blatt nur die **erste** `<row>` als Kopfzeile. **Kein vollwertiger
-xlsx-Parser:** keine Formeln, keine Formate, keine Datenzeilen, kein `sharedStrings`-Cache über
-die Kopfzeile hinaus gebraucht (wird trotzdem gelesen, falls Kopfzellen Typ `s` statt `inlineStr`
-tragen). Wirft (lehnt die Promise ab) bei einem Nicht-Zip, einem Zip ohne `xl/workbook.xml` und
-bei einer nicht unterstützten Zip-Kompressionsmethode (nur 0 = ungespeichert und 8 = deflate
-kommen aus xlsx je vor).
+Reihenfolge (über `r:id`/`rels`, NIE über die Position in `<sheets>` oder den Dateinamen —
+Fix-Runde 1, Finding F4) und je Blatt die Kopfzeile. **Kopfzeile = dieselbe Regel wie
+`contract-pruefen.cjs` `kopfzeile()`** (Fix-Runde 1, Finding F1, nicht mehr einfach `<row>` Nummer
+1): die ERSTE Zeile mit mindestens zwei nichtleeren Zellen — eine Titelzeile davor („TABELLE 2 -
+Eingangskompetenzen", eine Zelle) oder eine leere erste Zeile werden übersprungen. Gemessen an der
+echten AFL-001-Datei erzeugte die alte, stur erste-`<row>`-Regel dort vier Fehlalarme, die
+`contract-pruefen.cjs` nicht kennt. **Kein vollwertiger xlsx-Parser:** keine Formeln, keine
+Formate, keine Datenzeilen jenseits der Kopfzeile. `sharedStrings.xml` (Typ `s`-Zellen, inklusive
+Rich-Text mit mehreren `<r>`-Runs in einem `<si>`) wird gelesen — jede echte Contract-Excel nutzt
+shared strings, dieser Pfad ist deshalb ausdrücklich mitgetestet (Fix-Runde 1, Finding F3), nicht
+nur der einfachere `inlineStr`-Fall. Wirft (lehnt die Promise ab) bei einem Nicht-Zip, einem Zip
+ohne `xl/workbook.xml` und bei einer nicht unterstützten Zip-Kompressionsmethode (nur
+0 = ungespeichert und 8 = deflate kommen aus xlsx je vor).
 
 **`inhalt.strukturPruefe(blaetter, struktur)` — dieselben Regeln wie
-`IT_Architektur_bbz/output/tools/contract-pruefen.cjs`, nicht neu erfunden:** unerlaubtes Blatt,
-fehlendes Pflichtblatt (Kern-Blätter + Steckbrief), Kopfzeilen-Abgleich (die ersten
-`spalten.length` Zellen wörtlich, nicht mehr), Blattreihenfolge, `_steckbrief` muss das letzte
-Blatt sein. `struktur` ist die Abschrift aus `contract-schema.cjs`
+`IT_Architektur_bbz/output/tools/contract-pruefen.cjs`, nicht neu erfunden, seit Fix-Runde 1
+tatsächlich wieder wahr (vorher klaffte hier eine Lücke, s. u.):** unerlaubtes Blatt, fehlendes
+Pflichtblatt (Kern-Blätter + Steckbrief), Kopfzeilen-Abgleich (die ersten `spalten.length` Zellen
+wörtlich) UND eine unbekannte Zusatzspalte danach, Blattreihenfolge, `_steckbrief` muss das letzte
+Blatt sein. **Die Zusatzspalten-Regel (Fix-Runde 1, Finding F2, BEIDSEITIG — s. u.):** der reine
+Kopfzeilen-Abgleich schneidet mit `slice(0, spalten.length)` alles ab, was danach kommt — eine
+ANGEHÄNGTE erfundene Spalte wird dadurch unsichtbar. Gemessen an der echten AFL-001-Datei: das
+Blatt `1_Lernziele` trägt die sieben erwarteten Spalten wortwörtlich korrekt PLUS eine achte,
+erfundene (`Lernort`) direkt dahinter — genau der Fall, den T11 fangen sollte, und der alte
+Vergleich befand `[]`. Jetzt erzeugt jede Zelle AB Index `spalten.length`, die nichtleer ist,
+einen eigenen Befund „Blatt X: unbekannte Zusatzspalte 'Lernort'"; rein nachlaufende Leerzellen
+(die xlsx häufig anhängt) lösen nichts aus. **Parity-Pflicht:** dieselbe Zusatzspalten-Regel steht
+seit Fix-Runde 1 auch in `IT_Architektur_bbz/output/tools/contract-pruefen.cjs` — eine Regel an
+zwei Orten wäre sonst die nächste Drift. `struktur` ist die Abschrift aus `contract-schema.cjs`
 (`kern[].name/spalten`, `katalog`, `steckbrief.name`, `reihenfolge`) und liegt im Kontrakt als
 `ablage-kontrakt.schritte['2'].struktur` — `inhalt.strukturVon(i, schrittId)` liest sie. **Führt
 ein Schritt kein `struktur`-Feld, gibt es nichts zu prüfen: `strukturPruefe` liefert dann `null`,
@@ -1346,36 +1363,56 @@ die Reihenfolge der Datenzeilen innerhalb eines Blatts. T11 ist ein Struktur-Dri
 Inhalts-Lektor.
 
 **`controller.hochladen` (app.js) — die Prüfung läuft VOR jedem Netzzugriff, nicht erst nach dem
-Ordner-Lesen:** nur wenn `inhalt.strukturVon(inh, n)` etwas liefert UND die gewählte Datei auf
-`.xlsx` endet, liest der Controller die Datei als `ArrayBuffer` (`datei.arrayBuffer()`, nativ auf
-jedem `File`), ruft `xlsxLesen.blaetterUndKoepfe` und dann `inhalt.strukturPruefe` auf. Ein Befund
-**bricht den Upload ab** (kein `graph.ordnerInhalt`, kein `graph.hochladen`): die Befundliste
-landet am bestehenden Fehlerknoten `#hochladefehler` (Klartext über `.textContent`, keine
-HTML-Einspeisung — deshalb kein zusätzliches `esc()` nötig) UND in `state.fehlerHinweis` (Muster
-`quelleErfassen`-I10, Etappe 1e: ein Zwischen-Render kann den lokalen Knoten aushängen, bevor die
-Person ihn liest — `state.fehlerHinweis` lebt im State und übersteht das). Scheitert schon das
-Lesen der Datei selbst (kein Zip, kaputt) — ebenfalls Abbruch, eigene Meldung („Datei nicht
-lesbar — nicht hochgeladen: …"). Fehlt das `struktur`-Feld am Schritt, oder ist die Datei keine
-`.xlsx`, bleibt das Verhalten unverändert — kein Netzaufruf an `xlsxLesen`, direkter Weg wie vor
-T11.
+Ordner-Lesen.** Das Gate hängt an ZWEI Bedingungen (Fix-Runde 1, Finding F5, nicht mehr am lokalen
+Dateinamen allein): `inhalt.strukturVon(inh, n)` liefert etwas UND der Kontrakt erwartet für den
+Schritt selbst `xlsx` als Endung (`inhalt.erwarteteEndung(inh, n) === 'xlsx'`) — `geprueftPflicht`.
+**Ist das Gate scharf, MUSS die gewählte Datei als `.xlsx` erkennbar sein — sonst wird laut
+abgewiesen, nicht still durchgelassen:** vorher liess eine `.xls`/`.xlsm`/endungslose Datei die
+Prüfung unbemerkt aus und landete trotzdem ungeprüft unter dem `.xlsx`-Zielnamen (ein Bypass, an
+VL-002/AFL-001-Messungen gefunden). Ist die Endung falsch, bricht `controller.hochladen` sofort ab
+(„Nicht hochgeladen: für diesen Schritt wird eine .xlsx-Datei mit geprüfter Struktur erwartet,
+gewählt wurde …") — kein `xlsxLesen`-Aufruf, kein `graph.ordnerInhalt`. Ist die Endung korrekt,
+liest der Controller die Datei als `ArrayBuffer` (`datei.arrayBuffer()`, nativ auf jedem `File`),
+ruft `xlsxLesen.blaetterUndKoepfe` und dann `inhalt.strukturPruefe` auf. Ein Befund **bricht den
+Upload ab** (kein `graph.ordnerInhalt`, kein `graph.hochladen`): die Befundliste landet am
+bestehenden Fehlerknoten `#hochladefehler` (Klartext über `.textContent`, keine HTML-Einspeisung —
+deshalb kein zusätzliches `esc()` nötig) UND in `state.fehlerHinweis` (Muster `quelleErfassen`-
+I10, Etappe 1e: ein Zwischen-Render kann den lokalen Knoten aushängen, bevor die Person ihn liest
+— `state.fehlerHinweis` lebt im State und übersteht das). Scheitert schon das Lesen der Datei
+selbst (kein Zip, kaputt) — ebenfalls Abbruch, eigene Meldung („Datei nicht lesbar — nicht
+hochgeladen: …"). Fehlt das `struktur`-Feld am Schritt, oder erwartet der Kontrakt für den Schritt
+gar kein `xlsx`, bleibt das Verhalten unverändert — kein Gate, kein Netzaufruf an `xlsxLesen`,
+direkter Weg wie vor T11.
 
 **Tests:** `test/xlsxlesen.test.js` (Store- UND Deflate-Pfad je mit einer im Test gebauten
 Mini-xlsx — kein Zip-Werkzeug im Projekt, ein kleiner ZIP-Bau-Helfer direkt in der Testdatei;
 `zlib.deflateRawSync` dient dort NUR als Test-Datengenerator für den Deflate-Fall, läuft nie im
 Browser mit; Fehlerfälle: kein Zip, `xl/workbook.xml` fehlt, unbekannte Kompressionsmethode, ein
-Blatt ohne auflösbares `rels`-Target). **Dokumentierte Grenze:** der Deflate-Pfad ist nur so weit
-geprüft, wie Node ≥18 `DecompressionStream` nativ bereitstellt — eine echte
-Browser-Verifikation (Chrome/Edge) fand in dieser Task nicht statt; die API-Fläche ist identisch,
-ein Engine-Unterschied ist mit dieser Suite trotzdem nicht auszuschliessen.
-`test/strukturpruefen.test.js` (jede Regel einzeln: sauberer Satz, optionale Katalog-Blätter,
-unerlaubtes Blatt, fehlendes Kern-/Steckbrief-Pflichtblatt, kaputte Kopfzeile — genau der
-AFL-001-Fall mit der erfundenen Spalte —, vertauschte Reihenfolge, Steckbrief nicht zuletzt, kein
-`struktur`-Feld → `null`). `test/hochladen.test.js` (Integration über `controller.hochladen`:
+Blatt ohne auflösbares `rels`-Target; seit Fix-Runde 1 zusätzlich F1 — Titelzeile, leere erste
+Zeile, keine qualifizierende Zeile —, F3 — `t="s"` inkl. Rich-Text-`<si>` mit mehreren Runs — und
+F4 — absichtlich verdrehte `rels`-Ziele, damit ein Positionsraten nicht unentdeckt bliebe).
+**Dokumentierte Grenze:** der Deflate-Pfad ist nur so weit geprüft, wie Node ≥18
+`DecompressionStream` nativ bereitstellt — eine echte Browser-Verifikation (Chrome/Edge) fand in
+dieser Task nicht statt; die API-Fläche ist identisch, ein Engine-Unterschied ist mit dieser
+Suite trotzdem nicht auszuschliessen. `test/strukturpruefen.test.js` (jede Regel einzeln:
+sauberer Satz, optionale Katalog-Blätter, unerlaubtes Blatt, fehlendes Kern-/Steckbrief-
+Pflichtblatt, kaputte Kopfzeile, vertauschte Reihenfolge, Steckbrief nicht zuletzt, kein
+`struktur`-Feld → `null`; seit Fix-Runde 1 zusätzlich F2 — der echte AFL-001-Fall mit der
+angehängten Spalte `Lernort`, rein nachlaufende Leerzellen als Nicht-Befund, mehrere angehängte
+Spalten als je eigener Befund). `test/hochladen.test.js` (Integration über `controller.hochladen`:
 sauberer Upload läuft durch, ein Befund bricht ab und meldet beides (`#hochladefehler` UND
-`state.fehlerHinweis`), eine unlesbare Datei bricht ab, eine Nicht-`.xlsx`-Datei sowie ein Schritt
-ohne `struktur`-Feld überspringen die Prüfung vollständig — `xlsxLesen.blaetterUndKoepfe` wird in
-beiden Fällen nachweislich nicht aufgerufen). `test/fixture.js` führt `struktur` jetzt bei Schritt
-2, in derselben Form wie der echte Ablage-Kontrakt. **574 Tests grün** (Baseline 552 + 10 + 7 + 5).
+`state.fehlerHinweis`), eine unlesbare Datei bricht ab, ein Schritt ohne `struktur`-Feld
+überspringt die Prüfung vollständig; seit Fix-Runde 1 F5 — eine Nicht-`.xlsx`-Datei bei scharfem
+Gate wird laut abgewiesen statt durchgelassen, ein `struktur`-Feld ohne passende Kontrakt-Endung
+schaltet das Gate NICHT scharf). `test/fixture.js` führt `struktur` bei Schritt 2, in derselben
+Form wie der echte Ablage-Kontrakt. **`IT_Architektur_bbz/output/tools/test/contract-pruefen.
+test.js`** (Tools-Baum, kein Git dort): die Zusatzspalten-Regel auch dort — die reale
+`afl-001.xlsx`-Fixture wird jetzt namentlich auf `Lernort` geprüft, plus zwei synthetische Fälle
+(angehängte nichtleere Zelle → Befund, nachlaufende Leerzellen → kein Befund) über einen mit
+`exceljs` (im Tools-Baum vorhanden, Paketmanager-Regel gilt nur für `bbz_Kurswerkstatt`)
+manipulierten kanonischen Contract. **583 Tests grün in `bbz_Kurswerkstatt`** (Baseline 574 + 9:
+F1×3, F3×1, F4×1, F2×3, F5×1 netto — ein bestehender Test wurde für F5 umgeschrieben, nicht neu
+gezählt) **und 233/233 im Tools-Baum** (Baseline 231 + 2 für F2).
 
 **Mutationsproben (tatsächlich ausgeführt):**
 
@@ -1403,8 +1440,55 @@ beiden Fällen nachweislich nicht aufgerufen). `test/fixture.js` führt `struktu
    Genau der eine Test fiel rot, danach wiederhergestellt; komplette Suite erneut geprüft:
    `node --test` → 574/574 grün.
 
+## Fix-Runde 1 (Review opus, mit Messungen an den echten VL-002/AFL-001-Dateien): F1–F5
+
+Fünf Findings (drei Important, zwei Medium), alle geschlossen — Details je Finding s. o. bei den
+betroffenen Absätzen. Kurzfassung: **F1** `xlsx-lesen.js` nahm stur `<row>` Nummer 1 als Kopfzeile
+statt wie `contract-pruefen.cjs` `kopfzeile()` die erste Zeile mit ≥2 nichtleeren Zellen zu suchen
+— eine Titelzeile erzeugte vier Fehlalarme. **F2** `slice(0, spalten.length)` schneidet eine
+ANGEHÄNGTE erfundene Spalte ab, bevor der Vergleich sie sieht — genau der AFL-001-Fall
+(`Lernort` als 8. Zelle) ging dadurch mit Befund `[]` durch; Fix beidseitig (`inhalt.js` UND
+`contract-pruefen.cjs`, Parity-Pflicht). **F3** der `t="s"`-Pfad (shared strings) war ungetestet,
+obwohl jede echte Contract-Excel ihn nutzt. **F4** die `r:id`/`rels`-Auflösung war ungepinnt — ein
+Positionsraten hätte unentdeckt bleiben können. **F5** die Prüfung hing am lokalen Dateinamen
+(`.xlsx`-Regex) — eine `.xls`/`.xlsm`/endungslose Datei umging sie und landete ungeprüft unter dem
+`.xlsx`-Zielnamen; das Gate hängt jetzt an `struktur`-Feld UND Kontrakt-`ext === 'xlsx'`, und weist
+bei falscher Endung laut ab statt still durchzulassen.
+
+**Mutationsproben (tatsächlich ausgeführt, je Finding einzeln, danach wiederhergestellt):**
+
+- **F1** (`xlsx-lesen.js`, `kopfzeile()` auf `zeilenXml.length ? zellen(zeilenXml[0], ss) : []`
+  zurückgestutzt), `node --test test/xlsxlesen.test.js` → 9/12 grün, genau die drei neuen
+  F1-Tests (Titelzeile, leere erste Zeile, keine qualifizierende Zeile) fielen rot.
+- **F2 App-Seite** (`inhalt.strukturPruefe`, die Zusatzspalten-Schleife auf
+  `if (false && voll[idx] !== '')` gesetzt), `node --test test/strukturpruefen.test.js` → 11/13
+  grün, genau die beiden neuen Mehrfach-/Einzel-Zusatzspalten-Tests fielen rot.
+- **F2 Tools-Seite** (`contract-pruefen.cjs`, dieselbe Schleife auf `if (false && kopf[idx] !== '')`
+  gesetzt), `node --test test/contract-pruefen.test.js` → 4/6 grün:
+  ```
+  ✖ AFL-001 aus SharePoint (sechs Blätter, Lernort, W-Strecke) fällt durch UND nennt die
+    Zusatzspalte Lernort
+  ✖ F2: eine synthetisch angehängte, nichtleere Spalte wird gemeldet, der Rest bleibt sauber
+  ```
+  Genau die reale AFL-001-Probe und der synthetische Test fielen rot — die anderen vier blieben
+  grün, komplette Tools-Suite danach erneut geprüft: `node --test` → 233/233 grün.
+- **F3** (`xlsx-lesen.js`, `zellen()`-Zweig `typ === 's'` auf `false && typ === 's'` gesetzt),
+  `node --test test/xlsxlesen.test.js` → 11/12 grün, genau der Shared-Strings/Rich-Text-Test fiel
+  rot.
+- **F4** (`xlsx-lesen.js`, die `sheets.map`-Auflösung von `ziel[rid]` auf ein reines
+  `'xl/worksheets/sheet' + (idx+1) + '.xml'`-Positionsraten umgestellt), `node --test
+  test/xlsxlesen.test.js` → 11/12 grün, genau der F4-Verdreh-Test fiel rot.
+- **F5** (`app.js` `controller.hochladen`, die Endungs-Abweisung auf
+  `if (false && !istXlsx)` gesetzt), `node --test test/hochladen.test.js` → 22/23 grün, genau
+  der neue F5-Abweisungstest fiel rot.
+
+Nach jeder Probe wiederhergestellt; abschliessend komplett geprüft: `node --test` (App) →
+**583/583 grün**, Tools-Baum `node --test` → **233/233 grün**.
+
 **Offen / bewusst nicht angefasst in T11:** das reale `ablage-kontrakt.json` in SharePoint trägt
 `struktur` noch nicht — dieser Task ändert nur den App-Code und die Test-Fixture (Weg B: die
 echte Datei liegt ausserhalb des Repos und ist nicht Teil dieser Task). Solange sie fehlt, greift
 die Prüfung nirgends (`strukturVon` liefert `null`) — kein Regressionsrisiko, aber auch noch kein
-Live-Nutzen, bis jemand das Feld in SharePoint nachträgt.
+Live-Nutzen, bis jemand das Feld in SharePoint nachträgt. Aus dem Review der Fix-Runde 1 bleiben
+drei niedriger eingestufte Findings (F6–F8) bewusst geparkt — auf Entscheid des Koordinators nicht
+Teil dieser Runde.

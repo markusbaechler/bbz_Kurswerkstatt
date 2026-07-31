@@ -382,13 +382,24 @@
     /* Dieselben Regeln wie contract-pruefen.cjs (pruefe()), im Browser ohne
        Abhaengigkeit: unerlaubtes Blatt, fehlendes Pflichtblatt (Kern +
        Steckbrief), Kopfzeilen-Abgleich (woertlich, nur die ersten
-       spalten.length Zellen), Blattreihenfolge, Steckbrief zuletzt. Prueft NIE
-       Zellinhalte jenseits der Kopfzeile — das bleibt Fachurteil am Gate.
-       blaetter kommt aus xlsxLesen.blaetterUndKoepfe(): [{name, kopf}]. Ohne
-       struktur (Schritt fuehrt keine) liefert die Funktion null statt eines
-       leeren, potenziell falsch als "geprueft und sauber" gelesenen Arrays —
-       ein leeres Ergebnis ist nie ein gruenes (contract-pruefen.cjs-Kommentar,
-       hier ebenso bindend). */
+       spalten.length Zellen) PLUS eine unbekannte Zusatzspalte danach (Fix-
+       Runde 1, Finding F2 — s. u.), Blattreihenfolge, Steckbrief zuletzt.
+       Prueft NIE Zellinhalte jenseits der Kopfzeile — das bleibt Fachurteil
+       am Gate. blaetter kommt aus xlsxLesen.blaetterUndKoepfe():
+       [{name, kopf}]. Ohne struktur (Schritt fuehrt keine) liefert die
+       Funktion null statt eines leeren, potenziell falsch als "geprueft und
+       sauber" gelesenen Arrays — ein leeres Ergebnis ist nie ein gruenes
+       (contract-pruefen.cjs-Kommentar, hier ebenso bindend).
+
+       F2 (Review opus, gemessen an der echten AFL-001-Datei): `slice(0,
+       spalten.length)` allein schneidet eine ANGEHAENGTE erfundene Spalte
+       einfach ab — die echte AFL-001-Kopfzeile traegt 'Lernort' als 8. Zelle
+       nach den sieben erwarteten, der Vergleich sah nur die ersten sieben und
+       befand []. Genau das war der Fall, den T11 eigentlich fangen sollte.
+       Fix (Paritaetspflicht: dieselbe Regel steht jetzt auch in
+       contract-pruefen.cjs, s. dort): jede Zelle AB Index spalten.length, die
+       nichtleer ist, erzeugt einen eigenen Befund „unbekannte Zusatzspalte".
+       Rein nachlaufende Leerzellen (die xlsx oft anhaengt) loesen nichts aus. */
     strukturPruefe: function (blaetter, struktur) {
       if (!struktur) return null;
       var bl = Array.isArray(blaetter) ? blaetter : [];
@@ -423,10 +434,15 @@
       bl.forEach(function (b) {
         var s = blattSchema(b.name);
         if (!s || !Array.isArray(s.spalten)) return;
-        var kopf = (b.kopf || []).slice(0, s.spalten.length)
-          .map(function (c) { return c == null ? '' : String(c).trim(); });
+        var voll = (b.kopf || []).map(function (c) { return c == null ? '' : String(c).trim(); });
+        var kopf = voll.slice(0, s.spalten.length);
         if (kopf.join('|') !== s.spalten.join('|')) {
           fehler.push('Blatt ' + b.name + ': Kopfzeile weicht vom Schema ab');
+        }
+        for (var idx = s.spalten.length; idx < voll.length; idx++) {
+          if (voll[idx] !== '') {
+            fehler.push('Blatt ' + b.name + ': unbekannte Zusatzspalte \'' + voll[idx] + '\'');
+          }
         }
       });
 

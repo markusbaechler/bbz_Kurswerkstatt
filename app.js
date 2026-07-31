@@ -2029,11 +2029,17 @@
 
       /* Upload-Strukturpruefung (T11) — das Drift-Netz fuer chat-generierte
          Contract-Excels (AFL-001-Lehre: eine erfundene Spalte ging unbemerkt
-         durch Gate 1). Nur wenn der Kontrakt fuer diesen Schritt ein
-         struktur-Feld fuehrt UND die gewaehlte Datei eine .xlsx ist — sonst
-         unveraendertes Verhalten. Laeuft VOR jedem Netzzugriff: ein
-         struktureller Befund soll den Ordner nicht erst frisch lesen. */
+         durch Gate 1). Das Gate haengt bewusst an ZWEI Bedingungen (Fix-Runde
+         1, Finding F5) — struktur-Feld UND der Kontrakt selbst erwartet fuer
+         diesen Schritt 'xlsx' —, nicht am lokalen Dateinamen allein: eine
+         .xls/.xlsm/endungslose Datei umging die Pruefung sonst und landete
+         ungeprueft unter dem .xlsx-Zielnamen. Ist das Gate scharf, MUSS die
+         gewaehlte Datei als .xlsx erkennbar sein — sonst wird laut
+         abgewiesen statt still durchgelassen. Laeuft VOR jedem Netzzugriff:
+         ein struktureller Befund (oder eine falsche Endung) soll den Ordner
+         nicht erst frisch lesen. */
       var struktur = root.inhalt.strukturVon(inh, n);
+      var geprueftPflicht = !!(struktur && root.inhalt.erwarteteEndung(inh, n) === 'xlsx');
       var istXlsx = /\.xlsx$/i.test((datei.name || ''));
 
       function weiterMitUpload() {
@@ -2081,7 +2087,12 @@
           .catch(function (e) { klemmt('Nicht hochgeladen. ' + (e.message || e)); });
       }
 
-      if (struktur && istXlsx) {
+      if (geprueftPflicht) {
+        if (!istXlsx) {
+          klemmtSichtbar('Nicht hochgeladen: für diesen Schritt wird eine .xlsx-Datei mit ' +
+            'geprüfter Struktur erwartet, gewählt wurde "' + (datei.name || '(ohne Namen)') + '".');
+          return;
+        }
         if (meld) meld.hidden = true;
         knopf.disabled = true; knopf.textContent = 'wird geprüft …';
         var lesen = (datei.arrayBuffer && typeof datei.arrayBuffer === 'function')

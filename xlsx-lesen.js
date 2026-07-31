@@ -1,7 +1,14 @@
 /* Liest eine .xlsx dependency-frei — fuer die Upload-Strukturpruefung (T11).
-   Kein vollwertiger xlsx-Parser: nur Blattnamen in Reihenfolge und die erste
-   Zeile (Kopfzeile) je Blatt. Zellinhalte jenseits der Kopfzeile werden nie
-   gelesen — das ist bewusst, s. CLAUDE.md T11.
+   Kein vollwertiger xlsx-Parser: nur Blattnamen in Reihenfolge und die
+   Kopfzeile je Blatt. Zellinhalte jenseits der Kopfzeile werden nie gelesen —
+   das ist bewusst, s. CLAUDE.md T11.
+
+   Kopfzeile = dieselbe Regel wie contract-pruefen.cjs kopfzeile() (Fix-Runde 1,
+   Finding F1, mit Messung an der echten AFL-001-Datei belegt): die ERSTE Zeile
+   mit mindestens zwei nichtleeren Zellen — nicht einfach <row> Nummer 1. Eine
+   Titelzeile ("TABELLE 2 - Eingangskompetenzen", eine Zelle) oder eine leere
+   erste Zeile werden uebersprungen, sonst erzeugte jede Contract-Excel mit
+   einer Titelzeile vier Fehlalarme, die contract-pruefen.cjs nicht kennt.
 
    Eine xlsx ist ein ZIP. Dieselbe Zip-/XML-Logik wie
    IT_Architektur_bbz/output/tools/contract-lesen.cjs (dort mit zlib, weil
@@ -125,15 +132,29 @@
     return out;
   }
 
+  /* Erste Zeile mit mindestens zwei nichtleeren Zellen — wortgleiche Regel zu
+     contract-pruefen.cjs kopfzeile() (Parity-Pflicht, F1). Keine Zeile
+     qualifiziert: leere Kopfzeile, wie kopfzeile() dort auch [] liefert. */
+  function kopfzeile(zeilenXml, ss) {
+    for (var ri = 0; ri < zeilenXml.length; ri++) {
+      var zeile = zellen(zeilenXml[ri], ss);
+      var nichtleer = zeile.filter(function (c) { return c != null && String(c).trim() !== ''; }).length;
+      if (nichtleer >= 2) {
+        return zeile.map(function (c) { return c == null ? '' : String(c).trim(); });
+      }
+    }
+    return [];
+  }
+
   /* ---------- API ---------- */
 
-  /* Blattnamen in Reihenfolge + Kopfzeile (erste <row>) je Blatt. Wirft
-     (verwirft die Promise), wenn arrayBuffer kein Zip ist, xl/workbook.xml
-     fehlt, oder ein Eintrag weder store noch deflate ist bzw. sich nicht
-     entpacken laesst. Async/await statt einer .then-Kette (Konvention 3
-     gilt fuer Views, nicht fuer diese Netz-/Binaerlogik) — eine mehrstufige
-     Entpack-Pipeline (workbook, rels, je Blatt) blieb sonst schwer lesbar
-     verschachtelt. */
+  /* Blattnamen in Reihenfolge + Kopfzeile je Blatt (s. kopfzeile() oben).
+     Wirft (verwirft die Promise), wenn arrayBuffer kein Zip ist,
+     xl/workbook.xml fehlt, oder ein Eintrag weder store noch deflate ist
+     bzw. sich nicht entpacken laesst. Async/await statt einer .then-Kette
+     (Konvention 3 gilt fuer Views, nicht fuer diese Netz-/Binaerlogik) — eine
+     mehrstufige Entpack-Pipeline (workbook, rels, je Blatt) blieb sonst
+     schwer lesbar verschachtelt. */
   async function blaetterUndKoepfe(arrayBuffer) {
     var bytes = new Uint8Array(arrayBuffer);
     var view = new DataView(arrayBuffer);
@@ -169,9 +190,8 @@
       var sh = sheets[n];
       if (!e[sh.pfad]) continue;
       var xml = await entpacke(bytes, view, e[sh.pfad]);
-      var zeilen = xml.match(/<row[\s\S]*?<\/row>/g) || [];
-      var kopf = zeilen.length ? zellen(zeilen[0], ss) : [];
-      out.push({ name: sh.name, kopf: kopf });
+      var zeilenXml = xml.match(/<row[\s\S]*?<\/row>/g) || [];
+      out.push({ name: sh.name, kopf: kopfzeile(zeilenXml, ss) });
     }
     return out;
   }

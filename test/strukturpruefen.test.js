@@ -83,6 +83,38 @@ test('_steckbrief nicht als letztes Blatt wird gemeldet', () => {
   assert.ok(f.includes('_steckbrief ist nicht das letzte Blatt'), f.join(' | '));
 });
 
+/* ---------- Fix-Runde 1 (Review opus, Finding F2, an der echten AFL-001-
+   Datei gemessen): eine ANGEHAENGTE Spalte nach den erwarteten wurde bisher
+   von slice(0, spalten.length) einfach abgeschnitten — Befund []. Genau der
+   Fall, den T11 eigentlich fangen sollte. ---------- */
+
+test('F2: eine angehaengte, erfundene Spalte NACH den erwarteten wird gemeldet (echter AFL-001-Fall)', () => {
+  const bl = saubereBlaetter();
+  /* Die ersten sieben Zellen sind wortwoertlich korrekt — nur die achte,
+     'Lernort', ist erfunden und haengt hinten dran (wie in der echten
+     AFL-001-Datei gemessen). */
+  bl[0] = { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten','Lernort'] };
+  const f = inhalt.strukturPruefe(bl, STRUKTUR);
+  assert.ok(f.includes("Blatt 1_Lernziele: unbekannte Zusatzspalte 'Lernort'"), f.join(' | '));
+  assert.ok(!f.includes('Blatt 1_Lernziele: Kopfzeile weicht vom Schema ab'),
+    'die ersten sieben Zellen sind korrekt — dieser Befund waere hier falsch: ' + f.join(' | '));
+});
+
+test('F2: rein nachlaufende Leerzellen nach den erwarteten Spalten sind KEIN Befund', () => {
+  const bl = saubereBlaetter();
+  bl[3] = { name: '_steckbrief', kopf: ['feld', 'wert', '', ''] };
+  const f = inhalt.strukturPruefe(bl, STRUKTUR);
+  assert.deepStrictEqual(f, [], 'nachlaufende Leerzellen duerfen keinen Befund ausloesen: ' + f.join(' | '));
+});
+
+test('F2: mehrere angehaengte, nichtleere Spalten erzeugen je einen eigenen Befund', () => {
+  const bl = saubereBlaetter();
+  bl[3] = { name: '_steckbrief', kopf: ['feld', 'wert', 'Extra1', 'Extra2'] };
+  const f = inhalt.strukturPruefe(bl, STRUKTUR);
+  assert.ok(f.includes("Blatt _steckbrief: unbekannte Zusatzspalte 'Extra1'"), f.join(' | '));
+  assert.ok(f.includes("Blatt _steckbrief: unbekannte Zusatzspalte 'Extra2'"), f.join(' | '));
+});
+
 /* ---------- Mutationsprobe (im Report belegt) ----------
    Wird die Kopfzeilen-Abgleich-Regel auskommentiert (den `if (kopf.join('|')
    !== s.spalten.join('|'))`-Block in inhalt.strukturPruefe ausser Kraft

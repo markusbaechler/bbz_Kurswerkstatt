@@ -101,13 +101,36 @@ function escXml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/* Eine Zelle: entweder ein Klartext (inlineStr) oder { shared: idx } fuer
+   eine Referenz in die sharedStrings-Tabelle (t="s") — Finding F3. */
+function cellXml(colIndex, rowIndex, spec) {
+  const ref = colLetter(colIndex) + rowIndex;
+  if (spec === null || spec === undefined || spec === '') return '';
+  if (typeof spec === 'object' && spec.shared !== undefined) {
+    return '<c r="' + ref + '" t="s"><v>' + spec.shared + '</v></c>';
+  }
+  return '<c r="' + ref + '" t="inlineStr"><is><t>' + escXml(spec) + '</t></is></c>';
+}
+
 function rowXml(rowIndex, cells) {
-  const cellsXml = cells.map((v, i) => {
-    if (v === null || v === undefined || v === '') return '';
-    return '<c r="' + colLetter(i) + rowIndex + '" t="inlineStr"><is><t>' +
-           escXml(v) + '</t></is></c>';
-  }).join('');
+  const cellsXml = cells.map((v, i) => cellXml(i, rowIndex, v)).join('');
   return '<row r="' + rowIndex + '">' + cellsXml + '</row>';
+}
+
+/* strings: Eintraege sind entweder ein Klartext (<si><t>…</t></si>) oder ein
+   Array von Runs fuer Rich-Text (<si><r><t>…</t></r><r><t>…</t></r></si>) —
+   Finding F3 verlangt genau diesen Rich-Text-Fall. */
+function sharedStringsXml(strings) {
+  const siList = strings.map((s) => {
+    if (Array.isArray(s)) {
+      return '<si>' + s.map((run) => '<r><t>' + escXml(run) + '</t></r>').join('') + '</si>';
+    }
+    return '<si><t>' + escXml(s) + '</t></si>';
+  }).join('');
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+         '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+         'count="' + strings.length + '" uniqueCount="' + strings.length + '">' +
+         siList + '</sst>';
 }
 
 function sheetXml(rows) {
@@ -230,4 +253,99 @@ test('ein Sheet ohne aufloesbares rels-Target wird uebersprungen, kein Crash', a
   const buf = buildZip(entries);
   const bl = await xlsxLesen.blaetterUndKoepfe(buf);
   assert.deepStrictEqual(bl.map((b) => b.name), ['a']);
+});
+
+/* ---------- Fix-Runde 1 (Review opus, Messungen an VL-002/AFL-001) ---------- */
+
+/* F1 — gemessen an der echten AFL-001-Datei: eine Titelzeile vor der
+   Kopfzeile erzeugte vier Fehlalarme, weil xlsx-lesen.js bisher stur <row>
+   Nummer 1 nahm statt wie contract-pruefen.cjs kopfzeile() die erste Zeile
+   mit mindestens zwei nichtleeren Zellen zu suchen. */
+test('F1: eine Titelzeile vor der echten Kopfzeile wird uebersprungen (AFL-001-Fall)', async () => {
+  const buf = buildXlsx([{ name: '2_Eingangskompetenzen', rows: [
+    ['TABELLE 2 - Eingangskompetenzen'],                          /* nur 1 nichtleere Zelle */
+    ['EK-ID', 'Thema', 'Definition', 'Wissensziel']
+  ] }], 0);
+  const bl = await xlsxLesen.blaetterUndKoepfe(buf);
+  assert.deepStrictEqual(bl[0].kopf, ['EK-ID', 'Thema', 'Definition', 'Wissensziel']);
+});
+
+test('F1: eine leere erste Zeile (<row r="1"></row>) wird uebersprungen, nicht als Kopfzeile gewertet', async () => {
+  const buf = buildXlsx([{ name: 'x', rows: [[], ['Lernziel-ID', 'Thema']] }], 0);
+  const bl = await xlsxLesen.blaetterUndKoepfe(buf);
+  assert.deepStrictEqual(bl[0].kopf, ['Lernziel-ID', 'Thema']);
+});
+
+test('F1: keine Zeile qualifiziert -> leere Kopfzeile, wie kopfzeile() in contract-pruefen.cjs', async () => {
+  const buf = buildXlsx([{ name: 'x', rows: [['nur eine Zelle'], ['auch nur eine']] }], 0);
+  const bl = await xlsxLesen.blaetterUndKoepfe(buf);
+  assert.deepStrictEqual(bl[0].kopf, []);
+});
+
+/* F3 — Mutationsprobe im vorherigen Report zeigte: der t==="s"-Zweig war
+   ungetestet, obwohl JEDE echte Contract-Excel shared strings nutzt. Test
+   deckt beides ab: eine einfache shared-string-Referenz und Rich-Text (ein
+   <si> mit mehreren <r><t>-Runs). */
+test('F3: Kopfzelle mit t="s" (shared strings), inkl. Rich-Text-<si> mit mehreren Runs', async () => {
+  const ss = [
+    'Lernziel-ID',                 /* Index 0 */
+    ['Thema', '(Pflicht)'],        /* Index 1 — Rich-Text: zwei <r>-Runs in EINEM <si> */
+    'Definition'                   /* Index 2 */
+  ];
+  const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetData>' +
+    rowXml(1, [{ shared: 0 }, { shared: 1 }, { shared: 2 }]) +
+    rowXml(2, ['LZ-001', 'Basiswissen', 'irgendwas']) +
+    '</sheetData></worksheet>';
+  const entries = [
+    { name: 'xl/workbook.xml', data: workbookXml(['1_Lernziele']), method: 0 },
+    { name: 'xl/_rels/workbook.xml.rels', data: relsXml(1), method: 0 },
+    { name: 'xl/sharedStrings.xml', data: sharedStringsXml(ss), method: 0 },
+    { name: 'xl/worksheets/sheet1.xml', data: sheet, method: 0 }
+  ];
+  const buf = buildZip(entries);
+  const bl = await xlsxLesen.blaetterUndKoepfe(buf);
+  /* Bekannte, von contract-lesen.cjs geerbte Grenze (nicht Teil dieser Task):
+     text() trimmt JEDEN <t>-Fragment-Text einzeln vor dem Zusammenfuegen der
+     Runs — ein Leerzeichen an einer Run-Grenze geht dabei verloren, auch mit
+     xml:space="preserve". Deshalb hier bewusst ohne Leerzeichen an der Grenze:
+     der Test beweist, dass mehrere Runs ueberhaupt zusammengefuegt werden
+     (das war der ungetestete Pfad, F3), nicht dass Leerraum erhalten bleibt. */
+  assert.deepStrictEqual(bl[0].kopf, ['Lernziel-ID', 'Thema(Pflicht)', 'Definition']);
+});
+
+/* F4 — Mutationsprobe im vorherigen Report zeigte: ein Positionsraten
+   (sheetN.xml nach Deklarationsreihenfolge statt ueber r:id/rels) blieb
+   unentdeckt. Dieser Test verdreht rels absichtlich gegen die "natuerliche"
+   Reihenfolge: sheet1.xml gehoert zum ZWEITEN deklarierten Blatt, sheet2.xml
+   zum ERSTEN. Nur eine echte r:id-Aufloesung liefert die richtige Zuordnung. */
+test('F4: r:id/rels-Aufloesung ist bindend, nicht die Position in <sheets> oder im Dateinamen', async () => {
+  const workbook = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets>' +
+    '<sheet name="Erstes" sheetId="1" r:id="rId1"/>' +
+    '<sheet name="Zweites" sheetId="2" r:id="rId2"/>' +
+    '</sheets></workbook>';
+  /* absichtlich verdreht: rId1 (erstes deklariertes Blatt) zeigt auf
+     sheet2.xml, rId2 (zweites) auf sheet1.xml */
+  const rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/' +
+    'relationships/worksheet" Target="worksheets/sheet2.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/' +
+    'relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '</Relationships>';
+  const entries = [
+    { name: 'xl/workbook.xml', data: workbook, method: 0 },
+    { name: 'xl/_rels/workbook.xml.rels', data: rels, method: 0 },
+    { name: 'xl/worksheets/sheet1.xml', data: sheetXml([['Z-ID', 'ZThema']]), method: 0 },
+    { name: 'xl/worksheets/sheet2.xml', data: sheetXml([['E-ID', 'EThema']]), method: 0 }
+  ];
+  const buf = buildZip(entries);
+  const bl = await xlsxLesen.blaetterUndKoepfe(buf);
+  assert.deepStrictEqual(bl.map((b) => b.name), ['Erstes', 'Zweites']);
+  assert.deepStrictEqual(bl[0].kopf, ['E-ID', 'EThema'], 'Erstes (rId1) muss sheet2.xml bekommen');
+  assert.deepStrictEqual(bl[1].kopf, ['Z-ID', 'ZThema'], 'Zweites (rId2) muss sheet1.xml bekommen');
 });
