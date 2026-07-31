@@ -442,10 +442,34 @@
         hilfe: 'Was ausdrücklich NICHT Teil ist. Begrenzt den Content-Umfang stärker als jede Positivliste.',
         beispiel: 'Theoretische und rechtliche Deep Dives; vertiefte Optionsbewertung; Anlageprodukte mit zusätzlichem Kreditrisiko.' },
 
-      { id: 'scope_quelle', label: 'Quelle des Scopes', form: 'text', zeilen: 4, pflicht: true,
-        hilfe: 'Woher stammt der Geltungsbereich? Dokument mit Stand. Ohne Quelle ist er nicht belegt. ' +
-          'Verweise wenn möglich auf die erfassten Fachquellen (Q-001, Q-002 …).',
-        beispiel: 'Kursausschreibung (verbindlich); SSPA Swiss Derivative Map 2025 als fachliche Referenz.' },
+      /* Z4 (Zusatzauftrag 2026-07-30 Punkt 6, Entscheid Markus: "Jede hinterlegte
+         Quelle ist Scope."): kein Freitext-Eingabefeld mehr — Live-Beweis der
+         Fehlerklasse an VL-002, wo ein von Hand getippter Bereich ("Q-001 bis
+         Q-014") still veraltete, als Q-015 dazukam. form:'abgeleitet' traegt
+         statt eines Formularfelds den Hook abgeleitet(d): EINE Funktion, die
+         sowohl die Anzeige (ansichten.js, briefingFormular) als auch der
+         zentrale Schreib-Stempel (app.js, _dossierVersuch, Muster
+         identitaetSetzen) aufrufen — Konvention 9, eine Quelle pro Begriff,
+         damit Anzeige und Gespeichertes nie auseinanderlaufen. Pflicht ist das
+         Feld bewusst nicht mehr (wie 'haken', s. briefingFehlend): der
+         abgeleitete Satz ist immer eine vollstaendige Antwort, auch wenn er
+         "Noch keine Quellen erfasst" lautet. Kein Netz, kein Date, kein
+         dossier.js-Zugriff hier drin (inhalt.js kennt dossier.js nicht, wie
+         schon bei fachquellenZeilen) — nur die Felder von d selbst. */
+      { id: 'scope_quelle', label: 'Quelle des Scopes', form: 'abgeleitet', pflicht: false,
+        hilfe: 'Wird automatisch aus dem erfassten Quellenbestand abgeleitet (Q-001, Q-002 …) — ' +
+          'kein Eingabefeld mehr: jede erfasste Quelle ist Scope (Entscheid Markus 2026-07-30, Z4).',
+        abgeleitet: function (d) {
+          if (d && d.content_modus === 'quellenfrei') {
+            return 'Modus quellenfrei — kein Quellen-Scope, der Content entsteht ohne Fachquellen.';
+          }
+          var quellen = (d && Array.isArray(d.quellen)) ? d.quellen.filter(function (q) { return q && q.id; }) : [];
+          if (!quellen.length) return 'Noch keine Quellen erfasst.';
+          var erste = quellen[0].id;
+          var letzte = quellen[quellen.length - 1].id;
+          return 'Der erfasste Quellenbestand ist der Scope: ' +
+            (quellen.length === 1 ? erste : erste + ' bis ' + letzte) + '.';
+        } },
     ],
 
     briefingFeld: function (id) {
@@ -456,11 +480,15 @@
        Ein Haekchen zaehlt NIE als offen (Etappe 1e, Task 6): ein Kaestchen kennt
        kein "leer" — nicht angehakt ist eine vollstaendige Antwort (nein), keine
        fehlende. Aktuell ist ohnehin kein Haken-Feld Pflicht; die Ausnahme steht
-       trotzdem hier, nicht als Zufallsergebnis von pflicht:false. */
+       trotzdem hier, nicht als Zufallsergebnis von pflicht:false.
+       Ebenso ein form:'abgeleitet'-Feld (Z4, scope_quelle): es ist immer
+       ableitbar, selbst als "Noch keine Quellen erfasst" — nie ein Fehlen. */
     briefingFehlend: function (werte) {
       werte = werte || {};
       return inhalt.BRIEFING_FELDER
-        .filter(function (f) { return f.pflicht && f.form !== 'haken' && !String(werte[f.id] || '').trim(); })
+        .filter(function (f) {
+          return f.pflicht && f.form !== 'haken' && f.form !== 'abgeleitet' && !String(werte[f.id] || '').trim();
+        })
         .map(function (f) { return f.label; });
     },
 
@@ -569,6 +597,16 @@
         if (f.form === 'haken') {
           var an = (werte[f.id] === true) || (werte[f.id] === 'true');
           z.push(f.label + ': ' + (an ? 'ja' : 'nein'));
+          return;
+        }
+        /* Ein form:'abgeleitet'-Feld (Z4, scope_quelle) ist NIE offen — es wird
+           live aus d berechnet, nie aus werte gelesen: werte kennt es gar nicht
+           mehr (kein Formularfeld), und der gesicherte Dossier-Stand koennte
+           zwischen zwei Schreibvorgaengen veraltet sein. Ohne d (kein Dossier
+           geladen) liefert abgeleitet(undefined) den Leer-Fall — sicher, kein
+           Erfinden. */
+        if (f.form === 'abgeleitet') {
+          z.push(f.label + ': ' + (f.abgeleitet ? f.abgeleitet(d) : ''));
           return;
         }
         var v = String(werte[f.id] || '').trim();

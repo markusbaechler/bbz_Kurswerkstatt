@@ -1256,6 +1256,25 @@
       var kursObj = (state.data.kurse || []).filter(function (x) { return x.kursId === kursId; })[0];
       root.dossier.identitaetSetzen(neu, kursObj);
 
+      /* scope_quelle zentral stempeln (Z4, Zusatzauftrag 2026-07-30 Punkt 6,
+         Entscheid Markus: "Jede hinterlegte Quelle ist Scope."). Dasselbe
+         Muster wie identitaetSetzen direkt darueber: EINE Stelle, durch die
+         JEDES Dossier-Schreiben laeuft, statt eine Ableitung an jeder
+         Schreibstelle (dossierSpeichern, quelleErfassen, quelleEntfernen,
+         contentModus, gateKlick, Schritt-1-Zweig von ablegen) selbst zu
+         wissen. Ruft dieselbe abgeleitet()-Funktion auf, die ansichten.js fuer
+         die Anzeige nutzt (inhalt.briefingFeld('scope_quelle').abgeleitet) —
+         Konvention 9, eine Quelle pro Begriff — und ueberschreibt dabei einen
+         etwaigen Handwert aus einem Alt-Dossier (VL-001) oder dem
+         Einmal-Import (dossierNachladen): Live-Beweis der Fehlerklasse an
+         VL-002, wo ein getippter Bereich ("Q-001 bis Q-014") still veraltete,
+         als Q-015 dazukam. */
+      var scopeQuelleFeld = root.inhalt.briefingFeld('scope_quelle');
+      if (scopeQuelleFeld && scopeQuelleFeld.abgeleitet) {
+        neu.scope = neu.scope || {};
+        neu.scope.scope_quelle = scopeQuelleFeld.abgeleitet(neu);
+      }
+
       var eTagAlt = state.data.dossierETag[kursId];
       return graph.ablegen(kursId, '', root.dossier.DATEI(kursId), root.dossier.text(neu), eTagAlt, !eTagAlt)
         .then(function (antwort) {

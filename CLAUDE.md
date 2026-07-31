@@ -263,8 +263,9 @@ danach die Datei per Graph DELETE in den SharePoint-Papierkorb (`dossier.quelleE
 
 **Der Quellen-Block steht in der Schritt-1-Ansicht VOR der Box „Die Leitplanken"**
 (Entscheid Markus, 2026-07-30, Etappe 1d): erst wird gesammelt, was an Fachquellen hereinkommt,
-erst danach werden daraus die Leitplanken formuliert — das Feld `scope_quelle` (Hilfetext) kann
-seither auf die dort erfassten Q-IDs (`Q-001`, `Q-002` …) verweisen.
+erst danach werden daraus die Leitplanken formuliert. **Seit Task Z4 ist `scope_quelle` kein
+Eingabefeld mehr** (s. „Task Z4" unten) — es zeigt den aus genau diesen Q-IDs abgeleiteten Satz,
+nicht mehr eine von Hand getippte Hilfetext-Referenz auf sie.
 
 Projekt-Instruktionen bleiben aus Ablage-Kontrakt/`schritte.json` (Struktur), `KWKurse`
 (Kurs-ID/Titel/Kompetenzfeld) und dem eingelesenen Kursbriefing aus `01_briefing/` aufgebaut wie
@@ -1166,3 +1167,92 @@ durch `.filter(function (id) { return false; })` ersetzt, `node --test test/quel
 Genau die vier von der Mutation betroffenen Tests fielen rot, die übrigen acht (inkl. der
 „kein Kasten"-Fälle) blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft:
 `node --test` → 548/548 grün.
+
+## Task Z4: `scope_quelle` wird abgeleitet, kein Freitextfeld mehr
+
+**Zusatzauftrag 2026-07-30 Punkt 6, Entscheid Markus: „Jede hinterlegte Quelle ist Scope."**
+Live-Beweis der Fehlerklasse an VL-002 — dieselbe Kategorie wie Task Z7 (Quellen-Spiegel), nur
+eine Stufe früher: ein von Hand in `scope_quelle` getippter Bereich („Q-001 bis Q-014") veraltete
+still, als Q-015 dazukam. Anders als beim Briefing-Spiegel (Z7, der eine bestehende Abweichung nur
+noch **sichtbar macht**) verhindert Z4 die Abweichung von vornherein: es gibt kein Feld mehr, das
+veralten könnte.
+
+**`inhalt.BRIEFING_FELDER['scope_quelle']` trägt seither `form: 'abgeleitet'` statt `form: 'text'`,
+`pflicht: false` statt `true`, und einen neuen Hook `abgeleitet: function (d) { … }`** — eine reine
+Funktion, die aus `d.quellen`/`d.content_modus` den Anzeigetext berechnet:
+„Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-0nn." bei ≥ 2 Quellen, „… Q-001." bei
+genau einer, „Noch keine Quellen erfasst." bei keiner, und bei `content_modus === 'quellenfrei'`
+ein eigener Quellenfrei-Satz. `dossier.js` bleibt dabei unangetastet und rein — der Hook lebt in
+`inhalt.js` (das `dossier.js` schon bisher nicht kennt, s. `fachquellenZeilen`) und bekommt `d`
+als Daten hereingereicht, wie schon `ziel`/`speicherName` bei `reg_zusatz`/`rechtsstand`.
+
+**EINE Funktion, zwei Aufrufer (Konvention 9):** `ansichten.js` (`briefingFormular`) ruft
+`f.abgeleitet(d)` für die Anzeige — ein neuer `else if (f.form === 'abgeleitet')`-Zweig im
+Feld-Loop rendert das Ergebnis in einem `<div class="fest">` (Muster des bestehenden
+`fest`-Mechanismus bei `reg_zusatz`, hier dynamisch statt statisch), ohne `<textarea>`/`<input>`
+und ohne `optional`-Badge. `app.js` (`controller._dossierVersuch`) ruft **dieselbe** Funktion, um
+den Wert bei **jedem** Dossier-Schreiben nach `d.scope.scope_quelle` zu stempeln — Muster
+`identitaetSetzen` direkt darüber: eine Stelle, durch die jedes Schreiben läuft (`dossierSpeichern`,
+`quelleErfassen`, `quelleEntfernen`, `contentModus`, `gateKlick`, der Schritt-1-Zweig von
+`ablegen`), egal welcher Mutator sonst lief. Ein Handwert aus einem Alt-Dossier (VL-001!) oder dem
+Einmal-Import von `{K}_briefing-felder.md` (`dossierNachladen` — läuft NICHT über
+`_dossierVersuch`, bleibt also bis zum nächsten echten Schreiben unverändert im Speicher stehen)
+wird beim nächsten Schreiben überschrieben, nie vorher stillschweigend im UI verwendet: die
+Anzeige liest immer live `f.abgeleitet(d)`, nie `d.scope.scope_quelle` selbst.
+
+**`inhalt.briefingFehlend` und `inhalt.briefingPromptKopf` schliessen `form: 'abgeleitet'` jetzt
+so aus, wie sie `form: 'haken'` schon ausschliessen** (dieselbe Frage an zwei unabhängigen
+Stellen, Konvention 9 — jede hängt an einem anderen Wert: Formularwerte-Objekt vs. gerendertem
+Prompt-Text, keine kann die andere ersetzen). In `briefingPromptKopf` wird `scope_quelle` nicht
+mehr aus `werte` gelesen (das Formular kennt das Feld gar nicht mehr), sondern — wie die
+FACHQUELLEN-Liste schon seit Etappe 1e — live aus dem dritten Argument `d` über denselben Hook;
+ohne `d` liefert er den Leer-Satz, nie „NICHT ANGEGEBEN" für ein Feld, das man gar nicht mehr
+ausfüllen kann.
+
+**Formular-Erhalt (`controller._formularSnapshot`/`_formularWiederherstellen`) hält keinen toten
+Verweis:** beide Mechanismen selektieren generisch über `#briefing-felder [data-feld]` — ein
+Feld ohne `data-feld`-Attribut (wie jetzt `scope_quelle`) taucht dort nie auf, ohne dass eine
+feste ID-Liste (wie `QUELLEN_FORMULAR_IDS`) angepasst werden müsste.
+
+**Abwärtskompatibel:** `dossier.pruefe()` prüft nur, dass `d.scope` ein Objekt ist — ein
+bestehendes Dossier mit Handwert in `scope.scope_quelle` (VL-001!) bleibt lesbar, unverändert,
+bis zum nächsten Schreiben. `dossier.SCHEMA` bleibt 1, keine Migration nötig (reine
+Schreibseiten-Änderung, wie schon bei `regulatorik`/`identitaet`).
+
+**Tests:** `test/briefingfelder.test.js` — neuer Block für `abgeleitet(d)` (leer/eine/mehrere
+Quellen, quellenfrei) ersetzt den alten Hilfetext-Test „verweist auf die erfassten Fachquellen
+(Etappe 1d)"; ein neuer Ansichtstest belegt kein `data-feld="scope_quelle"` mehr und den
+gerenderten Text mit/ohne Dossier; drei bestehende Tests angepasst (der Promptkopf-Werte-Test
+schliesst `form: 'abgeleitet'` von der wörtlichen Werte-Prüfung aus wie `haken`; „9 offen" → „8
+offen" an zwei Stellen, weil `scope_quelle` nicht mehr pflicht ist). `test/dossierschreiben.test.js`
+bekommt einen neuen Stempel-Test (Muster des bestehenden `identitaetSetzen`-Tests) plus den
+`require('../inhalt.js')`, den `_dossierVersuch` jetzt für `root.inhalt.briefingFeld(...)`
+braucht. **551 Tests grün** (Baseline 548, ein alter Hilfetext-Test entfernt, vier neue dafür:
+zwei für `abgeleitet()`, einer für die Ansicht, einer für den Stempel).
+
+**Mutationsproben (tatsächlich ausgeführt):**
+
+1. Im `abgeleitet()`-Hook die Ein-Quelle-Sonderbehandlung entfernt (`quellen.length === 1 ? erste
+   : …` → immer `erste + ' bis ' + letzte`), `node --test test/briefingfelder.test.js`:
+   ```
+   ✖ abgeleitet(d): leer, eine, mehrere Quellen sowie quellenfrei (Z4)
+     AssertionError [ERR_ASSERTION]: genau eine Quelle nennt keinen Bereich
+     + 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-001.'
+     - 'Der erfasste Quellenbestand ist der Scope: Q-001.'
+   ```
+   Genau der eine Test fiel rot, danach wiederhergestellt.
+
+2. In `controller._dossierVersuch` den Stempel-Block (`if (scopeQuelleFeld &&
+   scopeQuelleFeld.abgeleitet) { … }`) auskommentiert, `node --test test/dossierschreiben.test.js`:
+   ```
+   ℹ tests 11
+   ℹ pass 10
+   ℹ fail 1
+
+   ✖ _dossierVersuch stempelt scope_quelle aus dem Quellenbestand in JEDES Schreiben (Z4)
+     AssertionError [ERR_ASSERTION]: der Handwert haette durch den abgeleiteten Wert ersetzt werden muessen
+     + 'Q-001 bis Q-014'
+     - 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.'
+   ```
+   Genau der eine neue Test fiel rot, alle anderen zehn blieben grün; danach wiederhergestellt,
+   komplette Suite erneut geprüft: `node --test` → 551/551 grün.

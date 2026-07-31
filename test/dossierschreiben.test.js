@@ -13,6 +13,11 @@ const assert = require('node:assert');
 
 const { controller, state, graph } = require('../app.js');
 require('../dossier.js');
+/* Z4: _dossierVersuch stempelt seit dieser Task auch scope_quelle ueber
+   root.inhalt.briefingFeld('scope_quelle') — ohne diesen Require waere
+   root.inhalt in diesem Testprozess undefined (Muster wie in
+   dossierspeichern.test.js/quelleerfassen.test.js). */
+require('../inhalt.js');
 
 function dossierMit(offen) {
   return { dossier: 1, kurs: 'DBS-001', stand: null, scope: {}, content_modus: 'quellengestuetzt',
@@ -200,6 +205,54 @@ test('_dossierVersuch stempelt identitaet aus state.data.kurse in JEDES Schreibe
   assert.deepStrictEqual(state.data.dossier['DBS-001'].identitaet,
     { titel: 'Derivate Basis', kompetenzfeld: 'Vermögen & Vorsorge' });
 });
+
+/* ---------- Z4: scope_quelle wird bei JEDEM Schreiben zentral gestempelt ----------
+   Zusatzauftrag 2026-07-30 Punkt 6, Entscheid Markus: "Jede hinterlegte Quelle ist
+   Scope." Dasselbe Muster wie identitaetSetzen direkt darueber: EINE Stelle
+   (_dossierVersuch), durch die jedes Dossier-Schreiben laeuft, ueberschreibt
+   d.scope.scope_quelle mit inhalt.briefingFeld('scope_quelle').abgeleitet(d) —
+   unabhaengig davon, was der Mutator selbst tat. Ein Handwert (z. B. aus einem
+   Alt-Dossier oder dem Einmal-Import von {K}_briefing-felder.md) wird dabei
+   ueberschrieben: genau die Fehlerklasse, die an VL-002 live beobachtet wurde
+   (ein getippter Bereich "Q-001 bis Q-014" veraltete still, als Q-015 dazukam). */
+test('_dossierVersuch stempelt scope_quelle aus dem Quellenbestand in JEDES Schreiben (Z4)', async () => {
+  state.data.dossier = {
+    'DBS-001': Object.assign(dossierMit([]), {
+      scope: { scope_quelle: 'Q-001 bis Q-014' },   /* Handwert, wie an VL-002 gefunden */
+      quellen: [{ id: 'Q-001' }, { id: 'Q-002' }, { id: 'Q-015' }]
+    })
+  };
+  state.data.dossierETag = {};
+  const schreibversuche = [];
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    schreibversuche.push(text);
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.dossierSchreiben('DBS-001', function (d) { return d; });
+
+  assert.strictEqual(schreibversuche.length, 1);
+  const geschrieben = JSON.parse(schreibversuche[0]);
+  assert.strictEqual(geschrieben.scope.scope_quelle, 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.',
+    'der Handwert haette durch den abgeleiteten Wert ersetzt werden muessen');
+  assert.strictEqual(state.data.dossier['DBS-001'].scope.scope_quelle,
+    'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.');
+});
+
+/* Mutationsprobe (tatsaechlich durchgefuehrt): den scope_quelle-Stempel-Block
+   in _dossierVersuch auskommentiert (die drei Zeilen ab
+   "if (scopeQuelleFeld && scopeQuelleFeld.abgeleitet)") —
+   `node --test test/dossierschreiben.test.js` fiel bei GENAU diesem einen Test
+   rot:
+     ✖ _dossierVersuch stempelt scope_quelle aus dem Quellenbestand in JEDES Schreiben (Z4)
+       AssertionError [ERR_ASSERTION]: der Handwert haette durch den abgeleiteten Wert ersetzt werden muessen
+       + actual - expected
+       + 'Q-001 bis Q-014'
+       - 'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.'
+       ℹ tests 11
+       ℹ pass 10
+       ℹ fail 1
+   Danach wiederhergestellt, wieder 11/11 in dieser Datei, 550/550 gesamt gruen. */
 
 /* ---------- Etappe 2, Task 7: Dossier-Erstanlage mit conflictBehavior=fail ----------
    Bisher schrieb der allererste Schreiber (kein eTag im State — Datei nie geladen oder

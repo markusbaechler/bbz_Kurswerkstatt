@@ -391,12 +391,14 @@
       var wert = String(werte[f.id] || '');
       /* Ein Haekchen kennt kein "leer" (Etappe 1e, Task 6, wie briefingFehlend
          in inhalt.js) — nicht angehakt ist eine vollstaendige Antwort, keine
-         fehlende, deshalb hier von der offen-Markierung ausgenommen. */
-      var leer = f.form !== 'haken' && !wert.trim();
+         fehlende, deshalb hier von der offen-Markierung ausgenommen. Ein
+         form:'abgeleitet'-Feld (Z4, scope_quelle) ebenso: es hat kein Eingabe-
+         Feld mehr, das leer sein koennte. */
+      var leer = f.form !== 'haken' && f.form !== 'abgeleitet' && !wert.trim();
       h += '<div class="feld' + (f.pflicht && leer ? ' offen' : '') + '">';
       h += '<label for="bf-' + f.id + '"><b>' + esc(f.label) + '</b>' +
            (f.einheit ? ' <span class="einheit">(' + esc(f.einheit) + ')</span>' : '') +
-           (f.pflicht ? '' : ' <span class="einheit">optional</span>') + '</label>';
+           (f.pflicht || f.form === 'abgeleitet' ? '' : ' <span class="einheit">optional</span>') + '</label>';
       h += '<div class="hilfe">' + esc(f.hilfe) + '</div>';
       if (f.fest) {
         h += '<div class="fest">Gilt fest: ' + esc(f.fest) + '</div>';
@@ -408,6 +410,14 @@
       } else if (f.form === 'haken') {
         h += '<label><input type="checkbox" id="bf-' + f.id + '" data-feld="' + f.id + '"' +
              (wert === 'true' ? ' checked' : '') + '> Ja</label>';
+      } else if (f.form === 'abgeleitet') {
+        /* Kein Eingabefeld (Z4, Entscheid Markus 2026-07-30): der Wert kommt
+           IMMER live aus dem geladenen Dossier (d), nie aus werte — werte kennt
+           dieses Feld gar nicht mehr, ein veralteter Formular- oder
+           Dossier-Stand wuerde sonst genau den VL-002-Fehler wiederholen. Ohne
+           Dossier (d undefined, z. B. waehrend es noch laedt) liefert
+           abgeleitet(undefined) sicher den Leer-Fall. */
+        h += '<div class="fest">' + esc(f.abgeleitet ? f.abgeleitet(d) : '') + '</div>';
       } else {
         h += '<textarea id="bf-' + f.id + '" data-feld="' + f.id + '" rows="' + (f.zeilen || 3) +
              '" placeholder="' + esc(f.beispiel) + '">' + esc(wert) + '</textarea>';

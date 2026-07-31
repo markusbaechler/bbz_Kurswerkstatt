@@ -58,10 +58,52 @@ test('Praesenz zaehlt in Tagen, Selbstlern in Stunden', () => {
   assert.strictEqual(inhalt.briefingFeld('selbstlern').einheit, 'Stunden');
 });
 
-test('die Hilfe zur Scope-Quelle verweist auf die erfassten Fachquellen (Etappe 1d)', () => {
+/* Z4 (Zusatzauftrag 2026-07-30 Punkt 6, Entscheid Markus: "Jede hinterlegte
+   Quelle ist Scope."): scope_quelle ist seither kein Freitext-Formularfeld
+   mehr, sondern form:'abgeleitet' mit einem Hook abgeleitet(d), der den Wert
+   live aus dem Quellenbestand berechnet — ersetzt den frueheren Test
+   "die Hilfe zur Scope-Quelle verweist auf die erfassten Fachquellen
+   (Etappe 1d)", der noch von einem tippbaren Feld ausging. Der Live-Beweis
+   der abgeloesten Fehlerklasse: an VL-002 veraltete ein von Hand getippter
+   Bereich ("Q-001 bis Q-014") still, als Q-015 dazukam. */
+test('scope_quelle ist ein abgeleitetes Feld ohne Formulareingabe (Z4)', () => {
   const f = inhalt.briefingFeld('scope_quelle');
-  assert.match(f.hilfe, /Q-001/, 'kein Verweis auf die Q-IDs der Fachquellen');
+  assert.strictEqual(f.form, 'abgeleitet');
+  assert.strictEqual(f.pflicht, false, 'ein abgeleitetes Feld ist nie ein fehlendes Pflichtfeld');
+  assert.strictEqual(typeof f.abgeleitet, 'function', 'kein abgeleitet()-Hook hinterlegt');
+  assert.match(f.hilfe, /Q-001/, 'kein Hinweis auf die Q-ID-Systematik der Fachquellen');
 });
+
+test('abgeleitet(d): leer, eine, mehrere Quellen sowie quellenfrei (Z4)', () => {
+  const f = inhalt.briefingFeld('scope_quelle');
+  assert.strictEqual(f.abgeleitet(undefined), 'Noch keine Quellen erfasst.', 'ohne Dossier');
+  assert.strictEqual(
+    f.abgeleitet({ content_modus: 'quellengestuetzt', quellen: [] }),
+    'Noch keine Quellen erfasst.'
+  );
+  assert.strictEqual(
+    f.abgeleitet({ content_modus: 'quellengestuetzt', quellen: [{ id: 'Q-001' }] }),
+    'Der erfasste Quellenbestand ist der Scope: Q-001.',
+    'genau eine Quelle nennt keinen Bereich'
+  );
+  assert.strictEqual(
+    f.abgeleitet({ content_modus: 'quellengestuetzt',
+      quellen: [{ id: 'Q-001' }, { id: 'Q-002' }, { id: 'Q-015' }] }),
+    'Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-015.',
+    'mehrere Quellen — erste bis letzte, kein hartcodiertes "bis Q-0nn"'
+  );
+  assert.match(
+    f.abgeleitet({ content_modus: 'quellenfrei', quellen: [{ id: 'Q-001' }] }),
+    /quellenfrei/i,
+    'im Modus quellenfrei zaehlt der Quellenfrei-Satz, nicht die (irrelevante) Quellenliste'
+  );
+});
+
+/* Mutationsprobe (durchgefuehrt): im abgeleitet()-Hook `quellen.length === 1 ? erste : ...`
+   durch `erste + ' bis ' + letzte` ersetzt (immer Bereich, auch bei genau einer Quelle) —
+   `node --test test/briefingfelder.test.js` fiel bei "abgeleitet(d): leer, eine, mehrere
+   Quellen sowie quellenfrei (Z4)" rot (Erwartung "Q-001.", tatsaechlich "Q-001 bis Q-001.").
+   Danach wiederhergestellt. */
 
 test('der Rechtsrahmen steht fest und wird nicht erfragt', () => {
   const f = inhalt.briefingFeld('reg_zusatz');
@@ -123,11 +165,20 @@ test('vollstaendig ausgefuellt meldet nichts mehr', () => {
 test('der Promptkopf traegt jeden ausgefuellten Wert', () => {
   const k = inhalt.briefingPromptKopf(DBS, VOLL);
   /* Haken-Felder ausgenommen: sie werden nie woertlich uebernommen, sondern als
-     "ja"/"nein" gerendert (C-NEU-1) — eigene Tests direkt im Anschluss. */
-  Object.keys(VOLL).filter(id => inhalt.briefingFeld(id).form !== 'haken').forEach(id => {
-    assert.ok(k.indexOf(VOLL[id]) >= 0, 'Wert fehlt im Promptkopf: ' + id);
-  });
+     "ja"/"nein" gerendert (C-NEU-1) — eigene Tests direkt im Anschluss.
+     Ebenso scope_quelle (Z4, form:'abgeleitet'): es wird seither IMMER live aus
+     dem dritten Argument d berechnet, nie aus werte — VOLL.scope_quelle ist nur
+     noch ein Relikt fuer den (toten) briefingFelderText-Roundtrip-Test oben und
+     steht hier gar nicht mehr im Promptkopf, ohne Dossier (kein d) liefert der
+     Hook den Leer-Satz "Noch keine Quellen erfasst.". */
+  Object.keys(VOLL)
+    .filter(id => inhalt.briefingFeld(id).form !== 'haken' && inhalt.briefingFeld(id).form !== 'abgeleitet')
+    .forEach(id => {
+      assert.ok(k.indexOf(VOLL[id]) >= 0, 'Wert fehlt im Promptkopf: ' + id);
+    });
   assert.ok(k.indexOf('FIDLEG') >= 0, 'der feste Rahmen geht nicht mit');
+  assert.match(k, /Quelle des Scopes: Noch keine Quellen erfasst\./,
+    'scope_quelle wird ohne Dossier nicht als abgeleiteter Leer-Satz gezeigt');
 });
 
 /* ---------- C-NEU-1 (Fix-Runde Final): das SAQ-Haekchen im Promptkopf ----------
@@ -288,11 +339,30 @@ test('ein getippter Rechtsstand im Formular gewinnt gegen die Dossier-Basis (Mer
 test('Schritt 1 zeigt das Formular, andere Schritte nicht', () => {
   const eins = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
   assert.ok(/id="briefing-felder"/.test(eins), 'kein Formular in Schritt 1');
-  inhalt.BRIEFING_FELDER.forEach(f => {
+  /* scope_quelle ausgenommen (Z4): es ist seither form:'abgeleitet' und traegt
+     bewusst KEIN data-feld mehr — der eigene Test direkt im Anschluss deckt
+     genau diesen Fall ab. */
+  inhalt.BRIEFING_FELDER.filter(f => f.form !== 'abgeleitet').forEach(f => {
     assert.ok(eins.indexOf('data-feld="' + f.id + '"') >= 0, 'Feld fehlt: ' + f.id);
   });
   const drei = ansichten.einSchritt(INHALT, DBS, 3, null, {});
   assert.ok(!/id="briefing-felder"/.test(drei), 'Formular auch in Schritt 3');
+});
+
+/* Z4 (Zusatzauftrag 2026-07-30 Punkt 6): scope_quelle rendert seither als
+   abgeleiteter Text ohne Eingabefeld — analog zum bestehenden fest-Mechanismus
+   bei reg_zusatz, aber dynamisch statt statisch. */
+test('scope_quelle zeigt den abgeleiteten Text, kein Eingabefeld (Z4)', () => {
+  const ohneQuellen = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
+  assert.ok(ohneQuellen.indexOf('data-feld="scope_quelle"') < 0, 'scope_quelle traegt noch ein Eingabefeld');
+  assert.ok(ohneQuellen.indexOf('Noch keine Quellen erfasst.') >= 0, 'kein abgeleiteter Leer-Text ohne Dossier');
+
+  const mitQuellen = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {}, dossier: {
+    content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001' }, { id: 'Q-002' }]
+  } });
+  assert.ok(mitQuellen.indexOf('Der erfasste Quellenbestand ist der Scope: Q-001 bis Q-002.') >= 0,
+    'der abgeleitete Bereich aus dem Dossier fehlt');
 });
 
 test('gesicherte Werte stehen wieder in den Feldern', () => {
@@ -308,7 +378,9 @@ test('Praesenz und Selbstlern sind Zahlenfelder mit ihrer Einheit', () => {
 
 test('das Formular meldet, wie viel noch offen ist', () => {
   const leer = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: {} });
-  assert.match(leer, /9 offen/, 'neun Pflichtfelder seit Rechtsstand (Etappe 1e Task 6)');
+  /* Z4: acht statt neun Pflichtfelder — scope_quelle ist seither form:'abgeleitet'
+     und zaehlt nie mehr als fehlend (es ist immer ableitbar, s. briefingFehlend). */
+  assert.match(leer, /8 offen/, 'acht Pflichtfelder seit Z4 (scope_quelle nicht mehr Pflicht)');
   const voll = ansichten.einSchritt(INHALT, DBS, 1, null, { briefingFelder: VOLL });
   assert.ok(voll.indexOf('vollst&auml;ndig') >= 0, 'kein Vollstaendig-Vermerk');
 });
@@ -462,7 +534,8 @@ test('die Zaehlung folgt dem, was in den Feldern steht', () => {
   };
 
   controller.briefingFelderZaehlen();
-  assert.match(anzeige.textContent, /^9 offen/, 'leeres Formular zaehlt falsch: ' + anzeige.textContent);
+  /* Z4: acht statt neun Pflichtfelder (scope_quelle zaehlt nicht mehr, s. o.). */
+  assert.match(anzeige.textContent, /^8 offen/, 'leeres Formular zaehlt falsch: ' + anzeige.textContent);
 
   felder.forEach(f => { f.value = VOLL[f.dataset.feld] || ''; });
   controller.briefingFelderZaehlen();
