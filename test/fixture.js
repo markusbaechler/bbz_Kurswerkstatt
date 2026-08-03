@@ -63,10 +63,11 @@
                } },
         /* Schritt 3 und 4 spiegeln den echten Kontrakt einschliesslich qualitaet —
            daraus leitet die Ansicht den Bauauftrag fuer den Weg Claude-Code ab. */
-        /* pruefung (A2, Etappe 3): das Drift-Netz fuer den Chat-Weg — der Chat
-           liefert die .docx direkt (E5), die App prueft sie beim Hochladen
-           gegen inhalt.skriptPruefe(). Haengt wie bei T11 (struktur) am
-           Kontrakt-Feld PLUS der erwarteten Endung, nichts hartkodiert. */
+        /* pruefung (urspruenglich A2, seit B5/Etappe 3b: der Chat liefert die
+           BLOCKDATEI, die App baut die .docx selbst und prueft die
+           Blockdatei beim Hochladen gegen inhalt.blocksPruefe()). Haengt wie
+           bei T11 (struktur) am Kontrakt-Feld PLUS der erwarteten Endung
+           (das GEBAUTE Zielformat bleibt docx), nichts hartkodiert. */
         '3': { ordner: '03_content', lieferobjekt: 'skript-{variante}', varianten: ['claude','chatgpt'],
                ext: 'docx', format: 'word', wege: ['chat','claude-code','hochladen'], gate: null,
                qualitaet: '_zentral/prompt-bibliothek/skript-inhaltskontrakt.txt',

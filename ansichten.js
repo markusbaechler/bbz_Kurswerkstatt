@@ -903,13 +903,19 @@
 
     /* --- Der Weg Hochladen: fuer Lieferobjekte, die nicht als Text entstehen ---
            Excel (Schritt 2) und der Moodle-Export (Schritt 6). Der Name wird
-           angezeigt, nicht getippt — abgetippte Namen waren die Fehlerquelle. */
+           angezeigt, nicht getippt — abgetippte Namen waren die Fehlerquelle.
+           Schritt 3 (B5, Etappe 3b): seit der E5-Revision liefert der Chat
+           die BLOCKDATEI statt der .docx — der Input braucht dafuer
+           `multiple` (Blockdatei PLUS beliebig viele Illustrations-PNGs in
+           EINER Auswahl), nur dort, wo der Kontrakt pruefung:'skript'
+           fuehrt (ablage.pruefung, s. inhalt.ablageVon). */
     if (kurs && I().darfHochladen(inh, schrittId) && !ablageDaten.ordnerFehlt) {
       /* Die Variante steht oben schon fest — hier wird sie nur noch benutzt. */
       var hziel = Array.isArray(ablageDaten.dateien)
         ? I().hochladeZiel(inh, schrittId, kurs.kursId, ablageDaten.dateien, variante)
         : null;
       var endung = I().erwarteteEndung(inh, schrittId);
+      var istBlockUpload = ablage && ablage.pruefung === 'skript';
 
       h += '<h2 class="tun">Datei hochladen' +
            '<span class="tun-sub">die Kurswerkstatt vergibt Ordner und Namen</span></h2>';
@@ -932,7 +938,8 @@
       } else {
 
       h += '<input type="file" id="datei"' +
-          (endung ? ' accept=".' + esc(endung) + '"' : '') + ' />' +
+          (istBlockUpload ? ' multiple accept=".blocks,.txt,.png"'
+                          : (endung ? ' accept=".' + esc(endung) + '"' : '')) + ' />' +
         '<div class="arow">' +
           '<button class="knopf gross" data-action="hochladen" data-schritt="' +
             esc(schrittId) + '">Hochladen</button>' +
@@ -941,10 +948,19 @@
                  : '<span class="dim">Ordner wird gelesen &hellip;</span>') +
         '</div>' +
         '<p class="klemmt" id="hochladefehler" hidden></p>' +
-        '<p class="dim">Wie die Datei auf deinem Rechner heisst, spielt keine Rolle &mdash; ' +
-        'abgelegt wird sie unter dem Namen aus dem Ablage-Kontrakt. ' +
-        (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
-        'Du tippst keinen Pfad und keinen Dateinamen.</p>' +
+        (istBlockUpload
+          ? '<p class="dim">W&auml;hle die Blockdatei (<code>.blocks</code> oder <code>.txt</code>) ' +
+            'und alle referenzierten Illustrationen (<code>.png</code>) zusammen aus &mdash; mehrere ' +
+            'Dateien per Strg/Cmd-Klick. Die Kurswerkstatt baut daraus das Word, pr&uuml;ft es und ' +
+            'legt Word, Blockdatei (als <code>.blocks</code> daneben) und Bilder ' +
+            '(<code>abbildungen/</code>) in einem Vorgang ab. Wie die Dateien auf deinem Rechner ' +
+            'heissen, spielt keine Rolle. ' +
+            (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
+            'Du tippst keinen Pfad und keinen Dateinamen.</p>'
+          : '<p class="dim">Wie die Datei auf deinem Rechner heisst, spielt keine Rolle &mdash; ' +
+            'abgelegt wird sie unter dem Namen aus dem Ablage-Kontrakt. ' +
+            (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
+            'Du tippst keinen Pfad und keinen Dateinamen.</p>') +
       '</div>';
       }
     }

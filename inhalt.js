@@ -12,10 +12,11 @@
 
   /* Eine Quelle fuer die Q-ID-Wortgrenzen-Regel (Konvention 9 / Etappe-3-
      Global-Constraints: "Q-ID-Regex ... je genau eine Stelle"). quellenSpiegel
-     (Z7) und skriptPruefe (A2) muessen exakt dieselbe Regel verwenden — sonst
-     zaehlt "Q-0158" in der einen Pruefung als Treffer fuer Q-015 und in der
-     anderen nicht. \bQ-\d{3}\b: ein Wortgrenzen-Regex, global ueber den ganzen
-     Text, liefert eine Map { 'Q-001': true, ... } der GEFUNDENEN IDs. */
+     (Z7) und blocksPruefe (B5, ersetzt skriptPruefe/A2) muessen exakt
+     dieselbe Regel verwenden — sonst zaehlt "Q-0158" in der einen Pruefung
+     als Treffer fuer Q-015 und in der anderen nicht. \bQ-\d{3}\b: ein
+     Wortgrenzen-Regex, global ueber den ganzen Text, liefert eine Map
+     { 'Q-001': true, ... } der GEFUNDENEN IDs. */
   function qIds(text) {
     var re = /\bQ-\d{3}\b/g;
     var gefunden = {};
@@ -23,6 +24,19 @@
     var m;
     while ((m = re.exec(t))) gefunden[m[0]] = true;
     return gefunden;
+  }
+
+  /* Lazy-Accessor (Muster S() in skript-lesen.js/docx-bauen.js, Z() in
+     xlsx-lesen.js): root.skriptSchema ist gesetzt, sobald skript-schema.js
+     vorher geladen/ge-required wurde. blocksPruefe() braucht nur
+     SCHEMA.budget.hartMin — der Aufruf ist lazy (erst beim Pruefen, nicht
+     beim Laden von inhalt.js), deshalb spielt die Script-Tag-Reihenfolge in
+     index.html (inhalt.js steht dort VOR skript-schema.js) keine Rolle: bis
+     zum ersten echten Aufruf sind alle Script-Tags laengst ausgefuehrt. */
+  function S() {
+    if (root.skriptSchema) return root.skriptSchema;
+    if (typeof module !== 'undefined' && module.exports) return require('./skript-schema.js').skriptSchema;
+    throw new Error('skript-schema.js nicht geladen');
   }
 
   var DATEIEN = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz', 'hf'];
@@ -895,11 +909,20 @@
 
     /* Prompt-Kopf fuer Schritt 3 (Content-Skript), A3 Etappe 3 — dasselbe
        Prinzip wie briefingPromptKopf/lernzielePromptKopf: was die App schon
-       weiss, muss der Chat nicht erfragen. E5 (Entscheid Markus 2026-07-31):
-       der Chat liefert die .docx direkt (wie Schritt 2 die xlsx), die App
-       prueft sie beim Hochladen (skriptPruefe, A2) — dieser Kopf ist der
-       GESETZTE Teil, den skriptPruefe voraussetzt (Kurs-ID, Rechtsstand,
-       Quellen-Q-IDs).
+       weiss, muss der Chat nicht erfragen. Urspruenglich E5 (Entscheid
+       Markus 2026-07-31): der Chat liefert die .docx direkt (wie Schritt 2
+       die xlsx). Seit der E5-Revision (Markus, 2026-08-03, s. B5 in
+       CLAUDE.md) liefert der Chat stattdessen die BLOCKDATEI — die App baut
+       das Word selbst und prueft die Blockdatei beim Hochladen
+       (blocksPruefe, B5, ersetzt skriptPruefe/A2). Dieser Kopf ist der
+       GESETZTE Teil, den blocksPruefe voraussetzt (Kurs-ID/Rechtsstand
+       stehen jetzt in ###SKRIPT statt im Fliesstext, Quellen-Q-IDs
+       weiterhin). Der Schluss-Satz "Liefere in Phase 2 DIREKT die Datei …
+       zum Herunterladen" (extras.zielname, unten) nennt weiterhin den
+       .docx-Namen — das ist die App-seitige Ablage, die der Chat NICHT mehr
+       selbst erzeugt; der Wortlaut dieses Prompt-Kopfs selbst ist nicht Teil
+       von B5 (Werkzeug-/Prompt-Texte sind ein eigener, freigabepflichtiger
+       Schritt, s. CLAUDE.md "Offen").
 
        Rahmen und gemeinsame Saetze NICHT dupliziert (Konvention 9): Kurs/
        Kompetenzfeld-Zeilen wie in briefingPromptKopf/lernzielePromptKopf,
@@ -1171,65 +1194,93 @@
       return { fehlend: fehlend, gesamt: quellen.length };
     },
 
-    /* --- Der Skript-Pruefer (A2, Etappe 3) ---
-       Das Drift-Netz fuer den Chat-Weg von Schritt 3: der Chat liefert die
-       .docx direkt (E5, wie Schritt 2 die xlsx) — die App prueft beim
-       Hochladen, statt dem Fachurteil am Gate die ganze Last zu ueberlassen.
-       Parity zu W2 (der Werkzeug-Abnahme, s. dort): dieselben Grundregeln,
-       aber bewusst WEICHER bei fehlenden Dossier-Q-IDs — eine Teil-Lieferung
-       je Lerneinheit ist hier legitim, hart wird das erst in der
-       Werkzeug-Abnahme W2 vor Schritt 4.
+    /* --- Der Block-Pruefer (B5, Etappe 3b) — ersetzt skriptPruefe (A2) ---
+       E5-Revision (Entscheid Markus 2026-08-03, ersetzt E5 vom 2026-07-31):
+       der Chat liefert fuer Schritt 3 nicht mehr die .docx, sondern die
+       BLOCKDATEI (.blocks/.txt) — die App baut das Word selbst (B3
+       Diagramme, B4 docx-Bauen) und legt es zusammen mit der Blockdatei und
+       den Abbildungen ab (controller.hochladen). Struktur-Drift ist damit
+       KONSTRUKTIV unmoeglich: ein fehlender Baustein fehlt im gebauten Word
+       genauso wie im Block, es gibt keinen zweiten Fliesstext mehr, in dem
+       er sich verstecken koennte. blocksPruefe() prueft deshalb nur noch,
+       was skriptLesen.lies() NICHT schon selbst sicherstellt (Pflicht-
+       bausteine je Kapitel laufen dort ueber pruefeKapitel, s. dort) —
+       Q-ID-Abgleich, Marker-Verbot, Wortbudget.
 
-       skriptPruefe(absaetze, d, kursId) -> { fehler: [], hinweise: [] } | null.
+       Aufrufer-Vertrag (controller.hochladen, s. dort): blocksPruefe() wird
+       NUR aufgerufen, wenn gelesen.fehler bereits leer ist — bei einem
+       nicht-leeren gelesen.fehler bricht der Controller VORHER ab, mit
+       genau dieser Liste. Pflichtbausteine sind hier deshalb kein Thema
+       mehr (dokumentierter Regelwechsel zu A2, das denselben Fliesstext auf
+       Marker/Abschnitts-Ueberschriften abklopfte — der ###-Block-Parser
+       macht das jetzt strukturell).
+
+       blocksPruefe(gelesen, d) -> { fehler: [], hinweise: [] } | null.
        null, wenn d kein (geladenes) Dossier ist — ungeprueft ist nie gruen,
-       der Aufrufer MUSS diesen Fall behandeln (Muster strukturPruefe/T11).
+       der Aufrufer MUSS diesen Fall behandeln (Muster strukturPruefe/T11,
+       skriptPruefe/A2).
 
-       Q-ID-Abgleich per Wortgrenze (\bQ-\d{3}\b, s. qIds() oben) — NIE per
-       Zeilen-Syntax: dieselbe Regel wie quellenSpiegel (Z7), damit ein
-       "Q-0158" in keiner der beiden Pruefungen faelschlich als Treffer fuer
-       "Q-015" zaehlt. */
-    skriptPruefe: function (absaetze, d, kursId) {
+       Q-ID-Abgleich per Wortgrenze (\bQ-\d{3}\b, s. qIds() oben) — ueber die
+       STRUKTURIERTE Leseliste (gelesen.quellen.gelesen), nicht mehr ueber
+       den ganzen Fliesstext wie A2: die Blockdatei fuehrt dafuer eine eigene
+       ###QUELLEN/gelesen:-Zeile, ein Freitext-Scan waere ein Rueckschritt
+       gegenueber der strukturierten Form. Dieselbe Regel wie quellenSpiegel
+       (Z7), damit ein "Q-0158" in keiner der beiden Pruefungen faelschlich
+       als Treffer fuer "Q-015" zaehlt. */
+    blocksPruefe: function (gelesen, d) {
       if (!d || typeof d !== 'object') return null;
-      var liste = Array.isArray(absaetze) ? absaetze : [];
-      var text = liste.map(function (a) { return (a && a.text) || ''; }).join('\n');
       var fehler = [];
       var hinweise = [];
+      var kapitel = (gelesen && Array.isArray(gelesen.kapitel)) ? gelesen.kapitel : [];
+      var gelesenListe = (gelesen && gelesen.quellen && gelesen.quellen.gelesen) || [];
 
-      if (kursId && text.indexOf(kursId) < 0) {
-        fehler.push('Kurs-ID ' + kursId + ' fehlt im Text.');
-      }
-
-      var regulatorik = d.regulatorik || {};
-      if (regulatorik.stand && text.indexOf(regulatorik.stand) < 0) {
-        fehler.push('Rechtsstand ' + regulatorik.stand + ' fehlt im Text — der ' +
-                     'GESETZTE Rechtsstand-Kopf gab ihn vor.');
-      }
-
-      /* E6: kein [ZU PRÜFEN] im Fliesstext — offene Punkte gehoeren gesammelt
-         in den Abschnitt "Ergänzungen" am Skript-Ende, nicht verstreut. */
-      if (/\[ZU PR(Ü|UE)FEN/i.test(text)) {
-        fehler.push('Marker "[ZU PRÜFEN" im Fliesstext gefunden — offene Punkte gehören ' +
-                     'gesammelt in den Abschnitt "Ergänzungen" (E6).');
-      }
-
-      var hatErgaenzungen = liste.some(function (a) {
-        return /^(Ergänzungen|Ergaenzungen)/.test(String((a && a.text) || ''));
+      /* Marker-Verbot (E6, unveraendert aus A2 uebernommen): [ZU PRÜFEN darf
+         in keinem Baustein-Text stehen — offene Punkte gehoeren gesammelt in
+         ###OFFEN, nicht verstreut ueber die Kapitel. */
+      kapitel.forEach(function (k) {
+        var teile = k.teile || {};
+        Object.keys(teile).forEach(function (name) {
+          if (/\[ZU PR(Ü|UE)FEN/i.test(String(teile[name]))) {
+            fehler.push('Kapitel ' + (k.ek || '?') + ': Marker "[ZU PRÜFEN" in ###' + name +
+                         ' gefunden — offene Punkte gehören gesammelt in ###OFFEN.');
+          }
+        });
       });
-      if (!hatErgaenzungen) {
-        fehler.push('Kein Abschnitt "Ergänzungen" am Skript-Ende (E6).');
-      }
 
-      var gefunden = qIds(text);
+      /* Wortbudget je Kapitel (SCHEMA.budget.hartMin, s. skript-schema.js):
+         Summe der Woerter ueber alle Bausteintexte des Kapitels. Das Mass
+         ergaenzt die Substanzmarken (Pflichtbausteine), es ersetzt sie
+         nicht: die Marken pruefen, DASS gerechnet und gezeigt wird, das
+         Budget prueft, dass ueberhaupt genug ausgefuehrt wird. */
+      var hartMin = (S().SCHEMA.budget || {}).hartMin || 500;
+      kapitel.forEach(function (k) {
+        var teile = k.teile || {};
+        var worte = Object.keys(teile).reduce(function (n, name) {
+          var t = String(teile[name] || '').trim();
+          return n + (t ? t.split(/\s+/).length : 0);
+        }, 0);
+        if (worte < hartMin) {
+          fehler.push('Kapitel ' + (k.ek || '?') + ': Wortbudget ' + worte + ' Wörter unter ' +
+                       'dem Minimum von ' + hartMin + '.');
+        }
+      });
+
+      /* Q-ID-Abgleich Leseliste gegen Dossier — Modus aus d.content_modus,
+         wie A2. */
+      var gefunden = {};
+      gelesenListe.forEach(function (z) {
+        var m = String(z).match(/\bQ-\d{3}\b/g) || [];
+        m.forEach(function (id) { gefunden[id] = true; });
+      });
       var gefundenListe = Object.keys(gefunden);
 
       if (d.content_modus === 'quellenfrei') {
-        if (!/quellenfrei/i.test(text)) {
-          fehler.push('Modus quellenfrei: Ausweis "quellenfrei" fehlt im Text.');
-        }
-        if (gefundenListe.length) {
-          fehler.push('Modus quellenfrei, aber Quellen-IDs im Text gefunden: ' +
-                       gefundenListe.join(', ') + ' — im Modus quellenfrei sind keine ' +
-                       'Quellen-IDs zulässig.');
+        /* quellenfrei heisst: die Leseliste ist leer UND kein Q-Verweis
+           taucht darin auf — kein Freitext-Ausweis mehr noetig wie bei A2
+           ("quellenfrei" woertlich im Text), die Struktur sagt es selbst. */
+        if (gelesenListe.length || gefundenListe.length) {
+          fehler.push('Modus quellenfrei, aber eine Leseliste mit Quellen-Angaben ist gesetzt ' +
+                       '— im Modus quellenfrei sind keine Quellen zulässig.');
         }
       } else {
         var dossierIds = (d.quellen || []).map(function (q) { return q && q.id; }).filter(Boolean);
@@ -1239,26 +1290,57 @@
         gefundenListe
           .filter(function (id) { return !dossierSet[id]; })
           .forEach(function (id) {
-            fehler.push('Unbekannte Quellen-ID im Text: ' + id + ' — keine Dossier-Quelle.');
+            fehler.push('Unbekannte Quellen-ID in der Leseliste: ' + id + ' — keine ' +
+                         'Dossier-Quelle.');
           });
 
-        if (!gefundenListe.length) {
-          fehler.push('Leseliste fehlt — keine Quellen-ID im Text (Modus quellengestuetzt ' +
-                       'verlangt Belege).');
-        }
-
         /* Fehlende Dossier-Q-IDs sind ein HINWEIS, kein Fehler: eine
-           Teil-Lieferung je Lerneinheit ist legitim (s. Kommentarkopf). */
+           Teil-Lieferung je Lerneinheit ist legitim (Parity zu A2). */
         dossierIds
           .filter(function (id) { return !gefunden[id]; })
           .forEach(function (id) {
-            hinweise.push('Dossier-Quelle ' + id + ' erscheint nicht im Text — ' +
+            hinweise.push('Dossier-Quelle ' + id + ' erscheint nicht in der Leseliste — ' +
                            'Teil-Lieferung je Lerneinheit ist legitim, vor Schritt 4 ' +
                            'vervollständigen.');
           });
       }
 
       return { fehler: fehler, hinweise: hinweise };
+    },
+
+    /* Welche ###ILLUSTRATION-Referenzen (B6-Vorgriff, tolerant behandelt wie
+       in docxBauen.baue()) im Upload FEHLEN — dieselbe "datei:"-Feldsyntax
+       wie docxBauen.illustrationAbsatz() dort liest (Parity, s. Kommentar
+       dort). Anders als im gebauten Word (wo eine fehlende Illustration
+       einfach nichts einfuegt) ist eine referenzierte, aber nicht
+       mitgelieferte Illustration beim UPLOAD ein Fehler — der Chat hat sie
+       versprochen, aber nicht mitgeschickt.
+
+       illustrationenFehlend(gelesen, hochgeladeneNamen) -> string[] der
+       fehlenden Dateinamen.
+
+       Heute (vor B6) erreicht dieser Check praktisch nie einen Treffer:
+       skript-schema.js kennt ###ILLUSTRATION noch nicht als Baustein —
+       skriptLesen.lies() weist jeden Text mit diesem Block schon vorher als
+       "Unbekannter Block" ab (landet in gelesen.fehler; controller.hochladen
+       bricht DORT bereits ab, vor diesem Check). Die Funktion ist bewusst
+       vorgezogen und einzeln testbar — Muster: der docxBauen-Test, der
+       gelesen.kapitel[].teile.ILLUSTRATION ebenfalls direkt setzt, statt
+       echten Text zu parsen (s. test/docxbauen.test.js). */
+    illustrationenFehlend: function (gelesen, hochgeladeneNamen) {
+      var vorhanden = {};
+      (hochgeladeneNamen || []).forEach(function (n) { vorhanden[n] = true; });
+      var fehlt = [];
+      var kapitel = (gelesen && Array.isArray(gelesen.kapitel)) ? gelesen.kapitel : [];
+      kapitel.forEach(function (k) {
+        var roh = k.teile && k.teile.ILLUSTRATION;
+        if (!roh) return;
+        var m = String(roh).match(/^datei:[ \t]*(.+)$/m);
+        if (!m) return;
+        var name = m[1].trim();
+        if (name && !vorhanden[name]) fehlt.push(name);
+      });
+      return fehlt;
     },
 
     /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 1) ---

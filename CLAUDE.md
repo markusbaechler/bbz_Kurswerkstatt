@@ -194,6 +194,11 @@ Für Lieferobjekte, die **nicht als Text entstehen**: die Excel aus Schritt 2 un
 Moodle-Export aus Schritt 6. Deklariert als `wege: [… , "hochladen"]` im Kontrakt —
 `inhalt.darfHochladen()` liest nur das, nichts ist im Code fest verdrahtet.
 
+**Schritt 3 (Content-Skript) führt den Weg seit A2/B5 ebenfalls, aber mit einer eigenen
+Mehrfach-Auswahl** — Blockdatei plus beliebig viele Illustrationen in EINER Auswahl, die App baut
+daraus das Word selbst und legt Word, Blockdatei und Bilder in einem Vorgang ab. Details, weil
+grundlegend anders als der einfache Einzeldatei-Upload dieses Abschnitts: „Task B5" weiter unten.
+
 **Der Mensch tippt keinen Dateinamen.** `inhalt.hochladeZiel()` liefert ihn: fester Name, wo
 der Kontrakt einen nennt (`{K}_export.mbz`), sonst die nächste Version über `naechsteDatei()`.
 Wie die Datei auf dem Rechner heisst, ist gleichgültig. **Der Grund steht in der Historie:**
@@ -2622,3 +2627,207 @@ Massen ersetzt den alten IHDR-Test, ein neuer IHDR-Fallback-Test, WISSENSCHECK-F
 INTERAKTION-Gegenprobe — vier neue/geänderte Fälle, netto drei mehr als vorher). **686 Tests
 grün** (Baseline 663 + 23). Komplette Suite nach beiden Wiederherstellungen erneut geprüft:
 `node --test` → **686/686 grün**.
+
+### Task B5: Upload-Flow Schritt 3 neu — Blockdatei + Bilder rein, geprüft, gebaut, abgelegt
+
+**E5-Revision (Entscheid Markus, 2026-08-03 — ersetzt E5 vom 2026-07-31): der Chat liefert für
+Schritt 3 nicht mehr die `.docx`, sondern die BLOCKDATEI.** Grund: die per Chat gelieferte `.docx`
+war „nüchtern" (Live-Befund Musterkapitel) — Inhalt vom Modell, Form vom Werkzeug. Seit B5 baut die
+Kurswerkstatt das Word selbst (B3 Diagramme, B4 `docx-bauen.js`) und legt es zusammen mit der
+Blockdatei und den Abbildungen ab. **Die A2-docx-Heuristik (`inhalt.skriptPruefe`, Absatz-Scan
+gegen eine `.docx`) ist damit ERSETZT, nicht ergänzt** — Struktur-Drift ist konstruktiv unmöglich
+geworden: ein fehlender Baustein fehlt im gebauten Word genauso wie in der Blockdatei, es gibt
+keinen zweiten Fliesstext mehr, in dem er sich verstecken könnte (dokumentierter Regelwechsel, wie
+W2/E6 vorher). `test/skriptpruefe.test.js` ist entsprechend umgebaut (nicht nur ergänzt).
+
+**`inhalt.blocksPruefe(gelesen, d) -> { fehler: [], hinweise: [] } | null`** — ersetzt
+`skriptPruefe`. `gelesen` ist das Ergebnis von `skriptLesen.lies()` (B2). `null`, wenn `d` kein
+(geladenes) Dossier ist — ungeprüft ist nie grün (Muster `strukturPruefe`/T11, `skriptPruefe`/A2).
+**Aufrufer-Vertrag:** `blocksPruefe()` wird NUR gerufen, wenn `gelesen.fehler` bereits leer ist —
+`controller.hochladen` bricht bei einem nicht-leeren `gelesen.fehler` VORHER ab, mit genau dieser
+Liste. Pflichtbausteine je Kapitel sind deshalb hier kein Thema mehr — das prüft `skriptLesen.lies`
+selbst (`pruefeKapitel`, B2). Was `blocksPruefe` prüft:
+- **Marker-Verbot (E6, unverändert aus A2):** `[ZU PRÜFEN`/`[ZU PRUEFEN` darf in keinem
+  Baustein-Text eines Kapitels stehen — offene Punkte gehören gesammelt in `###OFFEN`.
+- **Wortbudget je Kapitel:** Summe der Wörter über alle Bausteintexte eines Kapitels muss
+  `SCHEMA.budget.hartMin` (500, `skript-schema.js`) erreichen — unter dem Minimum ist ein Fehler
+  je Kapitel. Ergänzt die Substanzmarken (Pflichtbausteine), ersetzt sie nicht: die Marken prüfen,
+  DASS gerechnet/gezeigt wird, das Budget prüft, dass überhaupt genug ausgeführt wird.
+- **Q-ID-Abgleich, jetzt über die STRUKTURIERTE Leseliste (`gelesen.quellen.gelesen`), nicht mehr
+  über den ganzen Fliesstext wie A2** — die Blockdatei führt dafür eine eigene
+  `###QUELLEN`/`gelesen:`-Zeile; ein Freitext-Scan wäre ein Rückschritt gegenüber der
+  strukturierten Form. Dieselbe Wortgrenzen-Regel `\bQ-\d{3}\b` (`qIds()`, unverändert, jetzt auch
+  von `blocksPruefe` genutzt) wie `quellenSpiegel` (Z7) — ein „Q-0158" zählt in keiner der beiden
+  Prüfungen fälschlich als Treffer für „Q-015". Modus `quellengestützt` (Dossier-Default): eine
+  Q-ID in der Leseliste, die keine Dossier-Quelle ist, → Fehler je ID; Dossier-Q-IDs, die in der
+  Leseliste FEHLEN, → **Hinweis**, kein Fehler (Teil-Lieferung je Lerneinheit ist legitim, Parity zu
+  A2/W2). Modus `quellenfrei`: **kein Freitext-Ausweis mehr nötig** (A2 verlangte das Wort
+  „quellenfrei" wörtlich im Text) — die Struktur sagt es selbst: `quellenfrei` heisst, die Leseliste
+  ist leer UND kein Q-Verweis taucht darin auf; sonst ein Fehler.
+
+**`inhalt.illustrationenFehlend(gelesen, hochgeladeneNamen) -> string[]`** — welche
+`###ILLUSTRATION`-Referenzen (B6-Vorgriff, tolerant wie in `docxBauen.baue()`) im Upload FEHLEN.
+Liest dieselbe `datei:`-Feldsyntax wie `docxBauen.illustrationAbsatz()` (Parity, beide Regexe
+`/^datei:[ \t]*(.+)$/m` — zwei Module, zwei Aufrufer, absichtlich nicht zu einer dritten Datei
+zusammengezogen: `inhalt.js` kennt `docx-bauen.js` nicht, wie es `dossier.js` schon nicht kennt).
+Anders als im gebauten Word (wo eine fehlende Illustration einfach nichts einfügt, s. B4) ist eine
+referenzierte, aber nicht mitgelieferte Illustration beim UPLOAD ein Fehler — der Chat hat sie
+versprochen, aber nicht mitgeschickt. **Heute (vor B6) erreicht dieser Check praktisch nie einen
+Treffer:** `skript-schema.js` kennt `###ILLUSTRATION` noch nicht als Baustein — `skriptLesen.lies()`
+weist jeden Text mit diesem Block schon vorher als „Unbekannter Block" ab (landet in
+`gelesen.fehler`; `controller.hochladen` bricht dort bereits ab, vor diesem Check). Die Funktion ist
+bewusst vorgezogen und einzeln testbar (`test/skriptpruefe.test.js`, Muster: derselbe Vorgriff wie
+im `docxBauen`-Test, `gelesen.kapitel[].teile.ILLUSTRATION` wird direkt gesetzt statt geparst); in
+`test/hochladen.test.js` wird dafür — nur für diesen einen Fall — `skriptLesen.lies` temporär
+umhüllt (echter Text wird echt geparst, danach eine Illustration nachträglich angehängt), damit der
+Fall auch als Controller-Integration belegt ist, obwohl er über den echten Parser (noch) nicht
+erreichbar ist.
+
+**`graph.zentralDateiRoh(pfad) -> Promise<ArrayBuffer|null>`** (app.js) — ein neuer, additiver
+Graph-Helfer nach dem Muster `zentralLaden`, aber für Binärdateien statt JSON: `r.arrayBuffer()`
+statt `r.json()`, `null` bei jedem Fehler (nicht gefunden, Netz) statt eines Wurfs — der Aufrufer
+entscheidet, ob das ein Abbruch ist. **`graph.vorlageLaden()`** ist der eine Aufrufer: lädt
+`_zentral/vorlagen/reference.docx` und cacht das Ergebnis (auch `null` bei Fehlschlag) in
+`state.data.vorlage` — ein Abruf je Sitzung, ein zweiter Schritt-3-Upload in derselben Sitzung lädt
+die Vorlage nicht erneut.
+
+**`ansichten.js` — der Datei-Input trägt `multiple`, nur wo `ablage.pruefung === 'skript'`
+(`istBlockUpload`).** Erwartete Upload-Dateien: genau EINE Blockdatei (`.blocks`/`.txt`) plus
+beliebig viele Illustrationen (`.png`) in EINER Auswahl (`accept=".blocks,.txt,.png"`). Für jeden
+anderen Hochladen-Schritt (Excel Schritt 2, Moodle-Export Schritt 6) bleibt der Input unverändert
+ohne `multiple` — dort wird weiterhin nur eine Datei erwartet, ein zweiter, unbenutzter
+Auswahl-Mechanismus wäre dort nur Verwirrung. Der Hinweistext unter dem Input ist für den
+Block-Upload eigens formuliert (nennt Mehrfachauswahl, das Ergebnis der Ablage: Word + `.blocks` +
+`abbildungen/`); der bestehende Text für die übrigen Schritte bleibt wörtlich unverändert.
+
+**`controller.hochladen` (app.js) — Prüfkette VOR jedem Netzzugriff, dann Bau-vor-Ablage in EINEM
+Vorgang.** `feld.files` wird jetzt immer als Liste gelesen (`dateiListe`); jeder andere Weg (T11,
+Schritt 6) nutzt weiterhin nur `dateiListe[0]`, unverändert. Das Blockdatei-Gate hängt wie A2 an
+ZWEI Bedingungen (F5-Muster) — `ablage.pruefung === 'skript'` PLUS `erwarteteEndung === 'docx'` (das
+GEBAUTE Zielformat bleibt docx, nur die Upload-Eingabe hat sich geändert). Ist es scharf:
+1. **Dateiklassifikation, kein Netzzugriff:** `.blocks`/`.txt` → Blockdatei-Kandidat, `.png` →
+   Illustration, alles andere → sofortiger Abbruch („unbekannte Dateiendung(en)"). Nicht genau EIN
+   Blockdatei-Kandidat → Abbruch mit der Anzahl.
+2. **Dossier-Guard** (Muster A2 unverändert): `state.data.dossier[kursId]` muss ein Objekt sein
+   (`undefined`/`null` reichen nicht) — sonst Abbruch, kein Datei-Lesen.
+3. **`blockDatei.text()` → `skriptLesen.lies(text)`.** Ein Wurf (kein `###SKRIPT`) landet im
+   `.catch` („Blockdatei nicht lesbar"). `gelesen.fehler.length` → Abbruch MIT der Liste, VOR
+   `blocksPruefe()`.
+4. **Widerspruch UI-Variantenwahl vs. Blockdatei-`variante=`** → Abbruch, kein stilles Bevorzugen
+   (Muster „Varianten" oben in dieser Datei: dieselbe Zeile stand vorher zweimal im Code, einmal
+   fehlend — hier von Beginn an EIN Vergleich).
+5. **`inhalt.blocksPruefe(gelesen, d)`** — `null` (Dossier-Guard hätte das eigentlich schon
+   verhindert, bleibt als zweite Sicherung) oder `fehler.length` → Abbruch mit der Liste.
+6. **`inhalt.illustrationenFehlend(gelesen, pngNamen)`** — fehlt eine referenzierte Illustration im
+   Upload → Abbruch mit den fehlenden Dateinamen.
+7. Erst danach `weiterMitSkriptBau(gelesen, hinweise, blockDatei, pngKandidaten)`.
+
+Jeder Abbruch in 1–6 läuft über `klemmtSichtbar` — **beide** Meldekanäle: `#hochladefehler`
+(Klartext) UND `state.fehlerHinweis` (übersteht ein Zwischen-Render, Muster `quelleErfassen`-I10).
+
+**`weiterMitSkriptBau` — „Bau + Ablage in EINEM Vorgang", aber strukturell in zwei Phasen: erst
+GANZ bauen (alles im Speicher), DANN ablegen.** Das ist keine Konvention, die eingehalten werden
+muss, sondern folgt aus der Promise-Kette selbst: die Netzzugriffe zur Ablage stehen in einem
+`.then()`, das erst nach `docxBauen.baue()` (also nach einem erfolgreichen Bau) überhaupt läuft —
+ein Baufehler (Diagramm wirft, Vorlage fehlt/ist ungültig, `docxBauen.baue` lehnt ab) erreicht den
+Ablage-Teil dadurch NIE (Mutationsprobe unten belegt das: der Bau-vor-Ablage-Schutz ist keine
+Behauptung, sondern geprüft).
+- **Diagramme rendern (B3):** je `ABBILDUNG` eines Kapitels, ausser `vergleichstabelle` (die wird
+  eine Word-Tabelle, kein Bild, s. B3/B4) — in GENAU der Reihenfolge (Kapitel, dann Abbildung je
+  Kapitel), in der `docxBauen.baue()` selbst die Bild-Dateinamen vergibt (`kapitelAbsaetze()` in
+  `docx-bauen.js`), sonst passt kein Name zusammen. `docxBauen.bildDateiname(kurs, variante, nr)`
+  liefert denselben Namen wie der Bauer beim Nachschlagen erwartet. Die LOGISCHEN Bildmasse kommen
+  aus dem SVG-String selbst (`width="…" height="…"` am `<svg>`-Wurzelelement, per Regex gelesen —
+  dieselbe Massquelle wie `skript-bauen.cjs`, s. Task-Brief) und werden zusammen mit den
+  gerenderten Bytes in den `bilder`-Kontrakt gelegt (`{ bytes, breite, hoehe }`, B4 Fix-Runde 1).
+- **Hochgeladene Illustrations-PNGs** kommen mit ihrem eigenen (bereits vom Menschen gewählten)
+  Dateinamen in denselben `bilder`-Kontrakt, ohne logische Masse — `docxBauen`s IHDR-Fallback greift
+  dafür (B4).
+- **`graph.vorlageLaden()`** — fehlt die Vorlage (`null`), Abbruch VOR `docxBauen.baue()`, kein
+  Netzzugriff zur Ablage.
+- **`docxBauen.baue(vorlage, gelesen, bilder)`** — lehnt sie ab (kaputte Vorlage, fehlendes Bild für
+  eine nicht-tabellarische Abbildung), bricht die Kette hier ab; nichts davon erreicht die Ablage.
+- **Ablage, sequenziell, NACH einem frisch gelesenen Ordner** (Muster `weiterMitUpload`): docx
+  zuerst (`inhalt.hochladeZiel`, unverändert — zählt die Version, `Erst zurückstufen, dann
+  hochladen` bleibt für Schritte mit `letzteGiltAlsFinal` gültig, auch wenn Schritt 3 selbst keins
+  führt), dann die Blockdatei UNTER DEMSELBEN Versionsnamen daneben (`ziel.datei` mit `.blocks`
+  statt der Endung — „die Quelle wandert mit", Schritt 4 und jeder Neubau brauchen sie), dann jedes
+  gerenderte/hochgeladene Bild nach `{ordner}/abbildungen/` (Graph legt einen fehlenden Unterordner
+  beim Hochladen implizit an, s. „Live-Probe VL-001" oben — dieselbe Beobachtung wie beim
+  `quellen/`-Unterordner). `geschafft[]` sammelt jeden erfolgreich abgelegten Pfad; schlägt ein
+  SPÄTERER Ablage-Schritt fehl, nennt die Abbruchmeldung, was schon liegt, und dass ein erneuter
+  Versuch sicher ist (Graph überschreibt deterministisch, Muster `quelleErfassen`-I10) — bleibt
+  `geschafft` leer (Baufehler oder ein Fehler VOR dem ersten `graph.hochladen`), bleibt die Meldung
+  schlicht.
+- **Erfolg:** `standNachAblage` wie bisher, dann `state.hinweis` nennt den docx-Namen, den
+  `.blocks`-Namen und die Bildzahl, plus etwaige `hinweise` aus `blocksPruefe` (fehlende
+  Dossier-Q-IDs) am Ende angehängt.
+
+**`variante`/`kursSkript` fürs Bauen kommen aus der GELESENEN Blockdatei** (`gelesen.skript.kurs`/
+`.variante`), nicht aus der UI-Auswahl — nach dem Widerspruchs-Check in Schritt 4 der Prüfkette
+(oben) sind beide ohnehin identisch, aber die Blockdatei ist die unmittelbarere Quelle für das, was
+tatsächlich gebaut wird.
+
+**Fixture/Kontrakt:** `test/fixture.js` Schritt `'3'` führt `pruefung: 'skript'` unverändert seit
+A2 — B5 ändert nur den Kommentar (das Gate meint jetzt die Blockdatei, nicht mehr die `.docx`),
+keine Struktur. `ext: 'docx'` bleibt, weil das GEBAUTE Zielformat unverändert docx ist.
+
+**Tests:** `test/skriptpruefe.test.js` komplett umgebaut (kein `absaetze`/`docxLesen` mehr, echte
+`skriptLesen.lies()`-Kette als Fixture-Quelle) — 14 Fälle für `blocksPruefe` (sauber mit Hinweis,
+unbekannte Q-ID, Marker, Wortbudget unter/über dem Minimum, `quellenfrei` sauber und mit
+Q-Verweis-Fehler, `null` ohne Dossier, Q-0158-Wortgrenze, leeres `gelesen`-Objekt ohne Crash) plus 4
+für `illustrationenFehlend` (fehlt/liegt vor/kein ILLUSTRATION-Teil/ILLUSTRATION ohne `datei:`-Zeile).
+`test/hochladen.test.js` — 14 neue B5-Integrationstests (Fake-`graph`, Fake-DOM, `diagrammZeichnen.
+png` gemockt — Browser-only/Canvas —, `skriptLesen.lies`/`docxBauen.baue` ECHT gegen einen im Test
+gebauten Block-Text und eine echte Minimal-Vorlage, Muster `test/docxbauen.test.js`): (a) sauber →
+docx+blocks+ein Diagramm-Bild in genau dieser Reihenfolge abgelegt, Erfolgsmeldung nennt beide
+Dateinamen, die Bildzahl und die fehlende Dossier-Quelle als Hinweis; (b) `skriptLesen.lies()` wirft
+→ Abbruch, kein Netzzugriff, auch die Vorlage wird nie geladen; (c) `gelesen.fehler` nicht leer
+(fehlender Pflichtbaustein) → Abbruch MIT Liste, vor jedem Netzzugriff; (d) UI-Variante ≠
+Block-Variante → Abbruch; (e) unbekannte Quellen-ID in der Leseliste → Abbruch; (f) Wortbudget unter
+500 → Abbruch; (g)/(g′) referenzierte Illustration fehlt bzw. liegt vor (mit temporär umhülltem
+`skriptLesen.lies`, s. o.); (h) mehr als eine Blockdatei → Abbruch mit der Anzahl; (i) unbekannte
+Dateiendung im Upload → Abbruch; (j) Dossier nicht geladen → Abbruch vor jedem Netzzugriff; (k)
+Blockdatei selbst nicht lesbar → Abbruch, klare Meldung; (l) kein `pruefung`-Feld am Schritt → kein
+Gate, läuft wie ein gewöhnlicher Einzeldatei-Upload; (m) Baufehler (kaputte Vorlage — kein
+`word/document.xml`) → NICHTS hochgeladen, kein `graph.ordnerInhalt`; (n) keine Vorlage gefunden →
+NICHTS hochgeladen. Zwei zusätzliche Ansichtstests belegen `multiple` + das `accept`-Attribut nur
+an Schritt 3, nicht an Schritt 2. **701 Tests grün** (Baseline 686 + 15 netto: `skriptpruefe.test.js`
+14 statt vormals 11 (+3, 14 neue `blocksPruefe`/`illustrationenFehlend`-Fälle ersetzen 11 alte
+A2-Fälle als Regelwechsel), `hochladen.test.js` 40 statt vormals 28 (+12: die 5 alten A2-Tests
+((a)–(e)) fallen weg, 15 neue B5-Tests ((a)–(n), s. o.) plus 2 neue Ansichtstests für `multiple`
+kommen dazu — 28 − 5 + 17 = 40).
+
+**Mutationsprobe (Bau-vor-Ablage-Kette getrennt, tatsächlich ausgeführt):** in
+`controller.hochladen`/`weiterMitSkriptBau` den `docxBauen.baue(...)`-Aufruf um
+`.catch(function () { return new Uint8Array(0); })` ergänzt — ein Baufehler (hier: eine Vorlage ohne
+`word/document.xml`) wird dadurch verschluckt, die Kette läuft mit einem leeren Platzhalter-Word
+weiter zur Ablage. `node --test test/hochladen.test.js`:
+```
+ℹ tests 40
+ℹ pass 39
+ℹ fail 1
+
+✖ B5 (m) Baufehler (kaputte Vorlage): nichts wird hochgeladen
+  AssertionError [ERR_ASSERTION]: trotz Baufehler wurde etwas hochgeladen
+  3 !== 0
+```
+Genau der eine Mutationsprobe-Test fiel rot (3 Uploads statt 0 — docx, blocks und das Diagramm-Bild
+gingen trotz des kaputten Baus an `graph.hochladen`), alle anderen 39 blieben grün; danach
+wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **701/701 grün**.
+
+**Offen / bewusst nicht Teil von B5:** `inhalt.skriptPromptKopf` (A3, Schritt 3) trägt weiterhin den
+Schluss-Satz „Liefere in Phase 2 DIREKT die Datei `{zielname}` zum Herunterladen" mit dem
+`.docx`-Namen — das ist die App-seitige Ablage, die der Chat seit der E5-Revision NICHT mehr selbst
+erzeugt (er liefert die Blockdatei). Der Wortlaut dieses Prompt-Kopfs ist nicht Teil dieser Task
+(Werkzeug-/Prompt-Texte sind ein eigener, freigabepflichtiger Schritt, wie beim
+Etappe-2-Task-8-Nachzug) — ebenso die eigentliche SharePoint-Anleitung/der Masterprompt, der den
+Chat anweist, die Blockdatei statt der `.docx` zu liefern (B6, „Werkzeuge", parallel laut
+Etappe-3b-Constraints). Das reale `ablage-kontrakt.json` in SharePoint führt `pruefung` für
+Schritt 3 ohnehin noch nicht (Weg B, unverändert seit A2) — solange es fehlt, greift das Gate
+nirgends live. **`docx-lesen.js` (A1) hat mit B5 wieder keinen Aufrufer in `app.js`** — A2 war der
+einzige Konsument (`docxLesen.absaetze` im jetzt entfernten A2-Gate), B5 löst ihn ab und ruft
+`docxLesen` nirgends mehr. Das Modul und `test/docxlesen.test.js` bleiben unverändert stehen (A1
+dokumentierte diesen Zustand schon vor A2 ausdrücklich als möglich) — kein Aufräumen in dieser
+Task, da `docx-lesen.js` als geteilte ZIP/XML-Grundlage (`zip-lesen.js`) weiterhin allgemeine
+Infrastruktur ist, kein A2-Restcode.

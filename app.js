@@ -37,7 +37,12 @@
   /* ---------- state ---------- */
   var state = {
     auth:      { account: null },
-    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {}, dossier: {}, dossierETag: {} },
+    /* vorlage (B5, Etappe 3b): das ArrayBuffer der docx-Vorlage
+       (_zentral/vorlagen/reference.docx) — undefined = noch nie geladen,
+       null = geladen, aber nicht gefunden/fehlgeschlagen, sonst das
+       ArrayBuffer. Ein Abruf je Sitzung (graph.vorlageLaden), s. dort. */
+    data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {}, dossier: {}, dossierETag: {},
+                 vorlage: undefined },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
                  variante: null, weg: null },
     laden:     false,
@@ -262,6 +267,35 @@
         teile.forEach(function (x) { if (x.daten) o[x.name] = x.daten; });
         state.data.inhalt = o;
         return o;
+      });
+    },
+
+    /* Eine Roh-Datei (kein JSON) aus Kursproduktion/_zentral lesen — Muster
+       zentralLaden, aber fuer Binaerdateien wie die docx-Vorlage (B5,
+       Etappe 3b): ArrayBuffer statt res.json(). null bei jedem Fehler (nicht
+       gefunden, Netz) — kein Wurf, der Aufrufer (graph.vorlageLaden)
+       entscheidet, ob das ein Abbruch ist. */
+    zentralDateiRoh: function (pfad) {
+      return graph.driveId().then(function (did) {
+        return auth.token().then(function (t) {
+          var p = CONFIG.sharePoint.zentral + '/' + pfad;
+          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                       '/root:/' + encodeURI(p) + ':/content',
+                       { headers: { Authorization: 'Bearer ' + t } })
+            .then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+            .catch(function () { return null; });
+        });
+      });
+    },
+
+    /* Die docx-Vorlage fuer den Skript-Bau (B5) — ein Abruf je Sitzung.
+       state.data.vorlage cacht das Ergebnis (auch null bei Fehlschlag): ein
+       zweiter Schritt-3-Upload in derselben Sitzung laedt sie nicht erneut. */
+    vorlageLaden: function () {
+      if (state.data.vorlage !== undefined) return Promise.resolve(state.data.vorlage);
+      return graph.zentralDateiRoh('vorlagen/reference.docx').then(function (buf) {
+        state.data.vorlage = buf;
+        return buf;
       });
     },
 
@@ -2058,7 +2092,14 @@
       var k = nav.kurs(), inh = state.data.inhalt;
       var feld = document.getElementById('datei');
       if (!k || !feld) return;
-      var datei = feld.files && feld.files[0];
+      /* Mehrfach-Auswahl (B5, Etappe 3b): der Blockdatei-Gate von Schritt 3
+         braucht genau eine Blockdatei PLUS beliebig viele Illustrations-PNGs
+         in EINER Auswahl — der Input traegt seither `multiple` (ansichten.js,
+         nur wo der Kontrakt pruefung:'skript' fuehrt). Jeder andere Weg
+         (T11/xlsx, Schritt 6/mbz) liest weiterhin nur die erste Datei —
+         unveraendert, weil dort nie mehr als eine gewaehlt wird. */
+      var dateiListe = feld.files ? Array.prototype.slice.call(feld.files) : [];
+      var datei = dateiListe[0] || null;
       var meld = document.getElementById('hochladefehler');
 
       function klemmt(text) {
@@ -2075,7 +2116,7 @@
         klemmt(text);
         controller.render();
       }
-      if (!datei) { feld.click(); return; }
+      if (!dateiListe.length) { feld.click(); return; }
 
       var ab = root.inhalt.ablageVon(inh, n, k.kursId);
       var schl = k.kursId + '/' + ab.ordner;
@@ -2143,6 +2184,150 @@
           .catch(function (e) { klemmt('Nicht hochgeladen. ' + (e.message || e)); });
       }
 
+      /* Der Blockdatei-Bau (B5, Etappe 3b) — "Bau + Ablage in EINEM Vorgang"
+         (Muster "Quellen-Erfassung = ein Vorgang", Etappe 1): erst wird
+         GANZ gebaut (Diagramme rendern, Vorlage laden, docxBauen.baue), ALLES
+         im Speicher — dann erst beginnt irgendein Netzzugriff zur Ablage.
+         Ein Baufehler (Diagramm wirft, Vorlage fehlt, docxBauen.baue lehnt
+         ab) erreicht den Ablage-Teil dadurch strukturell nie: es gibt keinen
+         Teil-Upload bei einem Baufehler (Mutationsprobe im Task-Report).
+         Reihenfolge der Ablage: docx zuerst (das Hauptlieferobjekt, zaehlt
+         die Version), dann die Blockdatei UNTER DEMSELBEN Versionsnamen
+         daneben (die Quelle wandert mit — Schritt 4 und jeder Neubau
+         brauchen sie), dann jedes Bild nach `abbildungen/` im Schrittordner.
+         `geschafft` sammelt, was bereits abgelegt wurde — schlaegt ein
+         SPAETERER Schritt der Ablage fehl, nennt die Meldung, was schon
+         liegt, und dass ein erneuter Versuch sicher ist (Graph ueberschreibt
+         deterministisch, Muster quelleErfassen-I10). */
+      function weiterMitSkriptBau(gelesen, hinweise, blockDatei, pngKandidaten) {
+        if (meld) meld.hidden = true;
+        knopf.disabled = true; knopf.textContent = 'wird gebaut …';
+
+        var variante = (gelesen.skript && gelesen.skript.variante) || gewaehlt;
+        var kursSkript = (gelesen.skript && gelesen.skript.kurs) || k.kursId;
+        var bilder = {};
+        var geschafft = [];
+
+        /* Diagramme rendern (B3), je ABBILDUNG ausser vergleichstabelle —
+           dieselbe Reihenfolge (Kapitel, dann Abbildung je Kapitel), in der
+           docxBauen.baue() die Bild-Dateinamen selbst vergibt (kapitelAbsaetze
+           in docx-bauen.js), sonst passt kein Name zusammen. Die logischen
+           Masse kommen aus dem SVG-String selbst (width=/height= am
+           <svg>-Wurzelelement) — dieselbe Massquelle wie skript-bauen.cjs,
+           s. Task-Brief. */
+        var renderJobs = [];
+        var bildNr = 0;
+        (gelesen.kapitel || []).forEach(function (kap) {
+          (kap.abbildungen || []).forEach(function (a) {
+            var typInfo = root.skriptSchema.diagrammTyp(a.typ);
+            if (typInfo && typInfo.alsTabelle) return; /* Word-Tabelle, kein Bild */
+            bildNr += 1;
+            renderJobs.push({ a: a, dateiname: root.docxBauen.bildDateiname(kursSkript, variante, bildNr) });
+          });
+        });
+
+        var bauKette = renderJobs.reduce(function (kette, job) {
+          return kette.then(function () {
+            var svgText = root.diagrammZeichnen.svg(job.a);
+            var w = /width="([\d.]+)"/.exec(svgText);
+            var h = /height="([\d.]+)"/.exec(svgText);
+            var breite = w ? parseFloat(w[1]) : 900;
+            var hoehe = h ? parseFloat(h[1]) : 300;
+            return root.diagrammZeichnen.png(svgText, breite, hoehe).then(function (bytes) {
+              bilder[job.dateiname] = { bytes: bytes, breite: breite, hoehe: hoehe };
+            });
+          });
+        }, Promise.resolve());
+
+        bauKette
+          .then(function () {
+            /* Hochgeladene Illustrations-PNGs kommen mit ihrem eigenen
+               Dateinamen in denselben bilder-Kontrakt — ohne logische Masse
+               (docxBauen faellt dafuer auf das PNG-IHDR zurueck, s. dort). */
+            return Promise.all(pngKandidaten.map(function (p) {
+              return p.arrayBuffer().then(function (buf) {
+                bilder[p.name] = { bytes: new Uint8Array(buf) };
+              });
+            }));
+          })
+          .then(function () { return graph.vorlageLaden(); })
+          .then(function (vorlage) {
+            if (!vorlage) {
+              throw new Error('Vorlage _zentral/vorlagen/reference.docx nicht gefunden — nichts ' +
+                'gebaut, nichts hochgeladen.');
+            }
+            return root.docxBauen.baue(vorlage, gelesen, bilder);
+          })
+          .then(function (docxBytes) {
+            /* Ab hier ist gebaut — jetzt erst Netzzugriffe zum Ablegen. */
+            knopf.textContent = 'wird hochgeladen …';
+            delete state.data.dateien[schl];
+            return graph.ordnerInhalt(k.kursId, ab.ordner).then(function (dateien) {
+              var zu = root.inhalt.abgeschlossen(inh, n, k.kursId, dateien, gewaehlt);
+              if (zu) {
+                throw new Error('Abgeschlossen: ' + zu + ' ist freigegeben. Setze die Freigabe ' +
+                  'von Hand zurück, wenn du wirklich nachbessern musst.');
+              }
+              var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
+              if (!ziel) {
+                throw new Error(vari
+                  ? 'Wähle zuerst die Variante — der Dateiname hängt davon ab.'
+                  : 'Für diesen Schritt ist kein Hochladen vorgesehen.');
+              }
+              var blocksName = ziel.datei.replace(/\.[a-z0-9]+$/i, '.blocks');
+              var bildNamen = Object.keys(bilder);
+
+              /* Erst zurueckstufen, dann hochladen — sonst gaebe es kurz zwei _final. */
+              var vorher = ziel.zurueckstufen
+                ? graph.umbenennen(k.kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
+                : Promise.resolve(null);
+
+              return vorher
+                .then(function () {
+                  return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, new Blob([docxBytes]));
+                })
+                .then(function () { geschafft.push(ziel.ordner + '/' + ziel.datei); })
+                .then(function () {
+                  return graph.hochladen(k.kursId, ziel.ordner, blocksName, blockDatei);
+                })
+                .then(function () { geschafft.push(ziel.ordner + '/' + blocksName); })
+                .then(function () {
+                  return bildNamen.reduce(function (kette, name) {
+                    return kette
+                      .then(function () {
+                        return graph.hochladen(k.kursId, ab.ordner + '/abbildungen', name,
+                          new Blob([bilder[name].bytes]));
+                      })
+                      .then(function () { geschafft.push(ab.ordner + '/abbildungen/' + name); });
+                  }, Promise.resolve());
+                })
+                .then(function () { return { ziel: ziel, blocksName: blocksName, bildzahl: bildNamen.length }; });
+            });
+          })
+          .then(function (ergebnis) {
+            var neu = graph.standNachAblage(k, +n);
+            var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
+            return weiter.then(function () { return ergebnis; });
+          })
+          .then(function (ergebnis) {
+            return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
+              var bz = ergebnis.bildzahl;
+              state.hinweis = 'Hochgeladen als ' + ergebnis.ziel.datei + ' (+ ' + ergebnis.blocksName +
+                ', ' + bz + ' Bild' + (bz === 1 ? '' : 'er') + ')' +
+                (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
+              controller.render();
+            });
+          })
+          .catch(function (e) {
+            var text = 'Nicht hochgeladen. ' + (e.message || e);
+            if (geschafft.length) {
+              text += ' Bereits abgelegt: ' + geschafft.join(', ') + ' — erneutes Hochladen ist ' +
+                'sicher (Graph überschreibt deterministisch).';
+            }
+            klemmt(text);
+          });
+      }
+
       if (geprueftPflicht) {
         if (!istXlsx) {
           klemmtSichtbar('Nicht hochgeladen: für diesen Schritt wird eine .xlsx-Datei mit ' +
@@ -2171,26 +2356,46 @@
         return;
       }
 
-      /* Skript-Strukturpruefung (A2, Etappe 3) — dasselbe Muster wie das
-         xlsx-Gate oben, fuer den Chat-Weg von Schritt 3: der Chat liefert die
-         .docx direkt (E5), die App prueft beim Hochladen. Haengt am
-         Kontrakt-Feld ablage.pruefung === 'skript' PLUS der Kontrakt-Endung
-         'docx' (F5-Muster: struktur/pruefung allein reicht nicht) — nichts
-         hartkodiert. Laeuft NACH dem xlsx-Gate, weil beide Gates unabhaengig
-         sind (ein Schritt fuehrt in der Praxis nie beide Felder zugleich). */
+      /* Blockdatei-Gate (B5, Etappe 3b) — ersetzt das A2-docx-Gate: seit der
+         E5-Revision (Entscheid Markus 2026-08-03) liefert der Chat fuer
+         Schritt 3 die BLOCKDATEI (.blocks/.txt) statt der .docx — die App
+         baut das Word selbst (weiterMitSkriptBau, s. o.) und legt Word,
+         Blockdatei und Abbildungen in einem Vorgang ab. Haengt wie A2 an
+         ZWEI Bedingungen (F5-Muster) — Kontrakt-Feld ablage.pruefung ===
+         'skript' PLUS der Kontrakt-Endung 'docx' (das GEBAUTE Zielformat
+         bleibt docx, nur die UPLOAD-Eingabe hat sich geaendert) —, nicht am
+         lokalen Dateinamen allein. Laeuft NACH dem xlsx-Gate, weil beide
+         Gates unabhaengig sind (ein Schritt fuehrt in der Praxis nie beide
+         Felder zugleich). */
       var geprueftPflichtSkript = !!(ab && ab.pruefung === 'skript') &&
         root.inhalt.erwarteteEndung(inh, n) === 'docx';
-      var istDocx = /\.docx$/i.test((datei.name || ''));
 
       if (geprueftPflichtSkript) {
-        if (!istDocx) {
-          klemmtSichtbar('Nicht hochgeladen: für diesen Schritt wird eine .docx-Datei mit ' +
-            'geprüfter Struktur erwartet, gewählt wurde "' + (datei.name || '(ohne Namen)') + '".');
+        /* Erwartete Upload-Dateien: genau EINE Blockdatei (.blocks/.txt)
+           plus beliebig viele Illustrationen (.png) — nichts anderes. Jede
+           unpassende Datei bricht laut ab, kein stiller Bypass (F5-Muster:
+           das Gate weist ab statt still durchzulassen). */
+        var blockKandidaten = dateiListe.filter(function (d) { return /\.(blocks|txt)$/i.test(d.name || ''); });
+        var pngKandidaten = dateiListe.filter(function (d) { return /\.png$/i.test(d.name || ''); });
+        var unbekannteDateien = dateiListe.filter(function (d) {
+          return blockKandidaten.indexOf(d) < 0 && pngKandidaten.indexOf(d) < 0;
+        });
+        if (unbekannteDateien.length) {
+          klemmtSichtbar('Nicht hochgeladen: unbekannte Dateiendung(en) — erwartet werden genau ' +
+            'eine Blockdatei (.blocks oder .txt) und beliebig viele Illustrationen (.png): ' +
+            unbekannteDateien.map(function (d) { return d.name || '(ohne Namen)'; }).join(', ') + '.');
           return;
         }
-        /* Ohne geladenes Dossier kein Urteil moeglich (skriptPruefe liefert
-           dann null) — Abbruch VOR jedem Netzzugriff, kein arrayBuffer-Lesen,
-           kein graph.ordnerInhalt. state.data.dossier[k.kursId] ist entweder
+        if (blockKandidaten.length !== 1) {
+          klemmtSichtbar('Nicht hochgeladen: es wird genau EINE Blockdatei (.blocks oder .txt) ' +
+            'erwartet, gewählt wurden ' + blockKandidaten.length + '.');
+          return;
+        }
+        var blockDatei = blockKandidaten[0];
+
+        /* Ohne geladenes Dossier kein Urteil moeglich (blocksPruefe liefert
+           dann null) — Abbruch VOR jedem Netzzugriff, kein Datei-Lesen, kein
+           graph.ordnerInhalt. state.data.dossier[k.kursId] ist entweder
            undefined (nie angefordert) oder null (laedt gerade) oder ein
            Objekt (geladen) — nur Letzteres reicht. */
         var dSkript = state.data.dossier[k.kursId];
@@ -2199,24 +2404,59 @@
             'abschliessen (Briefing), dann erneut versuchen.');
           return;
         }
+
         if (meld) meld.hidden = true;
         knopf.disabled = true; knopf.textContent = 'wird geprüft …';
-        var lesenSkript = (datei.arrayBuffer && typeof datei.arrayBuffer === 'function')
-          ? datei.arrayBuffer()
+
+        var lesenBlock = (blockDatei.text && typeof blockDatei.text === 'function')
+          ? blockDatei.text()
           : Promise.reject(new Error('Diese Datei kann nicht gelesen werden.'));
-        lesenSkript
-          .then(function (buf) { return root.docxLesen.absaetze(buf); })
-          .then(function (absaetze) {
-            var befund = root.inhalt.skriptPruefe(absaetze, dSkript, k.kursId);
-            if (befund && befund.fehler.length) {
-              klemmtSichtbar('Skript weicht vom Kontrakt ab — nicht hochgeladen: ' +
+
+        lesenBlock
+          .then(function (text) { return root.skriptLesen.lies(text); })
+          .then(function (gelesen) {
+            /* Pruefkette (Task-Brief): skriptLesen.lies() wirft bei
+               ###SKRIPT fehlt — s. .catch unten. fehler[] nicht leer bricht
+               HIER ab, MIT der Liste — blocksPruefe() wird gar nicht erst
+               gerufen (Pflichtbausteine je Kapitel sind darin schon
+               enthalten, s. inhalt.blocksPruefe-Kommentarkopf). */
+            if (gelesen.fehler && gelesen.fehler.length) {
+              klemmtSichtbar('Blockdatei weicht vom Schema ab — nicht hochgeladen: ' +
+                gelesen.fehler.join(' · '));
+              return;
+            }
+            /* Widerspruch UI-Variantenwahl vs. Blockdatei-Variante — kein
+               stilles Bevorzugen (Muster "Varianten", CLAUDE.md). */
+            var blockVariante = gelesen.skript && gelesen.skript.variante;
+            if (gewaehlt && blockVariante && blockVariante !== gewaehlt) {
+              klemmtSichtbar('Nicht hochgeladen: die Blockdatei nennt Variante "' + blockVariante +
+                '", ausgewählt ist "' + gewaehlt + '" — Variante zuerst angleichen.');
+              return;
+            }
+            var befund = root.inhalt.blocksPruefe(gelesen, dSkript);
+            if (!befund) {
+              klemmtSichtbar('Nicht hochgeladen: Prüfung braucht das Dossier.');
+              return;
+            }
+            if (befund.fehler.length) {
+              klemmtSichtbar('Blockdatei weicht vom Kontrakt ab — nicht hochgeladen: ' +
                 befund.fehler.join(' · '));
               return;
             }
-            weiterMitUpload(befund && befund.hinweise.length ? befund.hinweise : null);
+            /* Referenzierte Illustrationen muessen im selben Upload liegen
+               (B6-Vorgriff, tolerant — s. inhalt.illustrationenFehlend). */
+            var pngNamen = pngKandidaten.map(function (p) { return p.name; });
+            var fehlendeIllustrationen = root.inhalt.illustrationenFehlend(gelesen, pngNamen);
+            if (fehlendeIllustrationen.length) {
+              klemmtSichtbar('Nicht hochgeladen: referenzierte Illustration(en) fehlen im Upload ' +
+                '— ' + fehlendeIllustrationen.join(', ') + '.');
+              return;
+            }
+
+            weiterMitSkriptBau(gelesen, befund.hinweise, blockDatei, pngKandidaten);
           })
           .catch(function (e) {
-            klemmtSichtbar('Datei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
+            klemmtSichtbar('Blockdatei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
           });
         return;
       }
