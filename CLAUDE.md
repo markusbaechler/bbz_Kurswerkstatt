@@ -2909,3 +2909,119 @@ Hinweis „N Bilder ohne Verweis mitgeladen" in der Erfolgsmeldung wäre möglic
 `weiterMitSkriptBau` nachhält, welche `bilder`-Einträge `docxBauen.baue()` tatsächlich einbettet
 (`ctx.neueBilder`, aktuell nicht Teil der Rückgabe) — kein trivialer Zusatz, deshalb bewusst
 geparkt statt hier mit einer Heuristik nachgebaut.
+
+### Task B6: `###ILLUSTRATION` formalisiert, Stil-Prompt, Prompt-Umstellung auf Blockdatei-Lieferung
+
+**`###ILLUSTRATION` ist jetzt ein echter, optionaler Schema-Baustein (beide Bäume) — vorher war
+er in `docx-bauen.js`/`inhalt.js` nur „B6-Vorgriff, tolerant behandelt".**
+`skript-schema.cjs`/`skript-schema.js`: `{ block: 'ILLUSTRATION', stil: null, pflicht: false }`,
+direkt nach `HERO` (13 Bausteine, 12 davon Pflicht). `skript-lesen.cjs`/`skript-lesen.js`
+validieren im `ILLUSTRATION`-Zweig — der bewusst OHNE `continue` in die generische
+Mehrfach-Prüfung/Textablage durchfällt (ILLUSTRATION ist „einfach" wie DEFINITION/ERKLAERUNG,
+kein `mehrfach: true` wie ABBILDUNG): `datei:` ODER `katalog:` als Pflicht-ODER, eine
+Ziffernfolge `/\d{3,}/` in `szene:` → Fehler „Illustration: Zahlen gehoeren nicht ins Bild" (die
+Nie-Fakten-Regel, Entscheid Markus 2026-08-03, maschinell), `datei:` gegen die
+Zeichen-Erlaubnisliste `[A-Za-z0-9._-]` PLUS ein explizites `..`-Verbot (Ledger-Hinweis aus B4 —
+der Wert landet unverändert als Zip-/Ablagepfad in `docxBauen`/`app.js`). `skript-abnahme.cjs`
+prüft zusätzlich, ob eine referenzierte `datei:` im Bilder-Ordner liegt (Muster ABBILDUNG, aber
+über den rohen, gelieferten Dateinamen statt der `kurs-variante-abb-NNN`-Konvention).
+`skript-bauen.cjs` bekommt `illustrationMarkdown(k)` (Bild vor dem Hero-Kasten, Muster
+`docxBauen.illustrationAbsatz`) und überspringt `ILLUSTRATION` in der generischen
+Bausteine-Schleife (`continue`), sonst wäre die rohe Feldsyntax ein zweites Mal als Fliesstext
+gerendert worden.
+
+**App-`docx-bauen.js` brauchte denselben Loop-Skip-Fix — notwendige Konsequenz, kein
+Scope-Zuwachs.** `kapitelAbsaetze()` iteriert `S().SCHEMA.bausteine`; solange `ILLUSTRATION` dort
+nicht existierte, lief die Schleife nie über diesen Block. Jetzt schon — ohne
+`if (b.block === 'ILLUSTRATION') return;` (analog ABBILDUNG/WISSENSCHECK) hätte
+`bausteinAbsaetze()` (Zweig `b.stil === null`) die rohe `katalog:`/`datei:`-Syntax ein zweites
+Mal als sichtbaren Fliesstext gesetzt — zusätzlich zum Bild-Absatz, der schon vorher an der
+Hero-Position steht. Mit Mutationsprobe belegt: ohne den Fix fiel der bestehende Test
+„ILLUSTRATION ohne datei:-Feld … wird stillschweigend uebersprungen" tatsächlich rot
+(`fehlt-in-bilder.png` erschien im XML).
+
+**Ledger-Hinweis aus B2 geschlossen: `gesehen`-Set statt Plain-Object in App-`skript-lesen.js`.**
+`var gesehen = {}` mit `gesehen[kapitel.ek]` kollidierte mit `ek="constructor"` —
+`{}.constructor` ist die geerbte `Object`-Funktion, also wahrheitswertig, ohne je gesetzt worden
+zu sein; das erste Kapitel mit dieser EK-ID wäre fälschlich als „doppelt" gemeldet worden.
+Umgestellt auf `new Set()`/`.has()`/`.add()` — Angleichung an die Tools-Fassung
+(`skript-lesen.cjs`), die bereits ein echtes `Set` nutzte.
+
+**`inhalt.skriptPromptKopf` (Schritt 3) auf die E5-Revision umgestellt.** Der Schluss-Satz heisst
+jetzt „Liefere in Phase 2 DIREKT die Blockdatei {zielname} zum Herunterladen." (vorher: „…die
+Datei…" mit `.docx`-Namen — das war der ursprüngliche E5-Entscheid vom 2026-07-31, seit dem
+2026-08-03 durch die E5-Revision ersetzt, s. „Task B5" und „Etappe 3b" oben). Ein neuer Satz zur
+Illustrations-Regie steht direkt danach, UNCONDITIONAL auf `d` (nicht auf `extras.zielname`) —
+die Regel gilt strukturell, sobald ein Dossier geladen ist, unabhängig vom bekannten Dateinamen:
+„Jedes Kapitel trägt genau eine ###ILLUSTRATION: eine Bild-Regie (szene:) oder, wenn du selbst
+Bilder erzeugen kannst, zusätzlich als mitgeliefertes PNG (datei:) — die Kurswerkstatt setzt das
+endgültige Bild beim Hochladen." `app.js` (`kopieren`-Handler, Schritt-3-Zweig) berechnet
+`extras4.zielname` jetzt aus `ziel4.datei.replace(/\.[a-z0-9]+$/i, '.blocks')` —
+`inhalt.hochladeZiel()` bleibt unverändert die eine Quelle für den GEBAUTEN docx-Namen (das
+App-seitige Ablageformat ändert sich nicht), der im Prompt genannte Zielname ist derselbe Stamm
+mit `.blocks`-Endung, kein zweiter Rechenweg.
+
+**Werkzeug-Baum (kein Git): `skript-inhaltskontrakt.txt` durchgängig auf „Chat liefert dieselbe
+Blocksyntax wie Claude Code" umgestellt** — der Chat-Weg beschrieb vorher ein eigenes,
+docx-basiertes Format (Datentabelle statt Diagramm, keine sichtbaren Blocknamen); das ist mit der
+E5-Revision entfallen. AUSGABEFORM gilt jetzt „für beide Wege bindend", AUSGABEFORM CHAT
+beschreibt nur noch den Lieferunterschied (kein Dateisystem/`node`-Zugriff im Chat) plus die
+Illustrations-Regel. VISUELLES und REIHENFOLGE ebenso auf „beide Wege" umgestellt. Neue Sektion
+`--- ILLUSTRATION ---` (Feldsyntax, Nie-Fakten-Regel, Verweis auf den Stil-Prompt) sowie ein
+Verbots-Satz gegen Status-Banner im Dokument in BELEGE („kein „[ENTWURF — unvalidiert]" o. Ä.,
+gleich wo im Text — der Status eines Lieferobjekts ist ein Datum im Kursdossier, nie ein Satz im
+Dokument", Live-Befund 2026-08-03). Vor der Bearbeitung eine `_verlauf`-Kopie angelegt
+(`_verlauf/skript-inhaltskontrakt_vor-etappe3b.txt`, exakter Alt-Stand).
+
+**Neu `produktion/_zentral/prompt-bibliothek/illustrations-stil.txt`** — die eine Stil-Quelle:
+Flat-Design, feste Farbwelt `1F5C8B`/`3E86B5`/`7FB2D4` + Akzent `E8A13D` (dieselbe Palette wie
+die gerenderten Diagramme, `diagramm-rendern.cjs` — die Illustration soll neben einem Diagramm
+wie aus demselben Werk aussehen), Schweizer Beratungskontext, Verbote (Zahlen, lesbarer
+Text/Logos, reale Personen/Marken).
+
+**`build-skript.cjs`** bettet `illustrations-stil.txt` unverändert als eigenen Abschnitt in beide
+Chat-Fassungen ein; `kern[]` (Bauspec) führt neu `ILLUSTRATION`; die `chat()`-Funktion kombiniert
+den `ausgabeform`-Block jetzt aus AUSGABEFORM (das Gerüst plus das vollständige Beispielkapitel —
+ohne die Syntax selbst kann der Chat sie nicht einhalten) UND AUSGABEFORM CHAT, plus neue Blöcke
+`illustration`/`illustrationsstil`/`visuelles` (das Diagramm-Vokabular, das der Chat jetzt
+genauso braucht wie Claude Code). Die Anleitung (`guide-skript`, `wegSteps.chat`) nennt jetzt
+„Blockdatei entgegennehmen" statt „.docx entgegennehmen". **Finding 2 der Runde-1-Selbstprüfung
+ist invertiert:** vorher durfte `guide-skript.stepsProWeg.chat` KEINE `.blocks`-Datei erwähnen
+(der Chat-Weg erzeugte vor der E5-Revision keine); jetzt MUSS er `.blocks`/„Blockdatei" nennen
+und darf NICHT mehr „.docx direkt" behaupten — im Code ausdrücklich als Umkehrung kommentiert,
+kein stilles Überschreiben der alten Regel. Generator produktiv gelaufen, Selbstprüfung bestanden,
+`skript-chat_claude.txt` ganz gegengelesen.
+
+**Tests:** Tools-Baum 30 neue (`skript-schema.test.js`, `skript-lesen.test.js`,
+`skript-abnahme.test.js`, `skript-bauen.test.js`, `app-parity.test.js` mit 7 ILLUSTRATION-Fixturen,
+`build-skript.test.js` mit 6 neuen plus 2 dokumentiert umgeschriebenen — F4-Wortlaut
+„vollständiges Dokument" → „vollständige Blockdatei", Finding 2 invertiert). App-Baum 6 neue
+(`skriptlesen-app.test.js` inkl. `ek="constructor"`, `docxbauen.test.js` für den Loop-Skip-Fix,
+`skriptkopf.test.js` erweitert). **Tools-Suite: 310/310 grün** (Baseline 280 + 30). **App-Suite:
+709/709 grün** (Baseline 703 + 6).
+
+**Mutationsproben (tatsächlich ausgeführt, alle danach wiederhergestellt):**
+
+1. ILLUSTRATION-Validierung nur in der Tools-Fassung belassen (App-Zweig auskommentiert),
+   `node --test test/app-parity.test.js`:
+   ```
+   ✖ Parity: ILLUSTRATION-Fixture "ungueltig (Pfadtrenner in datei)" …
+   ✖ Parity: ILLUSTRATION-Fixture "ungueltig (\"..\" in datei)" …
+   ```
+   Genau die zwei betroffenen Parity-Tests fielen rot, die übrigen 21 blieben grün.
+2. Ziffern-Regel in `szene:` auskommentiert (`skript-lesen.cjs`), `node --test
+   test/skript-lesen.test.js` → 25/26 grün, genau der Nie-Fakten-Test fiel rot; derselbe Bruch
+   zusätzlich von der Parity-Seite bestätigt (`app-parity.test.js` → 22/23).
+3. Loop-Skip-Fix in `docx-bauen.js` (App) auskommentiert, `node --test test/docxbauen.test.js` →
+   22/23 grün, genau der Test „ILLUSTRATION ohne datei:-Feld … wird stillschweigend
+   uebersprungen" fiel rot (`fehlt-in-bilder.png` landete als Fliesstext im XML).
+
+Nach jeder Probe wiederhergestellt; abschliessend komplett geprüft: App `node --test` →
+**709/709 grün**, Tools `node --test test/*.test.js` → **310/310 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** der Illustrations-Katalog selbst (kuratierte PNGs in
+`_zentral`) existiert noch nicht — nur der Stil-Prompt und die `katalog:`-Feldsyntax dafür. Eine
+Live-Probe der neuen Blockdatei-Lieferung im Chat-Weg an einem echten Kurs steht noch aus (analog
+B1–B5, Sache eines späteren Schritts). `werkzeuge.json`/SharePoint (`guide-1`, Schritt 1) trägt
+noch keinen Projekt-Wissen-Hinweis zu Illustrationen — wie bei Task Z6/Z8 ein separater,
+freigabepflichtiger Redaktionsschritt.

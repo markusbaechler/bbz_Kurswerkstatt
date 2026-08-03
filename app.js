@@ -2667,8 +2667,15 @@
               var dateien3 = state.data.dateien[kurs4.kursId + '/' + ab3.ordner];
               if (Array.isArray(dateien3)) {
                 extras4.version = root.inhalt.naechsteVersion(dateien3, kurs4.kursId, ab3.lieferobjekt);
+                /* B6/E5-Revision: der Chat liefert seit Etappe 3b keine .docx
+                   mehr, sondern die BLOCKDATEI — die App baut das Word selbst
+                   (docxBauen). hochladeZiel() liefert weiterhin den
+                   GEBAUTEN docx-Namen (das bleibt das Ziel-Ablageformat,
+                   s. inhalt.erwarteteEndung); der im Prompt-Kopf genannte
+                   Zielname ist derselbe Stamm mit .blocks-Endung — kein
+                   zweiter Rechenweg, nur die Endung getauscht. */
                 var ziel4 = root.inhalt.hochladeZiel(inh4, '3', kurs4.kursId, dateien3, variante4);
-                if (ziel4) extras4.zielname = ziel4.datei;
+                if (ziel4) extras4.zielname = ziel4.datei.replace(/\.[a-z0-9]+$/i, '.blocks');
               }
             }
             var ab2Fuer3 = root.inhalt.ablageVon(inh4, '2', kurs4.kursId);

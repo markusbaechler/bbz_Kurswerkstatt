@@ -314,14 +314,18 @@
     return absatz + (a.titel ? pAbsatz(a.titel, STYLE_QUELLE) : '');
   }
 
-  /* ---------- ILLUSTRATION (B6, tolerant behandeln) ---------- */
+  /* ---------- ILLUSTRATION (B6) ---------- */
 
-  /* k.teile.ILLUSTRATION existiert heute (vor B6) nie — skript-schema.js
-     kennt den Block noch nicht, skript-lesen.js wuerde ihn als "Unbekannter
-     Block" abweisen und NICHT in teile ablegen. Dieser Code ist bewusst
-     vorgezogen und tolerant: fehlt der Teil oder das Feld "datei:" oder die
-     Datei in `bilder`, wird schlicht nichts eingefuegt — kein Fehler, kein
-     Abbruch (Task-Brief: "tolerant behandeln"). */
+  /* skript-schema.js kennt ILLUSTRATION seit B6 als eigenen, optionalen
+     Baustein (kein stil — kein Kasten, sondern ein Bild an der
+     Hero-Position); skript-lesen.js validiert datei:/katalog: als
+     Pflicht-ODER und legt den Rohtext in k.teile.ILLUSTRATION ab, genau wie
+     bei DEFINITION/ERKLAERUNG. Dieser Absatz-Bauer bleibt trotzdem
+     tolerant — fehlt der Teil, das Feld "datei:" oder die Datei in
+     `bilder` (z. B. weil nur katalog: gesetzt ist, ohne mitgelieferte
+     Datei), wird schlicht nichts eingefuegt, kein Fehler, kein Abbruch:
+     die eigentliche Pflicht-Pruefung (datei: ODER katalog:, Zeichen-
+     Erlaubnisliste, Nie-Fakten-Regel) sitzt bereits in skript-lesen.js. */
   function illustrationAbsatz(k, ctx) {
     var roh = k.teile && k.teile.ILLUSTRATION;
     if (!roh) return '';
@@ -384,6 +388,13 @@
     var out = kapitelKopfAbsaetze(k);
     out += illustrationAbsatz(k, ctx); /* an Hero-Position: vor dem Hero-Baustein selbst */
     S().SCHEMA.bausteine.forEach(function (b) {
+      /* ILLUSTRATION steht oben bereits (illustrationAbsatz, an
+         Hero-Position) — b.stil ist null, ohne diese Ausnahme wuerde die
+         generische bausteinAbsaetze()-Behandlung (Zweig b.stil === null,
+         wie DEFINITION/ERKLAERUNG) die ROHE Feldsyntax (katalog:/szene:/
+         datei:) ein zweites Mal als sichtbaren Fliesstext ins Dokument
+         setzen. */
+      if (b.block === 'ILLUSTRATION') return;
       if (b.block === 'ABBILDUNG') {
         (k.abbildungen || []).forEach(function (a) {
           var typ = S().diagrammTyp(a.typ);

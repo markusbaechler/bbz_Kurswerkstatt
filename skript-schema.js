@@ -8,9 +8,20 @@
 
   /* Reihenfolge = Reihenfolge im Dokument. Die Fehlvorstellung ist ein
      eigener Block, damit die Abnahme sie zaehlen kann, steht im Satz aber
-     hinter der Erklaerung, zu der sie gehoert. */
+     hinter der Erklaerung, zu der sie gehoert.
+
+     ILLUSTRATION (B6, Etappe 3b): optional, kein stil (kein Text-Kasten,
+     sondern ein Bild an der Hero-Position - vor dem Hero-Kasten selbst, s.
+     docx-bauen.js::illustrationAbsatz). Variante C (Entscheid Markus
+     2026-08-03): kuratierter Katalog PLUS Bild-KI-Szene je Kapitel. Felder
+     (Feldzeilen wie ABBILDUNG): katalog: (Name aus dem Katalog) ODER szene:
+     (Bild-Regie als Text), dazu datei: (der PNG-Dateiname der Lieferung) -
+     skript-lesen.js validiert datei:/katalog: als Pflicht-ODER und weist
+     eine Ziffernfolge >2 in szene: ab (eiserne Regel "Illustrationen tragen
+     nie Fakten"). */
   var BAUSTEINE = [
     { block: 'HERO',            stil: 'Hero' },
+    { block: 'ILLUSTRATION',    stil: null, pflicht: false },
     { block: 'STORY',           stil: 'Story' },
     { block: 'DEFINITION',      stil: null },
     { block: 'ERKLAERUNG',      stil: null },

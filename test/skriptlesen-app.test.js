@@ -70,3 +70,57 @@ test('attribute() trennt am Strich', () => {
   assert.strictEqual(a.ek, 'VL-001-EK-003');
   assert.strictEqual(a.titel, 'Was ein Produkt kostet');
 });
+
+/* --- B6: ###ILLUSTRATION — nur die Kernfaelle, volle Abdeckung in der
+   Tools-Suite (test/skript-lesen.test.js) plus der Parity-Waechter. --- */
+
+test('eine Illustration mit datei: ist gueltig und landet als Rohtext in teile.ILLUSTRATION', () => {
+  const mitIllustration = musterKapitel('VL-001-EK-003').replace(
+    '###HERO\nEine Kundin fragt nach.\n###STORY',
+    '###HERO\nEine Kundin fragt nach.\n###ILLUSTRATION\ndatei: VL-001-illustration-01.png\n###STORY'
+  );
+  const r = skriptLesen.lies([RAHMEN, mitIllustration, SCHLUSS].join('\n'));
+  assert.deepStrictEqual(r.fehler, []);
+  assert.strictEqual(r.kapitel[0].teile.ILLUSTRATION, 'datei: VL-001-illustration-01.png');
+});
+
+test('eine Illustration ohne datei: und ohne katalog: wird abgewiesen', () => {
+  const ohneFeld = musterKapitel('VL-001-EK-003').replace(
+    '###HERO\nEine Kundin fragt nach.\n###STORY',
+    '###HERO\nEine Kundin fragt nach.\n###ILLUSTRATION\nszene: Eine Kundin am Beratungstisch\n###STORY'
+  );
+  const r = skriptLesen.lies([RAHMEN, ohneFeld, SCHLUSS].join('\n'));
+  assert.ok(r.fehler.some((f) => /Illustration ohne Feld datei oder katalog/.test(f)), r.fehler.join(' | '));
+});
+
+test('eine Ziffernfolge laenger als zwei Stellen in szene: wird abgewiesen — die Nie-Fakten-Regel (B6)', () => {
+  const mitZahl = musterKapitel('VL-001-EK-003').replace(
+    '###HERO\nEine Kundin fragt nach.\n###STORY',
+    '###HERO\nEine Kundin fragt nach.\n###ILLUSTRATION\nkatalog: geld\nszene: Der Wert 1160 im Bild\n###STORY'
+  );
+  const r = skriptLesen.lies([RAHMEN, mitZahl, SCHLUSS].join('\n'));
+  assert.ok(r.fehler.some((f) => f === 'Kapitel VL-001-EK-003: Illustration: Zahlen gehoeren nicht ins Bild'),
+    r.fehler.join(' | '));
+});
+
+test('eine datei: mit unzulaessigen Zeichen wird abgewiesen (Ledger-Hinweis aus B4: Sanitisierung)', () => {
+  const mitPfad = musterKapitel('VL-001-EK-003').replace(
+    '###HERO\nEine Kundin fragt nach.\n###STORY',
+    '###HERO\nEine Kundin fragt nach.\n###ILLUSTRATION\ndatei: ../geheim/illustration.png\n###STORY'
+  );
+  const r = skriptLesen.lies([RAHMEN, mitPfad, SCHLUSS].join('\n'));
+  assert.ok(r.fehler.some((f) => /unzulaessige Zeichen/.test(f)), r.fehler.join(' | '));
+});
+
+/* Ledger-Hinweis aus B2: gesehen-EKs muessen ueber ein echtes Set laufen,
+   nicht ueber ein Plain-Object — sonst kollidiert ek="constructor" mit dem
+   geerbten Object.prototype.constructor (wahrheitswertig, ohne je gesetzt
+   worden zu sein) und meldet faelschlich "doppelt" beim ERSTEN Kapitel. */
+test('ek="constructor" kollidiert nicht mit dem Object-Prototype (Ledger-Hinweis aus B2)', () => {
+  const einzeln = musterKapitel('constructor');
+  const r = skriptLesen.lies([RAHMEN.replace('kurs=VL-001', 'kurs=VL-001'), einzeln,
+    '###ZUORDNUNG', 'Kapitel 1 | constructor | Reihenfolge wie Contract',
+    '###OFFEN', '1 | Test'].join('\n'));
+  assert.deepStrictEqual(r.fehler, []);
+  assert.strictEqual(r.kapitel.length, 1);
+});

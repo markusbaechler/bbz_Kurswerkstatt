@@ -305,7 +305,7 @@ test('baue(): fehlt ein Bild fuer eine nicht-tabellarische Abbildung, wird abgeb
   await assert.rejects(() => docxBauen.baue(buffer, gelesenFixture(), {}), /Bild fehlt/);
 });
 
-test('baue(): ILLUSTRATION an Hero-Position, wenn datei: gesetzt UND in bilder vorhanden (B6-Vorgriff, tolerant)', async () => {
+test('baue(): ILLUSTRATION an Hero-Position, wenn datei: gesetzt UND in bilder vorhanden (B6)', async () => {
   const { buffer } = vorlageBauen();
   const gelesen = gelesenFixture();
   gelesen.kapitel[0].teile.ILLUSTRATION = 'datei: illustration.png';
@@ -333,6 +333,31 @@ test('baue(): ILLUSTRATION ohne "datei:"-Feld oder ohne passendes Bild wird stil
   const out2 = await docxBauen.baue(buffer, gelesen2, bilderFixture());
   const xml2 = await docXmlAus(out2);
   assert.strictEqual(xml2.indexOf('fehlt-in-bilder.png'), -1);
+});
+
+/* Seit skript-schema.js ILLUSTRATION als eigenen Baustein fuehrt (B6), laeuft
+   der generische Schleifen-Durchlauf ueber S().SCHEMA.bausteine auch ueber
+   ILLUSTRATION (b.stil === null) — OHNE eigene Ausnahme wuerde
+   bausteinAbsaetze() die ROHE Feldsyntax ("katalog: ...") ein zweites Mal
+   als sichtbaren Fliesstext (Ueberschrift2 + Absatz) ins Dokument setzen,
+   zusaetzlich zum Bild-Absatz von illustrationAbsatz() an der
+   Hero-Position. Eigener Test, unabhaengig vom "stillschweigend
+   uebersprungen"-Fall oben (der nur den Bild-Absatz prueft, nicht die
+   Abwesenheit von rohem Fliesstext). */
+test('baue(): die rohe ILLUSTRATION-Feldsyntax (katalog:/datei:) landet nie ein zweites Mal als Fliesstext (B6)', async () => {
+  const { buffer } = vorlageBauen();
+  const gelesen = gelesenFixture();
+  gelesen.kapitel[0].teile.ILLUSTRATION = 'katalog: geld-und-vertrauen\ndatei: illustration.png';
+  const bilder = bilderFixture();
+  bilder['illustration.png'] = { bytes: fakePng(400, 200), breite: 400, hoehe: 200 };
+  const out = await docxBauen.baue(buffer, gelesen, bilder);
+  const xml = await docXmlAus(out);
+  assert.strictEqual(xml.indexOf('katalog: geld-und-vertrauen'), -1, xml);
+  /* Der Bild-Absatz selbst nennt den Dateinamen zweimal (wp:docPr name= UND
+     pic:cNvPr name=, s. drawingAbsatz()) — ein dritter Treffer waere die
+     geleakte Fliesstext-Zeile "datei: illustration.png". */
+  assert.strictEqual((xml.match(/illustration\.png/g) || []).length, 2,
+    'illustration.png sollte nur aus dem Bild-Absatz kommen (2x), nicht zusaetzlich als Fliesstext');
 });
 
 test('baue(): Vorlage ohne word/document.xml wird abgelehnt', async () => {

@@ -67,6 +67,19 @@
     return f;
   }
 
+  /* ILLUSTRATION-Feldvalidierung (B6). Der Dateiname wird spaeter
+     unveraendert als Zip-/Ablagepfad benutzt (docx-bauen.js/app.js,
+     Ledger-Hinweis aus B4) - die Zeichen-Erlaubnisliste sitzt deshalb HIER,
+     an der einen Stelle, wo die Feldzeile entsteht: kein "/", kein "\",
+     kein "..", nur [A-Za-z0-9._-]. Ist gelesen.fehler leer, ist jeder
+     verbliebene datei-Wert bereits sicher. */
+  var DATEI_ZEICHEN = /^[A-Za-z0-9._-]+$/;
+  function dateiGueltig(name) { return DATEI_ZEICHEN.test(name) && name.indexOf('..') < 0; }
+  /* Nie-Fakten-Regel maschinell (Entscheid Markus 2026-08-03, Illustrationen
+     = Variante C): eine Ziffernfolge laenger als zwei Stellen in der
+     Bild-Regie waere ein Zahlenwert, der ins Bild rutscht. */
+  var ZIFFERNFOLGE = /\d{3,}/;
+
   function lies(quelltext) {
     var fehler = [];
     var roh = zerlege(quelltext);
@@ -78,7 +91,13 @@
 
     var kapitel = null;
     var skriptGesehen = false;
-    var gesehen = {};
+    /* Set statt Plain-Object (Ledger-Hinweis aus B2): ein Plain-Object
+       kollidiert mit ek="constructor" (oder jedem anderen geerbten
+       Prototype-Namen) - {}.constructor ist die Object-Funktion, also
+       wahrheitswertig, OHNE dass sie je gesetzt wurde. Ein solches Kapitel
+       waere faelschlich als "doppelt" gemeldet. Die Tools-Fassung
+       (skript-lesen.cjs) nutzt bereits ein echtes Set - hier angeglichen. */
+    var gesehen = new Set();
 
     for (var i = 0; i < roh.length; i++) {
       var bl = roh[i];
@@ -117,8 +136,8 @@
           teile: {}, abbildungen: []
         };
         if (!kapitel.ek) fehler.push('###KAPITEL ohne ek=');
-        else if (gesehen[kapitel.ek]) fehler.push('Kompetenz doppelt: ' + kapitel.ek);
-        else gesehen[kapitel.ek] = true;
+        else if (gesehen.has(kapitel.ek)) fehler.push('Kompetenz doppelt: ' + kapitel.ek);
+        else gesehen.add(kapitel.ek);
         ergebnis.kapitel.push(kapitel);
         continue;
       }
@@ -151,6 +170,24 @@
         }
         kapitel.abbildungen.push({ typ: typ, titel: bl.attr.titel || '', felder: f });
         continue;
+      }
+      if (bl.name === 'ILLUSTRATION') {
+        var fIllu = felder(bl);
+        if (!fIllu.datei && !fIllu.katalog) {
+          fehler.push('Kapitel ' + kapitel.ek + ': Illustration ohne Feld datei oder katalog');
+        }
+        if (fIllu.szene && ZIFFERNFOLGE.test(fIllu.szene)) {
+          fehler.push('Kapitel ' + kapitel.ek + ': Illustration: Zahlen gehoeren nicht ins Bild');
+        }
+        if (fIllu.datei && !dateiGueltig(fIllu.datei)) {
+          fehler.push('Kapitel ' + kapitel.ek + ': Illustration: datei "' + fIllu.datei +
+            '" enthaelt unzulaessige Zeichen (erlaubt: A-Z a-z 0-9 . _ -, kein "..")');
+        }
+        /* KEIN continue - faellt in die generische Mehrfach-Pruefung/Ablage
+           unten durch: ILLUSTRATION ist "einfach" (nicht mehrfach wie
+           ABBILDUNG) und speichert seinen Rohtext wie DEFINITION/ERKLAERUNG
+           in kapitel.teile.ILLUSTRATION - genau die Form, die docx-bauen.js
+           per "datei:"-Feldzeile daraus liest. */
       }
       if (kapitel.teile[bl.name] !== undefined) {
         fehler.push('Kapitel ' + kapitel.ek + ': ###' + bl.name + ' kommt mehrfach vor');

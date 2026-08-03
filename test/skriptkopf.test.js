@@ -40,7 +40,7 @@ test('mit vollem extras traegt der Kopf Variante, Version, basiert_auf, Zielname
       variante: 'claude',
       version: 2,
       basiertAuf: 'VL-002_lernziele-drehbuch_final.xlsx',
-      zielname: 'VL-002_skript-claude_v2.docx'
+      zielname: 'VL-002_skript-claude_v2.blocks'
     }
   );
   assert.ok(kopf.includes('Variante: claude'), 'Variante fehlt');
@@ -48,8 +48,12 @@ test('mit vollem extras traegt der Kopf Variante, Version, basiert_auf, Zielname
   assert.match(kopf, /YAML-Feld 'version'/);
   assert.ok(kopf.includes('basiert_auf: VL-002_lernziele-drehbuch_final.xlsx'), 'basiert_auf fehlt');
   assert.match(kopf, /YAML-Feld 'basiert_auf'/);
-  assert.ok(kopf.includes('Liefere in Phase 2 DIREKT die Datei VL-002_skript-claude_v2.docx zum Herunterladen.'),
+  assert.ok(kopf.includes(
+    'Liefere in Phase 2 DIREKT die Blockdatei VL-002_skript-claude_v2.blocks zum Herunterladen.'),
     'Schluss-Satz fehlt');
+  assert.match(kopf, /###ILLUSTRATION/, 'Illustrations-Regie-Satz fehlt');
+  assert.match(kopf, /szene:/, 'Hinweis auf die szene:-Regie fehlt');
+  assert.match(kopf, /datei:/, 'Hinweis auf das mitgelieferte PNG (datei:) fehlt');
   assert.match(kopf, /FACHQUELLEN \(verbindlich/, 'Modus-Satz (quellengestuetzt) fehlt');
   const zeile = kopf.split('\n').filter((z) => z.indexOf('PROJEKT-WISSEN:') === 0)[0];
   assert.ok(zeile, 'PROJEKT-WISSEN-Zeile fehlt');
@@ -72,6 +76,9 @@ test('ohne extras fehlen Variante, Version, basiert_auf und der Schluss-Satz —
   assert.ok(!kopfOhneExtras.includes('Liefere in Phase 2'), 'Schluss-Satz wurde geraten');
   assert.ok(kopfOhneExtras.includes('Rechtsstand: 1.1.2026'), 'der Rest (Rechtsstand) fehlt');
   assert.ok(kopfOhneExtras.includes('VL-002'), 'der Rest (Kurs-ID) fehlt');
+  /* Die Illustrations-Regie (B6) haengt NICHT an extras.zielname — sie gilt
+     strukturell, sobald ein Dossier vorliegt, unabhaengig vom Dateinamen. */
+  assert.match(kopfOhneExtras, /###ILLUSTRATION/, 'Illustrations-Regie-Satz fehlt ohne extras');
 
   const kopfLeereExtras = inhalt.skriptPromptKopf(
     { kursId: 'VL-002', kurstitel: 'Vorsorge Aufbau', kompetenzfeld: 'Vorsorge' }, d, {}

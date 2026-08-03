@@ -911,17 +911,23 @@
        Prinzip wie briefingPromptKopf/lernzielePromptKopf: was die App schon
        weiss, muss der Chat nicht erfragen. Urspruenglich E5 (Entscheid
        Markus 2026-07-31): der Chat liefert die .docx direkt (wie Schritt 2
-       die xlsx). Seit der E5-Revision (Markus, 2026-08-03, s. B5 in
+       die xlsx). Seit der E5-Revision (Markus, 2026-08-03, s. B5/B6 in
        CLAUDE.md) liefert der Chat stattdessen die BLOCKDATEI — die App baut
        das Word selbst und prueft die Blockdatei beim Hochladen
        (blocksPruefe, B5, ersetzt skriptPruefe/A2). Dieser Kopf ist der
        GESETZTE Teil, den blocksPruefe voraussetzt (Kurs-ID/Rechtsstand
        stehen jetzt in ###SKRIPT statt im Fliesstext, Quellen-Q-IDs
-       weiterhin). Der Schluss-Satz "Liefere in Phase 2 DIREKT die Datei …
-       zum Herunterladen" (extras.zielname, unten) nennt weiterhin den
-       .docx-Namen — das ist die App-seitige Ablage, die der Chat NICHT mehr
-       selbst erzeugt; der Wortlaut dieses Prompt-Kopfs selbst ist nicht Teil
-       von B5 (Werkzeug-/Prompt-Texte sind ein eigener, freigabepflichtiger
+       weiterhin). Der Schluss-Satz "Liefere in Phase 2 DIREKT die Blockdatei
+       … zum Herunterladen" (extras.zielname, unten) nennt seit B6 den
+       .blocks-Namen, nicht mehr den .docx-Namen — der Chat liefert seit der
+       E5-Revision keine .docx mehr, app.js uebergibt hier den Stamm mit
+       .blocks-Endung (s. den kopieren-Handler dort). Direkt danach ein
+       fester Satz zur Illustrations-Regie (B6): je Kapitel genau eine
+       ###ILLUSTRATION, mit einer Bild-Regie (szene:) oder, wo die Variante
+       selbst Bilder erzeugen kann, zusaetzlich als mitgeliefertes PNG
+       (datei:) — die Kurswerkstatt setzt das endgueltige Bild beim
+       Hochladen. Der Wortlaut dieses Prompt-Kopfs selbst ist nicht Teil von
+       B5/B6 (Werkzeug-/Prompt-Texte sind ein eigener, freigabepflichtiger
        Schritt, s. CLAUDE.md "Offen").
 
        Rahmen und gemeinsame Saetze NICHT dupliziert (Konvention 9): Kurs/
@@ -936,7 +942,9 @@
        Anzeigewerte, von app.js aus bereits geladenen dateien-Caches
        berechnet (T13-Muster: inhalt.gewaehlteVariante/naechsteVersion/
        geltendeDatei/hochladeZiel — nichts neu erfunden). Fehlt ein Feld,
-       fehlt seine Zeile: die Funktion raet nie.
+       fehlt seine Zeile: die Funktion raet nie. Die Illustrations-Regie-
+       Zeile haengt bewusst NICHT an extras.zielname (sie gilt unabhaengig
+       vom Dateinamen), sondern steht immer, sobald ein Dossier vorliegt.
 
        Selbstlernphase (E3, Ruhe-Regel "Zeit immer indikativ, die Lernziele
        fuehren"): aus dem Dossier-Scope via briefingWerteAusDossier(d), Label
@@ -985,8 +993,12 @@
       z.push.apply(z, projektWissenZeilen(d));
       if (extras.zielname) {
         z.push('');
-        z.push('Liefere in Phase 2 DIREKT die Datei ' + extras.zielname + ' zum Herunterladen.');
+        z.push('Liefere in Phase 2 DIREKT die Blockdatei ' + extras.zielname + ' zum Herunterladen.');
       }
+      z.push('');
+      z.push('Jedes Kapitel trägt genau eine ###ILLUSTRATION: eine Bild-Regie (szene:) oder, wenn du ' +
+             'selbst Bilder erzeugen kannst, zusätzlich als mitgeliefertes PNG (datei:) — die ' +
+             'Kurswerkstatt setzt das endgültige Bild beim Hochladen.');
       z.push('');
       z.push('=== ENDE DER ANGABEN ===');
       z.push('');
@@ -1308,25 +1320,23 @@
       return { fehler: fehler, hinweise: hinweise };
     },
 
-    /* Welche ###ILLUSTRATION-Referenzen (B6-Vorgriff, tolerant behandelt wie
-       in docxBauen.baue()) im Upload FEHLEN — dieselbe "datei:"-Feldsyntax
-       wie docxBauen.illustrationAbsatz() dort liest (Parity, s. Kommentar
-       dort). Anders als im gebauten Word (wo eine fehlende Illustration
-       einfach nichts einfuegt) ist eine referenzierte, aber nicht
-       mitgelieferte Illustration beim UPLOAD ein Fehler — der Chat hat sie
-       versprochen, aber nicht mitgeschickt.
+    /* Welche ###ILLUSTRATION-Referenzen (B6: ein bekannter, optionaler
+       Schema-Baustein, s. skript-schema.js) im Upload FEHLEN — dieselbe
+       "datei:"-Feldsyntax wie docxBauen.illustrationAbsatz() dort liest
+       (Parity, s. Kommentar dort). Anders als im gebauten Word (wo eine
+       fehlende Illustration einfach nichts einfuegt) ist eine referenzierte,
+       aber nicht mitgelieferte Illustration beim UPLOAD ein Fehler — der
+       Chat hat sie versprochen, aber nicht mitgeschickt.
 
        illustrationenFehlend(gelesen, hochgeladeneNamen) -> string[] der
        fehlenden Dateinamen.
 
-       Heute (vor B6) erreicht dieser Check praktisch nie einen Treffer:
-       skript-schema.js kennt ###ILLUSTRATION noch nicht als Baustein —
-       skriptLesen.lies() weist jeden Text mit diesem Block schon vorher als
-       "Unbekannter Block" ab (landet in gelesen.fehler; controller.hochladen
-       bricht DORT bereits ab, vor diesem Check). Die Funktion ist bewusst
-       vorgezogen und einzeln testbar — Muster: der docxBauen-Test, der
-       gelesen.kapitel[].teile.ILLUSTRATION ebenfalls direkt setzt, statt
-       echten Text zu parsen (s. test/docxbauen.test.js). */
+       Laeuft in controller.hochladen NACH dem gelesen.fehler-Gate (skript-
+       lesen.js hat datei:/katalog: als Pflicht-ODER, die Zeichen-
+       Erlaubnisliste und die Nie-Fakten-Regel schon geprueft) — jeder
+       hier ankommende datei-Wert ist bereits ein gueltiger, sicherer
+       Dateiname; dieser Check prueft nur noch, ob die Datei TATSAECHLICH im
+       selben Upload mitkam. */
     illustrationenFehlend: function (gelesen, hochgeladeneNamen) {
       var vorhanden = {};
       (hochgeladeneNamen || []).forEach(function (n) { vorhanden[n] = true; });
