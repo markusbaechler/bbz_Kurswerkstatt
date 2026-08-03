@@ -2713,17 +2713,26 @@ GEBAUTE Zielformat bleibt docx, nur die Upload-Eingabe hat sich geändert). Ist 
 3. **`blockDatei.text()` → `skriptLesen.lies(text)`.** Ein Wurf (kein `###SKRIPT`) landet im
    `.catch` („Blockdatei nicht lesbar"). `gelesen.fehler.length` → Abbruch MIT der Liste, VOR
    `blocksPruefe()`.
-4. **Widerspruch UI-Variantenwahl vs. Blockdatei-`variante=`** → Abbruch, kein stilles Bevorzugen
+4. **Kurs-ID-Sicherheitsnetz (Fix-Runde 1, Review-Finding 3): `gelesen.skript.kurs !== k.kursId`**
+   → Abbruch, kein stilles Bevorzugen. Ohne diesen Vergleich würde die Blockdatei eines FREMDEN
+   Kurses klaglos in diesen Kurs gebaut und abgelegt — mit falschem Bildnamens-Präfix
+   (`docxBauen.bildDateiname` nimmt `gelesen.skript.kurs`, nicht `k.kursId`) und am falschen Ort in
+   SharePoint. `skriptLesen.lies()` garantiert an dieser Stelle bereits ein nicht-leeres `kurs`
+   (sonst wäre `gelesen.fehler` in Schritt 3 nicht leer gewesen) — die `blockKurs &&`-Bedingung ist
+   trotzdem defensiv, analog zum Variantencheck direkt darunter.
+5. **Widerspruch UI-Variantenwahl vs. Blockdatei-`variante=`** → Abbruch, kein stilles Bevorzugen
    (Muster „Varianten" oben in dieser Datei: dieselbe Zeile stand vorher zweimal im Code, einmal
    fehlend — hier von Beginn an EIN Vergleich).
-5. **`inhalt.blocksPruefe(gelesen, d)`** — `null` (Dossier-Guard hätte das eigentlich schon
+6. **`inhalt.blocksPruefe(gelesen, d)`** — `null` (Dossier-Guard hätte das eigentlich schon
    verhindert, bleibt als zweite Sicherung) oder `fehler.length` → Abbruch mit der Liste.
-6. **`inhalt.illustrationenFehlend(gelesen, pngNamen)`** — fehlt eine referenzierte Illustration im
+7. **`inhalt.illustrationenFehlend(gelesen, pngNamen)`** — fehlt eine referenzierte Illustration im
    Upload → Abbruch mit den fehlenden Dateinamen.
-7. Erst danach `weiterMitSkriptBau(gelesen, hinweise, blockDatei, pngKandidaten)`.
+8. Erst danach `weiterMitSkriptBau(gelesen, hinweise, blockDatei, pngKandidaten)`.
 
-Jeder Abbruch in 1–6 läuft über `klemmtSichtbar` — **beide** Meldekanäle: `#hochladefehler`
+Jeder Abbruch in 1–7 läuft über `klemmtSichtbar` — **beide** Meldekanäle: `#hochladefehler`
 (Klartext) UND `state.fehlerHinweis` (übersteht ein Zwischen-Render, Muster `quelleErfassen`-I10).
+**Dieselbe Zwei-Kanal-Pflicht gilt seit Fix-Runde 1 (Review-Finding 2) auch für den
+Bau-/Ablage-Fehlerpfad in `weiterMitSkriptBau` selbst** — s. dort.
 
 **`weiterMitSkriptBau` — „Bau + Ablage in EINEM Vorgang", aber strukturell in zwei Phasen: erst
 GANZ bauen (alles im Speicher), DANN ablegen.** Das ist keine Konvention, die eingehalten werden
@@ -2736,8 +2745,16 @@ Behauptung, sondern geprüft).
   eine Word-Tabelle, kein Bild, s. B3/B4) — in GENAU der Reihenfolge (Kapitel, dann Abbildung je
   Kapitel), in der `docxBauen.baue()` selbst die Bild-Dateinamen vergibt (`kapitelAbsaetze()` in
   `docx-bauen.js`), sonst passt kein Name zusammen. `docxBauen.bildDateiname(kurs, variante, nr)`
-  liefert denselben Namen wie der Bauer beim Nachschlagen erwartet. Die LOGISCHEN Bildmasse kommen
-  aus dem SVG-String selbst (`width="…" height="…"` am `<svg>`-Wurzelelement, per Regex gelesen —
+  liefert denselben Namen wie der Bauer beim Nachschlagen erwartet. **`diagrammZeichnen.svg(a, {
+  mitTitel: false })` (Fix-Runde 1, Review-Finding 1 — vorher ohne `opts`, ein Fehler)** —
+  `docxBauen.abbildungAbsatz()` setzt den Abbildungstitel bereits als Bildunterschrift
+  (`pStyle="Quelle"`, s. B4); ohne `mitTitel:false` trug jedes Diagramm den Titel zusätzlich EIN
+  ZWEITES MAL im Bild selbst (Referenz `skript-bauen.cjs` unterdrückt ihn dort aus demselben
+  Grund). `rahmen()` (`diagramm-zeichnen.js`) schneidet dabei den oberen Streifen weg und
+  schrumpft `height` im SVG-String selbst um `KOPF` (55px, z. B. 250→195 bei
+  `kompositions-leiste`) — die Massextraktion unten liest GENAU diesen String, bleibt also
+  automatisch konsistent, ohne `KOPF` selbst zu kennen. Die LOGISCHEN Bildmasse kommen aus diesem
+  (geschrumpften) SVG-String (`width="…" height="…"` am `<svg>`-Wurzelelement, per Regex gelesen —
   dieselbe Massquelle wie `skript-bauen.cjs`, s. Task-Brief) und werden zusammen mit den
   gerenderten Bytes in den `bilder`-Kontrakt gelegt (`{ bytes, breite, hoehe }`, B4 Fix-Runde 1).
 - **Hochgeladene Illustrations-PNGs** kommen mit ihrem eigenen (bereits vom Menschen gewählten)
@@ -2762,6 +2779,11 @@ Behauptung, sondern geprüft).
 - **Erfolg:** `standNachAblage` wie bisher, dann `state.hinweis` nennt den docx-Namen, den
   `.blocks`-Namen und die Bildzahl, plus etwaige `hinweise` aus `blocksPruefe` (fehlende
   Dossier-Q-IDs) am Ende angehängt.
+- **Der abschliessende `.catch` ruft `klemmtSichtbar(text)`, nicht nur `klemmt(text)`
+  (Fix-Runde 1, Review-Finding 2 — vorher nur der lokale Kanal).** Baufehler, fehlende Vorlage
+  und Upload-Teilfehler (inkl. der `geschafft`-Meldung) landen damit wie jeder andere Abbruch in
+  diesem Ablauf zusätzlich in `state.fehlerHinweis` — ein Zwischen-Render kann `#hochladefehler`
+  sonst aushängen, bevor die Person die Meldung liest (Muster `quelleErfassen`-I10).
 
 **`variante`/`kursSkript` fürs Bauen kommen aus der GELESENEN Blockdatei** (`gelesen.skript.kurs`/
 `.variante`), nicht aus der UI-Auswahl — nach dem Widerspruchs-Check in Schritt 4 der Prüfkette
@@ -2831,3 +2853,59 @@ einzige Konsument (`docxLesen.absaetze` im jetzt entfernten A2-Gate), B5 löst i
 dokumentierte diesen Zustand schon vor A2 ausdrücklich als möglich) — kein Aufräumen in dieser
 Task, da `docx-lesen.js` als geteilte ZIP/XML-Grundlage (`zip-lesen.js`) weiterhin allgemeine
 Infrastruktur ist, kein A2-Restcode.
+
+### Fix-Runde 1 (Review, 3 Important-Findings)
+
+**Finding 1 — Diagrammtitel doppelt.** `diagrammZeichnen.svg(job.a)` lief ohne `{mitTitel:false}`
+— `docxBauen.abbildungAbsatz()` (B4) setzt den Abbildungstitel bereits als Bildunterschrift
+(`pStyle="Quelle"`); ohne die Option trug jedes Diagramm ihn zusätzlich ein zweites Mal im Bild
+selbst (Referenz `skript-bauen.cjs` unterdrückt ihn dort aus demselben Grund). **Fix:**
+`root.diagrammZeichnen.svg(job.a, { mitTitel: false })`. Die Massextraktion (Regex auf
+`width=`/`height=` im SVG-String) bleibt dabei automatisch konsistent — `rahmen()`
+(`diagramm-zeichnen.js`) schrumpft `height` bei `mitTitel:false` selbst um `KOPF` (55px), der
+String, aus dem gelesen wird, trägt also von sich aus die richtige Höhe.
+
+**Finding 2 — Bau-/Ablage-Fehlerpfad nur ein Meldekanal.** Der abschliessende `.catch` von
+`weiterMitSkriptBau` rief `klemmt(text)` statt `klemmtSichtbar(text)` — `state.fehlerHinweis` blieb
+bei Baufehlern, fehlender Vorlage und Upload-Teilfehlern leer, entgegen der Beide-Kanäle-Vorgabe
+(Muster `quelleErfassen`-I10) und der eigenen CLAUDE.md-Doku im selben Commit. **Fix:**
+`klemmtSichtbar(text)` statt `klemmt(text)` — trägt weiterhin die `geschafft`-Ergänzung, wo
+zutreffend.
+
+**Finding 3 — Kurs-ID-Sicherheitsnetz ersatzlos gestrichen.** A2 prüfte die Kurs-ID im
+Dokumenttext; B5 verglich `gelesen.skript.kurs` nirgends gegen `k.kursId` — die Blockdatei eines
+FREMDEN Kurses wäre klaglos in den falschen Kurs gebaut und abgelegt worden, mit falschem
+Bildnamens-Präfix (`docxBauen.bildDateiname` nimmt `gelesen.skript.kurs`). **Fix:** neuer Guard in
+`controller.hochladen`, VOR dem Bau, analog zum Variantencheck — s. „Prüfkette", Schritt 4 oben.
+
+**Tests (3 neue, 2 erweiterte):** `test/hochladen.test.js` — „B5 (o)" (Finding 1: das gerenderte
+SVG enthält den Abbildungstitel NICHT mehr, die an `docxBauen`/`diagrammZeichnen.png` übergebene
+Höhe ist die geschrumpfte `mitTitel:false`-Höhe, nicht die volle); „B5 (m)"/„B5 (n)" (Finding 2)
+erweitert um `l.fehlerHinweis`-Prüfungen; „B5 (p)" (Finding 3: eine Blockdatei mit `kurs=VL-001`
+gegen die Schritt-3-Seite von `AFL-001` → Abbruch, kein `graph.ordnerInhalt`, kein
+`graph.vorlageLaden`, beide Meldekanäle nennen beide Kurs-IDs). **703 Tests grün** (Baseline 701 +
+2 netto: „B5 (o)" und „B5 (p)" neu, Finding 2 fügte nur Assertions zu bestehenden Tests hinzu, kein
+neuer Testfall).
+
+**Mutationsprobe (Finding 3, tatsächlich ausgeführt):** die Kurs-ID-Bedingung in
+`controller.hochladen` auf `if (false && blockKurs && blockKurs !== k.kursId)` gesetzt, `node
+--test test/hochladen.test.js`:
+```
+ℹ tests 42
+ℹ pass 41
+ℹ fail 1
+
+✖ B5 (p) Kurs-ID der Blockdatei weicht vom aktuellen Kurs ab: Abbruch, kein Netzzugriff
+  AssertionError [ERR_ASSERTION]: trotz Kurs-Mismatch wurde etwas hochgeladen
+  3 !== 0
+```
+Genau der eine neue Test fiel rot (3 Uploads statt 0 — docx, blocks und das Diagramm-Bild gingen
+trotz Kurs-Mismatch an `graph.hochladen`), alle anderen 41 blieben grün; danach wiederhergestellt,
+komplette Suite erneut geprüft: `node --test` → **703/703 grün**.
+
+**Minor (notiert, nicht umgesetzt):** eine hochgeladene, aber von keinem `###ILLUSTRATION`-Block
+referenzierte PNG landet unbenutzt in `abbildungen/` — kein Fehler, keine Meldung darüber. Ein
+Hinweis „N Bilder ohne Verweis mitgeladen" in der Erfolgsmeldung wäre möglich, verlangt aber, dass
+`weiterMitSkriptBau` nachhält, welche `bilder`-Einträge `docxBauen.baue()` tatsächlich einbettet
+(`ctx.neueBilder`, aktuell nicht Teil der Rückgabe) — kein trivialer Zusatz, deshalb bewusst
+geparkt statt hier mit einer Heuristik nachgebaut.

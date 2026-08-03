@@ -2228,7 +2228,17 @@
 
         var bauKette = renderJobs.reduce(function (kette, job) {
           return kette.then(function () {
-            var svgText = root.diagrammZeichnen.svg(job.a);
+            /* mitTitel:false (Review-Finding 1): docxBauen.abbildungAbsatz()
+               setzt den Abbildungstitel bereits als Bildunterschrift
+               (pStyle="Quelle") — ohne diese Option truege das Diagramm
+               selbst den Titel zusaetzlich ein zweites Mal (Referenz
+               skript-bauen.cjs Zeile ~164 unterdrueckt ihn im Bild aus
+               demselben Grund). rahmen() (diagramm-zeichnen.js) schneidet
+               dabei den oberen Streifen weg und schrumpft height im
+               SVG-String selbst um KOPF (55px) — die Massextraktion unten
+               liest genau diesen String, bleibt also automatisch
+               konsistent, ohne KOPF hier kennen zu muessen. */
+            var svgText = root.diagrammZeichnen.svg(job.a, { mitTitel: false });
             var w = /width="([\d.]+)"/.exec(svgText);
             var h = /height="([\d.]+)"/.exec(svgText);
             var breite = w ? parseFloat(w[1]) : 900;
@@ -2324,7 +2334,13 @@
               text += ' Bereits abgelegt: ' + geschafft.join(', ') + ' — erneutes Hochladen ist ' +
                 'sicher (Graph überschreibt deterministisch).';
             }
-            klemmt(text);
+            /* klemmtSichtbar, nicht nur klemmt (Review-Finding 2): Bau-
+               fehler, fehlende Vorlage und Upload-Teilfehler landen sonst
+               nur im lokalen #hochladefehler-Knoten — ein Zwischen-Render
+               kann den aushaengen, bevor die Person ihn liest (Muster
+               quelleErfassen-I10, wie bei jedem anderen Abbruch in diesem
+               Ablauf). */
+            klemmtSichtbar(text);
           });
       }
 
@@ -2423,6 +2439,19 @@
             if (gelesen.fehler && gelesen.fehler.length) {
               klemmtSichtbar('Blockdatei weicht vom Schema ab — nicht hochgeladen: ' +
                 gelesen.fehler.join(' · '));
+              return;
+            }
+            /* Kurs-ID-Sicherheitsnetz (Review-Finding 3) — dasselbe Muster
+               wie der Varianten-Guard direkt darunter: kein stilles
+               Bevorzugen. Ohne diesen Vergleich wuerde die Blockdatei eines
+               FREMDEN Kurses klaglos in diesen Kurs gebaut und abgelegt —
+               mit falschem Bildnamens-Praefix (docxBauen.bildDateiname nimmt
+               gelesen.skript.kurs, nicht k.kursId) und am falschen Ort in
+               SharePoint. Laeuft VOR jedem Bau/Netzzugriff. */
+            var blockKurs = gelesen.skript && gelesen.skript.kurs;
+            if (blockKurs && blockKurs !== k.kursId) {
+              klemmtSichtbar('Nicht hochgeladen: die Blockdatei gehört zu Kurs "' + blockKurs +
+                '", diese Seite zu "' + k.kursId + '" — falscher Kurs, nicht angleichbar.');
               return;
             }
             /* Widerspruch UI-Variantenwahl vs. Blockdatei-Variante — kein

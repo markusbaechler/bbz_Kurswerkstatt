@@ -445,7 +445,7 @@ async function hochladenLaufB5(n, dateiListe, opts) {
   opts = opts || {};
   const meldung = { textContent: '', hidden: true };
   const hochladenRufe = [];
-  const rufe = { ordnerInhalt: 0, vorlageLaden: 0, pngRender: 0 };
+  const rufe = { ordnerInhalt: 0, vorlageLaden: 0, pngRender: 0, pngAufrufe: [] };
 
   state.data.inhalt = opts.inhalt || JSON.parse(JSON.stringify(INHALT));
   state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
@@ -482,8 +482,9 @@ async function hochladenLaufB5(n, dateiListe, opts) {
   graph.standNachAblage = function () { return null; };
   graph.standSetzenRoh = function () { return Promise.resolve(); };
   controller.render = function () {};
-  diagrammZeichnen.png = function () {
+  diagrammZeichnen.png = function (svgText, breite, hoehe) {
     rufe.pngRender++;
+    rufe.pngAufrufe.push({ svgText: svgText, breite: breite, hoehe: hoehe });
     return Promise.resolve(new Uint8Array([1, 2, 3, 4]));
   };
 
@@ -512,6 +513,22 @@ test('B5 (a) sauber: docx + blocks + Diagramm-PNG in EINEM Lauf abgelegt, Hinwei
   assert.match(l.hinweis || '', /AFL-001_skript-claude_v1\.blocks/);
   assert.match(l.hinweis || '', /1 Bild/);
   assert.match(l.hinweis || '', /Q-002/, 'die fehlende Dossier-Quelle Q-002 sollte als Hinweis erscheinen');
+});
+
+/* Review-Finding 1: docxBauen.abbildungAbsatz() setzt den Abbildungstitel
+   bereits als Bildunterschrift (pStyle="Quelle") — das gerenderte Diagramm
+   selbst darf ihn deshalb NICHT tragen (Referenz skript-bauen.cjs), sonst
+   steht er im fertigen Word doppelt. svg() muss mit {mitTitel:false}
+   gerufen werden; das schrumpft die SVG-Hoehe (rahmen(), diagramm-
+   zeichnen.js) um KOPF=55px — die Massextraktion in app.js liest genau
+   diesen geschrumpften String, bleibt also automatisch konsistent. */
+test('B5 (o) Diagrammtitel wird nicht doppelt gesetzt — svg() laeuft mit mitTitel:false', async () => {
+  const l = await hochladenLaufB5(3, [blockDatei('egal.blocks', blockText())], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.rufe.pngAufrufe.length, 1);
+  const aufruf = l.rufe.pngAufrufe[0];
+  assert.strictEqual(aufruf.svgText.indexOf('Verteilung'), -1,
+    'der Abbildungstitel "Verteilung" haette NICHT im Diagramm selbst stehen duerfen');
+  assert.strictEqual(aufruf.hoehe, 195, 'die an docxBauen uebergebene Hoehe haette die geschrumpfte (mitTitel:false) sein muessen, nicht 250');
 });
 
 test('B5 (b) skriptLesen.lies() wirft (kein ###SKRIPT): Abbruch vor jedem Netzzugriff', async () => {
@@ -655,6 +672,10 @@ test('B5 (m) Baufehler (kaputte Vorlage): nichts wird hochgeladen', async () => 
   assert.strictEqual(l.rufe.ordnerInhalt, 0, 'kein Ordner-Lesen ohne gebautes Word');
   assert.match(l.meldung, /Nicht hochgeladen/);
   assert.match(l.meldung, /word\/document\.xml/);
+  /* Review-Finding 2: Baufehler muessen ebenfalls state.fehlerHinweis setzen
+     (beide Meldekanaele), nicht nur den lokalen #hochladefehler-Knoten. */
+  assert.match(l.fehlerHinweis || '', /Nicht hochgeladen/);
+  assert.match(l.fehlerHinweis || '', /word\/document\.xml/);
 });
 
 test('B5 (n) keine Vorlage gefunden: nichts wird hochgeladen', async () => {
@@ -664,4 +685,23 @@ test('B5 (n) keine Vorlage gefunden: nichts wird hochgeladen', async () => {
   assert.strictEqual(l.rufe.ordnerInhalt, 0);
   assert.match(l.meldung, /Vorlage/);
   assert.match(l.meldung, /nicht gefunden/);
+  assert.match(l.fehlerHinweis || '', /Vorlage/);
+  assert.match(l.fehlerHinweis || '', /nicht gefunden/);
+});
+
+/* Review-Finding 3: die Blockdatei eines FREMDEN Kurses darf nicht klaglos
+   in diesen Kurs gebaut/abgelegt werden — sonst traegt jedes Diagramm ein
+   falsches Bildnamens-Praefix (docxBauen.bildDateiname nimmt
+   gelesen.skript.kurs), und die Ablage laeuft am falschen Ort. Muster:
+   derselbe Guard-Stil wie die Varianten-Pruefung direkt daneben. */
+test('B5 (p) Kurs-ID der Blockdatei weicht vom aktuellen Kurs ab: Abbruch, kein Netzzugriff', async () => {
+  const l = await hochladenLaufB5(3, [blockDatei('egal.blocks', blockText({ kurs: 'VL-001' }))],
+    { dossier: DOSSIER_OK }); // hochladenLaufB5 setzt den aktuellen Kurs auf AFL-001
+  assert.strictEqual(l.hochladenRufe.length, 0, 'trotz Kurs-Mismatch wurde etwas hochgeladen');
+  assert.strictEqual(l.rufe.ordnerInhalt, 0, 'kein Netzzugriff bei falschem Kurs');
+  assert.strictEqual(l.rufe.vorlageLaden, 0, 'die Vorlage haette nie geladen werden duerfen');
+  assert.match(l.meldung, /VL-001/);
+  assert.match(l.meldung, /AFL-001/);
+  assert.match(l.fehlerHinweis || '', /VL-001/);
+  assert.match(l.fehlerHinweis || '', /AFL-001/);
 });
