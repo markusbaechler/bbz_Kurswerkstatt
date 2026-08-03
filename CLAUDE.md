@@ -38,6 +38,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `skript-schema.js` | Die kanonische Block-Grammatik des Selbstlernskripts (Schritt 4) — reine Daten (Etappe 3b, Task B2) |
 | `skript-lesen.js` | Parst die ###-Bloecke eines Selbstlernskripts gegen `skript-schema.js` (Etappe 3b, Task B2) |
 | `diagramm-zeichnen.js` | Zeichnet die sechs Bild-Diagrammtypen als SVG-String und wandelt SVG zu PNG (Browser-only) (Etappe 3b, Task B3) |
+| `docx-bauen.js` | Baut das Word-Dokument direkt gegen die Vorlage (Zip/OOXML, kein Pandoc) — Kern der Baustrecke (Etappe 3b, Task B4) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
 | `ansichten.js` | Kette, alle Kurse, ein Kurs, ein Schritt, Nachschlagen — reine String-Builder |
 | `test/fixture.js` | Testdaten in der Struktur der echten Dateien, ohne echte Prompt-Texte |
@@ -2395,3 +2396,156 @@ tatsächlich die gerenderten SVG-Bytes vergleicht, nicht nur Existenz/Signatur d
 **Offen / bewusst nicht Teil von B2:** `skript-lesen.js` wird von keinem Aufrufer in `app.js`/
 `inhalt.js` genutzt — B2 liefert nur Schema und Parser. Der Diagramm-Zeichner (B3) und der
 docx-Bauer (B4) rufen `skriptLesen.lies()` künftig auf, um aus dem Blocktext zu bauen.
+
+### Task B4: `docx-bauen.js` — das Word entsteht im Browser gegen die Vorlage
+
+Der Kern der Baustrecke: aus `gelesen` (Ergebnis von `skriptLesen.lies()`, Task B2) und `bilder`
+(gerenderte Diagramm-PNGs aus B3 + hochgeladene Illustrations-PNGs aus B5) entsteht eine echte
+`.docx` — **ohne Pandoc, ohne LibreOffice, im Browser.** `docxBauen.baue(vorlageArrayBuffer,
+gelesen, bilder) -> Promise<Uint8Array>` öffnet die Vorlage (`reference.docx`, Graph, B5 lädt sie
+aus `_zentral/vorlagen/`) mit `zip-lesen.js`, ersetzt **nur** `word/document.xml`, ergänzt
+`media/` + `word/_rels/document.xml.rels` + `[Content_Types].xml` um die PNGs, und verpackt mit
+`zip-schreiben.js` neu. Alle übrigen Vorlagen-Teile (`styles.xml`, `numbering.xml`, Fonts,
+Kopf-/Fusszeilen, Theme, Binärteile wie Thumbnails) reichen **byte-identisch** durch — die
+Formatvorlagen der Vorlage bleiben dadurch exakt erhalten, ohne dass dieser Bauer sie kennen
+müsste.
+
+**PFLICHT-VORAUFGABE: `zip-lesen.js` bekommt `liesBytes(name) -> Promise<Uint8Array>`, additiv
+neben `lies()`.** `lies()` dekodiert jeden Eintrag als UTF-8-Text — für das byte-identische
+Durchreichen eines Binärteils (Thumbnail, Font) reicht das nicht: eine ungültige UTF-8-Folge wird
+beim Dekodieren stillschweigend ersetzt, ein Text-Rundgang hätte das nie gefangen. Der interne
+Entpack-Kern ist dafür in `entpackeBytes()` (roh, keine Textdekodierung) aufgeteilt; `entpacke()`
+(Text) ist seither nur noch ein dünner Wrapper darum (`entpackeBytes(...).then(textDecode)`) —
+dieselbe Entpack-Logik, dieselben Fehlermeldungen wie vorher, rein additiv erweitert. `oeffne()`
+liefert `liesBytes` im selben Objekt wie `lies`; ein fehlender Eintrag liefert ein leeres
+`Uint8Array` (Analogie zu `lies()`s `''`), kein Wurf. **Der Byte-Beweis** (`test/docxbauen.test.js`):
+alle 256 Byte-Werte einmal durch `zipSchreiben.baue()` → `zipLesen.liesBytes()` →
+`deepStrictEqual` auf `Uint8Array` — genau der Beweis, der beim reinen Text-Rundgang aus B1 fehlte.
+
+**Styles der Vorlage — `Titel`, `berschrift1`, `berschrift2` sind die styleIds, nicht die
+Namen.** Deutsches Word eindeutscht beim Speichern die eingebauten Kennungen und lässt dabei das
+führende „Ü" weg: `Heading1` wird zur styleId `berschrift1`, `Title` zu `Titel` — dokumentiert
+in `IT_Architektur_bbz/output/tools/pruefe-reference-vorlage.js` (dort wird deshalb über den
+NAMEN gesucht, nicht über die Kennung: „Word eindeutscht beim Speichern die Kennungen … behält
+aber den kanonischen Namen"). `docx-bauen.js` setzt diese drei styleIds fest als Konstanten
+(`STYLE_TITEL`, `STYLE_H1`, `STYLE_H2`) — die Bausteinnamen (`Hero`, `Story`, `Beispiel`,
+`Merksatz`, `Fehlvorstellung`, `DeepDive`, `Wissenscheck`, `Abschluss`, `Quelle`) sind dagegen
+eigene, custom-style Kennungen, die Word nicht umbenennt, und kommen unverändert aus dem
+`stil`-Feld von `skriptSchema.SCHEMA.bausteine`.
+
+**Inhalts-Abbildung (Verhaltensreferenz: `markdown()` in
+`IT_Architektur_bbz/output/tools/skript-bauen.cjs` — WAS in welcher Reihenfolge gesetzt wird;
+`docx-bauen.js` baut aber `document.xml` direkt, nicht Markdown für Pandoc):**
+- **Titelkopf:** ein Absatz `pStyle="Titel"` mit Kurstitel (Rückfall Kurs-ID), darunter eine
+  Kurs-/Rechtsstand-Zeile ohne eigenen Stil.
+- **Je Kapitel:** ein Absatz `pStyle="berschrift1"` („Kapitel {nr} · {titel}"), darunter eine
+  Meta-Zeile `pStyle="Quelle"` (EK · Bloom · Richtzeit) — dieselbe `Quelle`-Formatvorlage wie
+  eine Tabellen-/Abbildungsunterschrift, Muster `kasten('Quelle', …)` im Tools-Bauer.
+- **Bausteine in Schema-Reihenfolge, `pStyle` aus `skriptSchema.SCHEMA.bausteine[].stil`:**
+  `stil === null` (DEFINITION/ERKLAERUNG) heisst Fliesstext — die ERSTE Zeile des Teils wird ein
+  Absatz `pStyle="berschrift2"`, der Rest sind Absätze ohne `pStyle`. Ein Kasten-Baustein
+  (`stil` gesetzt: Hero/Story/Fehlvorstellung/Beispiel/Interaktion+Wissenscheck/Merksatz/
+  DeepDive/Abschluss) wird zeilenweise in Absätze zerlegt, **jede Zeile trägt denselben
+  Kasten-`pStyle`** — WICHTIG, s. Politur-Fix unten.
+- **Politur-Fix „by construction" (behebt die am 2026-08-03 benannte Stelle):** eine
+  „`- `"-Zeile wird zu „`– `" (Bullet-Glyph als reiner Textpräfix, **keine** `numbering.xml`-
+  Manipulation — YAGNI) und bleibt trotzdem im selben `pAbsatz()`-Aufruf wie jede andere Zeile
+  des Bausteins. Es gibt in `bausteinAbsaetze()` **keinen zweiten, listen-eigenen `pStyle`-Zweig**,
+  der die Kasten-Zugehörigkeit verlieren könnte — die Vererbung ist damit strukturell garantiert,
+  nicht nur getestet. Mutationsprobe unten belegt das.
+- **`vergleichstabelle` wird eine echte `w:tbl`,** nicht gezeichnet (`diagramm-zeichnen.js`,
+  Task B3, wirft für diesen Typ bewusst). `tblW`/`gridCol`/`tcW` in DXA (Gesamtbreite 9026 DXA,
+  gleichmässig auf die Spalten verteilt), Kopfzeile fett, einfache Rahmenlinien rundum und
+  zwischen den Zellen. Ein Titel wird als eigener `pStyle="Quelle"`-Absatz danach gesetzt.
+  Anderer ABBILDUNG-Typ (nicht Tabelle): `w:drawing` inline, `r:embed` auf eine neu registrierte
+  Bild-Relationship, `wp:docPr id` je Einbettung eindeutig hochgezählt (auch bei
+  Wiederverwendung derselben Datei). **Extent (EMU) = PNG-Pixelbreite/-höhe × 9525** (96 dpi,
+  Koordinator-Vorgabe), gelesen direkt aus dem PNG-IHDR-Chunk (Signatur + Breite/Höhe bei
+  Offset 16/20, big-endian); ist das kein lesbares PNG (z. B. ein Testdouble), greift ein
+  dokumentierter Fallback (900×300, die Standardbreite der SVG-Zeichner). **Bekannte, bewusst
+  nicht in dieser Task gelöste Feinheit:** `diagrammZeichnen.png()` (B3) rendert mit
+  Canvas-Faktor 2 für Bildschärfe — die PNG-Pixelmasse sind dadurch doppelt so gross wie die
+  logische SVG-Grösse; diese Extent-Formel rechnet die PNG-Pixel direkt um, ohne den Faktor
+  herauszurechnen. Ob das im fertigen Dokument zu gross wirkt, klären B7 (Design-Feinschliff)
+  und B9 (Live-Probe), keine stille Annahme in B4.
+- **Dateiname-Konvention der Diagramm-PNGs:** `docxBauen.bildDateiname(kurs, variante, nr)` —
+  wortgleiches Muster zu `bildDateiname()` in `skript-bauen.cjs` (Tools-Baum), **öffentlich
+  exportiert**, damit B5 beim Rendern denselben Namen erzeugt, den dieser Bauer beim
+  Nachschlagen in `bilder` erwartet. `nr` zählt fortlaufend über alle nicht-tabellarischen
+  Abbildungen des gesamten Dokuments (nicht je Kapitel neu) — wie im Tools-Bauer. **Fehlt ein
+  Bild in `bilder` für eine erwartete, nicht-tabellarische Abbildung, bricht `baue()` mit einer
+  klaren Fehlermeldung ab** (kein stiller Leer-Absatz).
+- **ILLUSTRATION (B6) an Hero-Position, tolerant behandelt:** `k.teile.ILLUSTRATION` existiert
+  heute (vor B6) nie — `skript-schema.js` kennt den Block noch nicht, `skript-lesen.js` würde ihn
+  als „Unbekannter Block" abweisen. Der Code dafür ist bewusst vorgezogen: existiert der Teil
+  UND trägt eine Zeile „`datei: …`" UND liegt die Datei in `bilder`, wird sie als Bild direkt vor
+  dem HERO-Baustein eingefügt (an „Hero-Position", vor dessen eigenem Inhalt). Fehlt irgendeine
+  der drei Bedingungen, wird **stillschweigend nichts eingefügt** — kein Fehler, kein Abbruch.
+- **QUELLEN → „Quellenverzeichnis", OFFEN → „Ergänzungen"** (Wortlaut wie der Tools-Bauer:
+  „Gelesene Quellen"/„Nicht geöffnet" als Unterabschnitte, E6-Umbenennung „Ergänzungen" statt
+  „Offene Punkte"/„OFFEN"). **Eine bewusste Abweichung vom Tools-Bauer:** `markdown()` gibt bei
+  leerer `offen[]`-Liste stillschweigend nichts unter der Überschrift aus; der docx-Bauer zeigt
+  stattdessen „`- keine`" (Koordinator-Vorgabe) — eine leere Überschrift ohne jede Zeile wäre im
+  fertigen Word irritierend.
+
+**Vorlagen-Umbau — rels/Content-Types additiv, nie ersetzt.** Bestehende `Relationship`-Einträge
+in `word/_rels/document.xml.rels` bleiben unverändert stehen; neue `rId`s zählen ab dem höchsten
+vorhandenen `rId` + 1 weiter (Regex `Id="rId(\d+)"`, kein Kollisionsrisiko mit vorhandenen
+Formatvorlagen-/Header-/Footer-Relationships). Ein bereits vorhandener `<Default Extension="png"
+…>` in `[Content_Types].xml` wird **nicht verdoppelt** — geprüft vor dem Einfügen. Fehlt
+`word/_rels/document.xml.rels` in der Vorlage ganz (Randfall, keine reale Vorlage sollte das je
+tun), greift ein leeres `<Relationships>`-Grundgerüst. Fehlt `<w:sectPr>` im Vorlagen-
+`document.xml` komplett, bricht `baue()` ab — kein Rateversuch mit einer stillen
+Fallback-Seiteneinrichtung: eine Vorlage ohne Seiteneinrichtung ist keine brauchbare Grundlage.
+
+**Kein Parity-Wächter im Tools-Baum (anders als B2/B3).** Der Tools-Bauer setzt über
+Pandoc/Markdown, nicht über rohes OOXML — es gibt keine wortgleiche Gegenseite, die
+`docx-bauen.js` spiegeln könnte. Die Parity-Pflicht aus `constraints.md` gilt für „Block-
+Grammatik, Schema und Diagramm-SVGs" (B2/B3), nicht für den docx-Bauer selbst.
+
+**Tests (`test/docxbauen.test.js`, neu, 20 Fälle):** der Byte-Beweis für `liesBytes()` (drei
+Fälle, s. o.) plus 17 End-zu-Ende-Fälle über eine mit `zipSchreiben.baue()` gebaute Mini-Vorlage
+(`[Content_Types].xml`, `word/document.xml` mit `<w:sectPr>`, `word/_rels/document.xml.rels` mit
+einer bestehenden Relationship, `word/styles.xml`, ein binärer Dummy-Vorlagenteil) und ein
+Fixture-`gelesen` über die **echte** `skriptLesen.lies()`-Kette (ein Kapitel mit allen zwölf
+Bausteinen, einer Vergleichstabelle, einer gezeichneten Abbildung, einer „`- `"-Listenzeile in
+BEISPIEL): `pStyle` je Baustein steht im Ergebnis-`document.xml`, kein „`###`" irgendwo im
+XML, sectPr übernommen (genau einmal), `styles.xml` UND der Binär-Dummy sind über `liesBytes()`
+byte-identisch, bestehende Relationship bleibt + Bild-Relationship kommt dazu, png-Default
+ergänzt bzw. nicht verdoppelt, Extent-EMU aus einem selbstgebauten Fake-PNG-IHDR (200×100 →
+1905000×952500), Vergleichstabelle als `w:tbl`, Quellenverzeichnis/Ergänzungen mit Inhalt und im
+Leerfall („`- keine`"), Ablehnung ohne `<w:sectPr>`/ohne `word/document.xml`, Abbruch bei
+fehlendem Bild, ILLUSTRATION-Vorgriff (Position vor dem Hero-Absatz UND der tolerante
+Übersprung-Fall ohne „`datei:`"-Zeile bzw. ohne passendes Bild). **683 Tests grün** (Baseline
+663 + 20 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** in `bausteinAbsaetze()` die
+Kasten-`pStyle`-Vererbung für Listenabsätze stillgelegt (`b.stil` durch `null` ersetzt, sobald
+die Zeile mit „`- `" beginnt), `node --test test/docxbauen.test.js`:
+```
+ℹ tests 20
+ℹ pass 19
+ℹ fail 1
+
+✖ baue(): Listenabsatz in einem Kasten behaelt den Kasten-pStyle (Politur-Fix)
+  AssertionError [ERR_ASSERTION]: Listenabsatz mit Kasten-pStyle nicht gefunden:
+```
+Genau der eine Politur-Fix-Test fiel rot, alle anderen 19 (inklusive der Byte-Beweis-Tests und
+aller übrigen Baustein-/Tabellen-/Bild-/Anhang-Fälle) blieben grün; danach wiederhergestellt,
+komplette Suite erneut geprüft: `node --test` → **683/683 grün**.
+
+**`index.html`:** Script-Tag `docx-bauen.js` steht nach `diagramm-zeichnen.js`, vor `app.js` —
+folgt demselben Cache-Buster-Muster wie jedes andere `*.js`. Ladereihenfolge stellt sicher, dass
+`root.zipLesen`/`root.zipSchreiben`/`root.skriptSchema` beim Laden von `docx-bauen.js` bereits
+stehen (Lazy-Accessoren `Z()`/`ZS()`/`S()`, Muster `xlsx-lesen.js`/`skript-lesen.js`).
+
+**Offen / bewusst nicht Teil von B4:** `docx-bauen.js` wird von keinem Aufrufer in `app.js`
+genutzt — B4 liefert nur den Bauer. Die Verdrahtung (Vorlage aus Graph laden, Bilder rendern und
+sammeln, Ergebnis hochladen) folgt mit B5. Der WISSENSCHECK-Baustein wird generisch wie jeder
+andere Kasten gerendert (jede Zeile ein eigener Absatz mit `pStyle="Wissenscheck"`) — keine
+eigene Frage/Lösung/Begründung-Formatierung wie in `wissenscheck()` (Tools-Bauer); das ist eine
+bewusste Vereinfachung, kein Bug, ausserhalb des Task-Briefs. Ob eine damit gebaute `.docx`
+tatsächlich in Word öffnet, ist wie bei B1/B3 **dokumentierte Grenze, keine Live-Probe in dieser
+Task** — das ist Sache von B9 (Live-Probe am Ende der Etappe): B4 verifiziert ausschliesslich
+Struktur (`pStyle`, `w:tbl`, `w:drawing`, rels/Content-Types) und Byte-Treue gegen `zip-lesen.js`,
+nie ein echtes Word-Öffnen.

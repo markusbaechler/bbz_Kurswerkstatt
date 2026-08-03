@@ -67,21 +67,34 @@
   }
 
   /* Methode 0 = ungespeichert, 8 = deflate — mehr erzeugt xlsx/docx nie. Ein
-     fehlender Eintrag (eintrag undefined) liefert bewusst '' statt zu werfen —
-     Aufrufer wie ssXml in xlsx-lesen.js verlassen sich darauf. */
-  function entpacke(bytes, view, eintrag) {
-    if (!eintrag) return Promise.resolve('');
+     fehlender Eintrag (eintrag undefined) liefert bewusst ein leeres Ergebnis
+     statt zu werfen — Aufrufer wie ssXml in xlsx-lesen.js verlassen sich
+     darauf.
+
+     entpackeBytes() ist der rohe Kern (Bytes, keine Text-Dekodierung) — seit
+     Etappe 3b, Task B4 zusaetzlich direkt exponiert als liesBytes() (s. u.),
+     weil der docx-Bauer Vorlagen-Teile (Binaerteile: Thumbnails, evtl. Fonts)
+     byte-identisch durchreichen muss. entpacke() (Text) ist seither NUR
+     noch ein duenner Wrapper darum — dieselbe Entpack-Logik, dieselben
+     Fehlermeldungen wie vorher, additiv erweitert, nicht umgebaut. */
+  function entpackeBytes(bytes, view, eintrag) {
+    if (!eintrag) return Promise.resolve(new Uint8Array(0));
     var roh = rohBytes(bytes, view, eintrag);
-    if (eintrag.methode === 0) return Promise.resolve(textDecode(roh));
+    if (eintrag.methode === 0) return Promise.resolve(new Uint8Array(roh));
     if (eintrag.methode !== 8) {
       return Promise.reject(new Error('Nicht unterstuetzte Zip-Kompression in "' +
         eintrag.name + '": Methode ' + eintrag.methode +
         ' (erwartet 0 = ungespeichert oder 8 = deflate).'));
     }
-    return inflateRaw(roh).then(textDecode).catch(function (err) {
+    return inflateRaw(roh).catch(function (err) {
       throw new Error('Eintrag "' + eintrag.name + '" liess sich nicht entpacken ' +
         '(deflate-Fehler): ' + (err && err.message ? err.message : err));
     });
+  }
+
+  function entpacke(bytes, view, eintrag) {
+    if (!eintrag) return Promise.resolve('');
+    return entpackeBytes(bytes, view, eintrag).then(textDecode);
   }
 
   /* ---------- XML: Text aus einem Fragment (Tags strippen, Entitaeten) ---------- */
@@ -99,17 +112,22 @@
 
   /* ---------- API ---------- */
 
-  /* oeffne(arrayBuffer) -> { eintraege, lies(name) -> Promise<string> }.
+  /* oeffne(arrayBuffer) -> { eintraege, lies(name) -> Promise<string>,
+     liesBytes(name) -> Promise<Uint8Array> }.
      eintraege ist das Central-Directory-Verzeichnis (Name -> {lho, methode,
-     csize}), lies() entpackt einen Eintrag on-demand (fehlender Name ->
-     Promise.resolve('')). Wirft synchron, wenn arrayBuffer kein Zip ist. */
+     csize}), lies() entpackt einen Eintrag on-demand als Text (fehlender
+     Name -> Promise.resolve('')), liesBytes() dieselbe Entpack-Logik als
+     rohe Bytes (fehlender Name -> ein leeres Uint8Array) — additiv seit
+     Etappe 3b/Task B4, fuer den byte-identischen Vorlagen-Durchreich im
+     docx-Bauer. Wirft synchron, wenn arrayBuffer kein Zip ist. */
   function oeffne(arrayBuffer) {
     var bytes = new Uint8Array(arrayBuffer);
     var view = new DataView(arrayBuffer);
     var eintraege = zipEintraege(bytes, view);
     return {
       eintraege: eintraege,
-      lies: function (name) { return entpacke(bytes, view, eintraege[name]); }
+      lies: function (name) { return entpacke(bytes, view, eintraege[name]); },
+      liesBytes: function (name) { return entpackeBytes(bytes, view, eintraege[name]); }
     };
   }
 
