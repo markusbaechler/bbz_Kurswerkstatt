@@ -922,13 +922,20 @@
        .blocks-Namen, nicht mehr den .docx-Namen — der Chat liefert seit der
        E5-Revision keine .docx mehr, app.js uebergibt hier den Stamm mit
        .blocks-Endung (s. den kopieren-Handler dort). Direkt danach ein
-       fester Satz zur Illustrations-Regie (B6): je Kapitel genau eine
-       ###ILLUSTRATION, mit einer Bild-Regie (szene:) oder, wo die Variante
-       selbst Bilder erzeugen kann, zusaetzlich als mitgeliefertes PNG
-       (datei:) — die Kurswerkstatt setzt das endgueltige Bild beim
-       Hochladen. Der Wortlaut dieses Prompt-Kopfs selbst ist nicht Teil von
-       B5/B6 (Werkzeug-/Prompt-Texte sind ein eigener, freigabepflichtiger
-       Schritt, s. CLAUDE.md "Offen").
+       fester Satz zur Illustrations-Regie — seit der Fixwave 2026-08-04
+       (C1, Etappe 3b Review) IMMER datei: PLUS szene:, nie mehr szene:
+       allein: das Gate in skript-lesen.js verlangt datei: ODER katalog:,
+       und katalog: wird seit derselben Fixwave (I1) nirgends mehr im
+       Kontrakt beworben (die Validierung erlaubt es weiterhin, B7 baut den
+       Katalog erst noch) — ein Prompt, der szene: allein als ausreichend
+       hinstellte, liess jeden Claude-Weg-Upload mit Illustration am Gate
+       scheitern. Der Handoff-Satz unterscheidet seither nach
+       extras.variante: bei 'chatgpt' liefert der Chat das PNG im selben
+       Upload mit, sonst (u. a. 'claude') erzeugt eine Person das Bild
+       danach separat und speichert es GENAU unter dem genannten
+       datei:-Namen. Der Wortlaut dieses Prompt-Kopfs selbst ist sonst
+       nicht Teil von B5/B6 (Werkzeug-/Prompt-Texte sind ein eigener,
+       freigabepflichtiger Schritt, s. CLAUDE.md "Offen").
 
        Rahmen und gemeinsame Saetze NICHT dupliziert (Konvention 9): Kurs/
        Kompetenzfeld-Zeilen wie in briefingPromptKopf/lernzielePromptKopf,
@@ -996,9 +1003,18 @@
         z.push('Liefere in Phase 2 DIREKT die Blockdatei ' + extras.zielname + ' zum Herunterladen.');
       }
       z.push('');
-      z.push('Jedes Kapitel trägt genau eine ###ILLUSTRATION: eine Bild-Regie (szene:) oder, wenn du ' +
-             'selbst Bilder erzeugen kannst, zusätzlich als mitgeliefertes PNG (datei:) — die ' +
-             'Kurswerkstatt setzt das endgültige Bild beim Hochladen.');
+      var kursIdFuerDatei = (kurs && kurs.kursId) || '{kurs}';
+      z.push('Jedes Kapitel trägt genau eine ###ILLUSTRATION mit datei: (IMMER Pflicht — vergib den ' +
+             'Dateinamen selbst, Empfehlung: ' + kursIdFuerDatei + '-illu-<Kapitelnr>.png, kein ' +
+             'Pflichtmuster) und szene: als Bild-Regie.');
+      if (extras.variante === 'chatgpt') {
+        z.push('Kannst du selbst Bilder erzeugen: liefere das PNG im selben Upload gleich mit, ' +
+               'GENAU unter dem in datei: genannten Namen.');
+      } else {
+        z.push('Du selbst lieferst kein PNG — eine Person erzeugt das Bild danach mit dem ' +
+               'Stil-Prompt in einem Bild-Werkzeug und speichert es GENAU unter dem in datei: ' +
+               'genannten Namen, bevor sie hochlädt.');
+      }
       z.push('');
       z.push('=== ENDE DER ANGABEN ===');
       z.push('');
@@ -1217,7 +1233,9 @@
        er sich verstecken koennte. blocksPruefe() prueft deshalb nur noch,
        was skriptLesen.lies() NICHT schon selbst sicherstellt (Pflicht-
        bausteine je Kapitel laufen dort ueber pruefeKapitel, s. dort) —
-       Q-ID-Abgleich, Marker-Verbot, Wortbudget.
+       Q-ID-Abgleich, Marker-Verbot, Wortbudget, plus (seit der Fixwave
+       2026-08-04, I1) der Katalog-Verweis-Hinweis fuer eine ###ILLUSTRATION
+       mit katalog: ohne datei:, s. u.
 
        Aufrufer-Vertrag (controller.hochladen, s. dort): blocksPruefe() wird
        NUR aufgerufen, wenn gelesen.fehler bereits leer ist — bei einem
@@ -1316,6 +1334,28 @@
                            'vervollständigen.');
           });
       }
+
+      /* I1 (Fixwave 2026-08-04, Etappe-3b-Review): ein reiner katalog:-Verweis
+         ist heute eine stille Sackgasse — es gibt noch keinen Katalog (B7
+         baut ihn erst) und keine App-Auflösung dafuer: weder
+         docxBauen.illustrationAbsatz() noch inhalt.illustrationenFehlend()
+         lesen katalog:, beide kennen nur datei:. Ohne diesen Hinweis bliebe
+         das fehlende Bild STILL — kein Fehler (die Pflicht-ODER-Regel in
+         skript-lesen.js/.cjs ist mit katalog: allein bereits erfuellt), nur
+         ein leeres Bild im gebauten Word, das niemand angekuendigt hat. Der
+         Hinweis landet wie jeder andere hinweise-Eintrag am Ende der
+         Erfolgsmeldung (app.js weiterMitSkriptBau) — nie blockierend, aber
+         auch nie unsichtbar. */
+      kapitel.forEach(function (k) {
+        var illuRoh = k.teile && k.teile.ILLUSTRATION;
+        if (!illuRoh) return;
+        var hatDatei = /^datei:[ \t]*\S/m.test(String(illuRoh));
+        var hatKatalog = /^katalog:[ \t]*\S/m.test(String(illuRoh));
+        if (hatKatalog && !hatDatei) {
+          hinweise.push('Kapitel ' + (k.ek || '?') + ': Katalog-Verweis wird in dieser Fassung ' +
+                         'noch nicht gesetzt — Bild fehlt im Dokument.');
+        }
+      });
 
       return { fehler: fehler, hinweise: hinweise };
     },

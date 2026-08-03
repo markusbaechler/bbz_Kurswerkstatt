@@ -163,3 +163,32 @@ test('illustrationenFehlend: ILLUSTRATION ohne "datei:"-Zeile wird toleriert (ke
   const fehlt = inhalt.illustrationenFehlend(g, []);
   assert.deepStrictEqual(fehlt, []);
 });
+
+/* ---------- blocksPruefe: katalog-only-Hinweis (Fixwave 2026-08-04, I1) ----------
+   katalog: ist heute (vor B7) eine stille Sackgasse — kein Katalog, keine App-
+   Aufloesung. illustrationenFehlend() bleibt bewusst tolerant (kein Fehler), aber
+   blocksPruefe() haengt seither einen HINWEIS an, damit es nie still bleibt. */
+
+test('blocksPruefe: ###ILLUSTRATION mit katalog: ohne datei: erzeugt einen Hinweis, keinen Fehler', () => {
+  const g = gelesen();
+  g.kapitel[0].teile.ILLUSTRATION = 'katalog: sparen-und-anlegen';
+  const r = inhalt.blocksPruefe(g, D());
+  assert.deepStrictEqual(r.fehler, []);
+  assert.ok(r.hinweise.some((h) => /Katalog-Verweis wird in dieser Fassung noch nicht gesetzt/.test(h)),
+    'der Katalog-Hinweis fehlt: ' + JSON.stringify(r.hinweise));
+  assert.ok(r.hinweise.some((h) => /VL-002-EK-001/.test(h)), 'der Hinweis sollte das Kapitel nennen');
+});
+
+test('blocksPruefe: ###ILLUSTRATION mit datei: (auch zusaetzlich katalog:) loest KEINEN Katalog-Hinweis aus', () => {
+  const g = gelesen();
+  g.kapitel[0].teile.ILLUSTRATION = 'katalog: sparen-und-anlegen\ndatei: szene.png';
+  const r = inhalt.blocksPruefe(g, D());
+  assert.ok(!r.hinweise.some((h) => /Katalog-Verweis/.test(h)));
+});
+
+test('blocksPruefe: ###ILLUSTRATION mit szene: allein (kein katalog:) loest ebenfalls keinen Katalog-Hinweis aus', () => {
+  const g = gelesen();
+  g.kapitel[0].teile.ILLUSTRATION = 'datei: szene.png\nszene: eine Beraterin am Schreibtisch';
+  const r = inhalt.blocksPruefe(g, D());
+  assert.ok(!r.hinweise.some((h) => /Katalog-Verweis/.test(h)));
+});

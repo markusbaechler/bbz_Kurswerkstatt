@@ -289,12 +289,18 @@
     },
 
     /* Die docx-Vorlage fuer den Skript-Bau (B5) — ein Abruf je Sitzung.
-       state.data.vorlage cacht das Ergebnis (auch null bei Fehlschlag): ein
-       zweiter Schritt-3-Upload in derselben Sitzung laedt sie nicht erneut. */
+       state.data.vorlage cacht NUR einen Erfolg (Fixwave 2026-08-04, I2):
+       vorher cachte jedes Ergebnis, auch null bei Fehlschlag — ein einzelner
+       Netz-Timeout blockierte damit JEDEN weiteren Schritt-3-Upload der
+       ganzen Sitzung mit derselben, irrefuehrenden Meldung ("nicht
+       gefunden", obwohl die Datei sehr wohl da ist). Liefert
+       zentralDateiRoh null, bleibt state.data.vorlage auf undefined — der
+       naechste Aufruf (naechster Upload-Versuch) probiert erneut, statt den
+       einmaligen Fehlschlag fuer die Sitzung festzuschreiben. */
     vorlageLaden: function () {
       if (state.data.vorlage !== undefined) return Promise.resolve(state.data.vorlage);
       return graph.zentralDateiRoh('vorlagen/reference.docx').then(function (buf) {
-        state.data.vorlage = buf;
+        if (buf) state.data.vorlage = buf;
         return buf;
       });
     },
@@ -2197,8 +2203,16 @@
          brauchen sie), dann jedes Bild nach `abbildungen/` im Schrittordner.
          `geschafft` sammelt, was bereits abgelegt wurde — schlaegt ein
          SPAETERER Schritt der Ablage fehl, nennt die Meldung, was schon
-         liegt, und dass ein erneuter Versuch sicher ist (Graph ueberschreibt
-         deterministisch, Muster quelleErfassen-I10). */
+         liegt. Anders als bei den Bildern (feste Namen in abbildungen/, ein
+         erneuter Versuch ueberschreibt sie deterministisch, Muster
+         quelleErfassen-I10) sind docx UND blocks VERSIONIERT
+         (inhalt.hochladeZiel/naechsteVersion, s. dort) — ein erneuter
+         Versuch legt die NAECHSTE, vollstaendige Version daneben, er
+         ueberschreibt die unvollstaendige NICHT (Fixwave 2026-08-04, I3: die
+         alte Meldung behauptete hier faelschlich ein sicheres Ueberschreiben
+         fuer alle drei Ablage-Schritte; die unvollstaendige Fassung bleibt
+         liegen und gehoert von Hand in den SharePoint-Papierkorb, s. der
+         Meldetext unten). */
       function weiterMitSkriptBau(gelesen, hinweise, blockDatei, pngKandidaten) {
         if (meld) meld.hidden = true;
         knopf.disabled = true; knopf.textContent = 'wird gebaut …';
@@ -2207,6 +2221,10 @@
         var kursSkript = (gelesen.skript && gelesen.skript.kurs) || k.kursId;
         var bilder = {};
         var geschafft = [];
+        /* I3: fuer die Teilfehler-Meldung im abschliessenden .catch braucht es
+           die Versionsnummer des Ziels — die lebt nur innerhalb des naechsten
+           .then(dateien)-Closures (ziel), deshalb hier gemerkt, sobald bekannt. */
+        var zielInfo = null;
 
         /* Diagramme rendern (B3), je ABBILDUNG ausser vergleichstabelle —
            dieselbe Reihenfolge (Kapitel, dann Abbildung je Kapitel), in der
@@ -2263,8 +2281,13 @@
           .then(function () { return graph.vorlageLaden(); })
           .then(function (vorlage) {
             if (!vorlage) {
-              throw new Error('Vorlage _zentral/vorlagen/reference.docx nicht gefunden — nichts ' +
-                'gebaut, nichts hochgeladen.');
+              /* I2 (Fixwave 2026-08-04): der alte Wortlaut ("… nicht
+                 gefunden") klang endgueltig, obwohl ein Netz-Timeout dieselbe
+                 Meldung ausloest wie eine fehlende Datei — beides fuehrt hier
+                 zu vorlage === null. graph.vorlageLaden() cacht seit I2 nur
+                 noch einen Erfolg, ein erneuter Versuch laedt also wirklich
+                 neu. */
+              throw new Error('Vorlage konnte nicht geladen werden — erneut versuchen.');
             }
             return root.docxBauen.baue(vorlage, gelesen, bilder);
           })
@@ -2284,6 +2307,7 @@
                   ? 'Wähle zuerst die Variante — der Dateiname hängt davon ab.'
                   : 'Für diesen Schritt ist kein Hochladen vorgesehen.');
               }
+              zielInfo = ziel;
               var blocksName = ziel.datei.replace(/\.[a-z0-9]+$/i, '.blocks');
               var bildNamen = Object.keys(bilder);
 
@@ -2331,8 +2355,20 @@
           .catch(function (e) {
             var text = 'Nicht hochgeladen. ' + (e.message || e);
             if (geschafft.length) {
-              text += ' Bereits abgelegt: ' + geschafft.join(', ') + ' — erneutes Hochladen ist ' +
-                'sicher (Graph überschreibt deterministisch).';
+              /* I3 (Fixwave 2026-08-04): docx/blocks sind VERSIONIERT
+                 (inhalt.hochladeZiel/naechsteVersion) — ein erneuter Versuch
+                 legt die naechste Version daneben, er ueberschreibt die
+                 unvollstaendige NICHT. Die alte Meldung ("erneutes Hochladen
+                 ist sicher, Graph überschreibt deterministisch") galt so nur
+                 fuer die Bilder mit ihren festen Dateinamen — fuer docx/
+                 blocks war sie falsch und liess eine unvollstaendige
+                 Zwischenversion unbemerkt in SharePoint liegen. */
+              var unvollstaendig = zielInfo && typeof zielInfo.version === 'number'
+                ? ' Die unvollständige v' + zielInfo.version + ' in SharePoint von Hand löschen (Papierkorb).'
+                : ' Die unvollständige Fassung in SharePoint von Hand löschen (Papierkorb).';
+              text += ' Bereits abgelegt: ' + geschafft.join(', ') + ' — ein erneuter Versuch legt ' +
+                'die nächste, vollständige Version daneben, er überschreibt die unvollständige ' +
+                'nicht.' + unvollstaendig;
             }
             /* klemmtSichtbar, nicht nur klemmt (Review-Finding 2): Bau-
                fehler, fehlende Vorlage und Upload-Teilfehler landen sonst
@@ -2473,7 +2509,8 @@
               return;
             }
             /* Referenzierte Illustrationen muessen im selben Upload liegen
-               (B6-Vorgriff, tolerant — s. inhalt.illustrationenFehlend). */
+               (B6, tolerant gegenueber einer ILLUSTRATION ohne datei:-Feld
+               — s. inhalt.illustrationenFehlend). */
             var pngNamen = pngKandidaten.map(function (p) { return p.name; });
             var fehlendeIllustrationen = root.inhalt.illustrationenFehlend(gelesen, pngNamen);
             if (fehlendeIllustrationen.length) {

@@ -3025,3 +3025,134 @@ Live-Probe der neuen Blockdatei-Lieferung im Chat-Weg an einem echten Kurs steht
 B1–B5, Sache eines späteren Schritts). `werkzeuge.json`/SharePoint (`guide-1`, Schritt 1) trägt
 noch keinen Projekt-Wissen-Hinweis zu Illustrationen — wie bei Task Z6/Z8 ein separater,
 freigabepflichtiger Redaktionsschritt.
+
+## Fixwave nach dem Etappe-3b-Gesamt-Review (2026-08-04): C1, I1, I2, I3
+
+Ein unabhängiger Review der ganzen Etappe 3b (beide Bäume) fand vier Findings — ein Critical, drei
+Important — plus einen veralteten Kommentar. Alle fünf sind in einem Zug geschlossen, App und
+Werkzeuge gemeinsam.
+
+**C1 (Critical) — der Prompt liess `szene:` allein durchgehen, das Gate verlangt `datei:` ODER
+`katalog:`.** Der ILLUSTRATION-Abschnitt (`skript-inhaltskontrakt.txt`, Werkzeuge-Baum) sagte an
+mehreren Stellen „reicht die Szene-Regie (`szene:`) allein" bzw. führte `katalog: … ODER szene: …`
+als gleichwertige Feldzeilen — aber `skript-lesen.cjs`/`.js` (unverändert seit B6) verlangen
+`datei:` ODER `katalog:` als Pflicht-ODER; `szene:` allein war dort **nie** ausreichend. Jeder
+Weg-Claude-Upload mit einer Illustration, die nur `szene:` trug, scheiterte damit garantiert am
+Gate — der Prompt versprach etwas, das die Maschine nicht hielt. **Fix, auf das Schema der
+Validierung, nicht umgekehrt:** jede `###ILLUSTRATION` trägt seither IMMER `datei:` (der Chat
+vergibt den Namen selbst, Empfehlung `{kurs}-illu-<Kapitelnr>.png`, kein Pflichtmuster) PLUS
+`szene:` als Bild-Regie — geändert an allen vier betroffenen Stellen in
+`skript-inhaltskontrakt.txt` (Gerüst-Beispiel, JE-KOMPETENZ-Blockbeschreibung, der ganze
+`--- ILLUSTRATION ---`-Abschnitt inkl. STIL, die Selbstprüfung unter ABNAHME CHAT) sowie im
+Regie-Satz von `inhalt.skriptPromptKopf` (App). **Handoff unterscheidet nach `extras.variante`:**
+im Weg ChatGPT darf der Chat das PNG im selben Upload gleich mitliefern, GENAU unter dem in
+`datei:` genannten Namen; sonst (Weg Claude, oder keine Variante gesetzt — der sicherere Default)
+erzeugt eine Person das Bild danach separat mit dem Stil-Prompt in einem Bild-Werkzeug und
+speichert es GENAU unter diesem Namen, bevor sie hochlädt. `katalog:` selbst bleibt als Feld in
+`skript-lesen.cjs`/`.js` und `inhalt.illustrationenFehlend`/`docxBauen.illustrationAbsatz`
+unverändert gültig (s. I1) — der Fix ändert nur, was der Prompt vom Modell VERLANGT, nicht was das
+Gate ERLAUBT.
+
+**I1 (Important) — `katalog:` war eine stille Sackgasse: kein Katalog, keine App-Auflösung.**
+`katalog:` erfüllt zwar die Pflicht-ODER-Regel in `skript-lesen.cjs`/`.js`, aber weder
+`docxBauen.illustrationAbsatz()` noch `inhalt.illustrationenFehlend()` lesen dieses Feld — beide
+kennen nur `datei:`. Eine Illustration mit `katalog:` allein ging bisher weder als Fehler noch als
+Hinweis durch: das gebaute Word blieb an dieser Stelle einfach ohne Bild, ohne dass irgendwer es
+angekündigt hätte. **Fix, zweigleisig:**
+1. `katalog:` aus ALLEN Prompt-/Kontrakt-Texten entfernt (`skript-inhaltskontrakt.txt`) — die
+   Validierung selbst behält `katalog:` als gültiges Feld (B7, noch nicht gebaut, baut den Katalog
+   erst), nur die Texte bewerben es nicht mehr. Ein neuer Selbstprüfungs-Befund in
+   `build-skript.cjs` hält das dauerhaft fest: taucht `katalog:` (das Feld, nicht das Wort
+   „Katalog" in Prosa — die Variante-C-Entscheidungshistorie in `illustrations-stil.txt` bleibt
+   unangetastet) wieder in einer generierten Fassung auf, bricht der Generator mit einem Befund ab
+   statt stillschweigend zu schreiben.
+2. **Netz in `inhalt.blocksPruefe` (App):** ein `###ILLUSTRATION`-Block mit `katalog:`, aber ohne
+   `datei:`, erzeugt seither einen HINWEIS („Kapitel {ek}: Katalog-Verweis wird in dieser Fassung
+   noch nicht gesetzt — Bild fehlt im Dokument."), keinen Fehler — der Upload geht durch, aber die
+   Erfolgsmeldung (`weiterMitSkriptBau`, `state.hinweis`) nennt die Lücke ausdrücklich, statt sie
+   still zu lassen. Trägt derselbe Block zusätzlich `datei:`, bleibt der Hinweis aus (der Katalog
+   ist dann irrelevant, das Bild kommt über `datei:`).
+
+**I2 (Important) — `graph.vorlageLaden` cachte auch einen Fehlschlag sitzungsweit.** Vorher: liefert
+`zentralDateiRoh` einmal `null` (Netz-Timeout, kurzer Aussetzer), schrieb `vorlageLaden` dieses
+`null` in `state.data.vorlage` und JEDER weitere Schritt-3-Upload derselben Sitzung scheiterte mit
+derselben, irreführenden Meldung — ohne dass ein erneuter Versuch je wieder geladen hätte. **Fix:**
+`vorlageLaden` cacht nur noch einen Erfolg (`if (buf) state.data.vorlage = buf;`); bei `null`
+bleibt `state.data.vorlage` auf `undefined`, der nächste Aufruf lädt erneut. Die Meldung beim
+Bauversuch heisst jetzt „Vorlage konnte nicht geladen werden — erneut versuchen." statt des vorher
+endgültig klingenden „… nicht gefunden" (beide Meldekanäle, `klemmtSichtbar` unverändert).
+
+**I3 (Important) — die Teilfehler-Meldung versprach ein sicheres Überschreiben, das es für
+docx/blocks nicht gibt.** `weiterMitSkriptBau` sammelt in `geschafft[]`, was bei einem
+SPÄTEREN Ablage-Schritt bereits abgelegt wurde, und nannte dazu bisher „erneutes Hochladen ist
+sicher (Graph überschreibt deterministisch)" — richtig für die Bilder (feste Namen in
+`abbildungen/`), aber FALSCH für docx und blocks: beide sind VERSIONIERT
+(`inhalt.hochladeZiel`/`naechsteVersion`), ein erneuter Versuch legt die NÄCHSTE Version daneben,
+er überschreibt die unvollständige nicht — die liegen gebliebene `_v{N}` (docx ohne blocks, ohne
+Bilder) wäre nie bemerkt worden. **Fix:** die Meldung sagt jetzt „ein erneuter Versuch legt die
+nächste, vollständige Version daneben, er überschreibt die unvollständige nicht" plus, wo bekannt,
+die konkrete Versionsnummer („Die unvollständige v{N} in SharePoint von Hand löschen
+(Papierkorb).") — `zielInfo` merkt sich dafür das berechnete Ziel, sobald es feststeht, weil die
+Versionsnummer sonst nur innerhalb des `.then(dateien)`-Closures lebt, in dem der abschliessende
+`.catch` nicht steht.
+
+**Trivial mitgenommen:** der Kommentar „B6-Vorgriff, tolerant" an `illustrationenFehlend()`
+(`app.js`, `controller.hochladen`) stammte aus der Zeit VOR B6, als `###ILLUSTRATION` noch kein
+echter Schema-Baustein war — B6 ist seit dem 2026-08-03 gelandet (709/709 grün), der Kommentar
+nennt jetzt „B6, tolerant gegenüber einer ILLUSTRATION ohne datei:-Feld" statt eines Vorgriffs auf
+etwas, das längst existiert.
+
+**Tests:** `test/skriptkopf.test.js` (3 neue Fälle — Handoff-Satz Weg ChatGPT, Default-Handoff wie
+Claude ohne gesetzte `extras.variante`, die `datei:`-Empfehlung nennt die Kurs-ID bzw. den
+`{kurs}`-Platzhalter ohne Kurs — plus drei bestehende Fälle um Assertionen ergänzt: `datei:` IMMER
+Pflicht statt „oder" neben `szene:`, kein `katalog:` mehr im Kopf, der Claude-Handoff-Satz selbst),
+`test/skriptpruefe.test.js` (3 neue Fälle für den katalog-only-Hinweis: Hinweis ohne `datei:`,
+kein Hinweis mit `datei:` zusätzlich, kein Hinweis bei `szene:` allein ohne `katalog:`),
+`test/graph.test.js` (1 neuer Fall: `vorlageLaden` cacht nur einen Erfolg, ein Fehlschlag löst
+beim nächsten Aufruf einen echten Netzzugriff aus — Netzwerk-Ebene direkt über
+`graph.zentralDateiRoh`, Muster `test/ablegen.test.js`), `test/hochladen.test.js` (1 neuer Fall:
+docx gelingt, blocks scheitert — die Meldung nennt „nächste Version" samt der konkreten
+Versionsnummer, nicht mehr „überschreibt sicher"; der bestehende B5-(n)-Test auf den neuen
+„erneut versuchen"-Wortlaut umgestellt). Werkzeuge-Baum: `test/build-skript.test.js` (bestehender
+B6-Test auf `datei:`/`szene:` statt `katalog:`/`szene:` umgestellt, plus eine Zeile, die `katalog:`
+in keiner der beiden Chat-Fassungen mehr zulässt). **App: 717/717 grün** (Baseline 709 + 8: 3 neue
+`skriptkopf`-Tests, 3 neue `skriptpruefe`-Tests, 1 neuer `graph`-Test, 1 neuer `hochladen`-Test).
+**Werkzeuge: 310/310 grün** (kein Netto-Zuwachs, ein bestehender Test inhaltlich umgestellt). Vor
+der Bearbeitung eine `_verlauf`-Kopie angelegt
+(`_verlauf/skript-inhaltskontrakt_vor-fixwave-3b.txt`), `node build-skript.cjs` produktiv
+gelaufen, `skript-chat_claude.txt` ganz gegengelesen (kein `katalog:`-Gebot mehr, `datei:`-Pflicht
+durchgängig, Selbstprüfung passt zum neuen Wortlaut).
+
+**Mutationsproben (tatsächlich ausgeführt, danach wiederhergestellt):**
+
+1. App — die katalog-only-Hinweis-Bedingung in `inhalt.blocksPruefe` auf `if (false) { … }`
+   gesetzt, `node --test test/skriptpruefe.test.js`:
+   ```
+   ✖ blocksPruefe: ###ILLUSTRATION mit katalog: ohne datei: erzeugt einen Hinweis, keinen Fehler
+     AssertionError [ERR_ASSERTION]: der Katalog-Hinweis fehlt: ["Dossier-Quelle Q-002 erscheint
+     nicht in der Leseliste — Teil-Lieferung je Lerneinheit ist legitim, vor Schritt 4
+     vervollständigen."]
+   ```
+   Genau der eine neue Test fiel rot, alle anderen 16 blieben grün; danach wiederhergestellt,
+   komplette Suite erneut geprüft: `node --test` → 717/717 grün.
+2. Werkzeuge — `katalog:` probeweise wieder in den ILLUSTRATION-Abschnitt von
+   `skript-inhaltskontrakt.txt` eingesetzt (`Feldzeilen, eine davon Pflicht: katalog: … ODER
+   szene: …`), `node build-skript.cjs`:
+   ```
+   BEFUNDE — nichts geschrieben:
+     claude: erwaehnt "katalog:" noch als Feld - seit der Fixwave 2026-08-04 (I1) wirbt kein
+     Prompt-Text mehr dafuer, die Validierung erlaubt es weiterhin (B7 baut den Katalog erst noch)
+     chatgpt: erwaehnt "katalog:" noch als Feld - seit der Fixwave 2026-08-04 (I1) wirbt kein
+     Prompt-Text mehr dafuer, die Validierung erlaubt es weiterhin (B7 baut den Katalog erst noch)
+   ```
+   Der Generator brach wie vorgesehen ab, nichts wurde geschrieben; danach die Quelldatei aus der
+   Sicherung wiederhergestellt (byte-identisch geprüft, `diff` leer), `node build-skript.cjs`
+   erneut produktiv gelaufen (dieselben Dateigrössen wie vor der Probe), komplette Tools-Suite
+   erneut geprüft: `node --test test/*.test.js` → 310/310 grün.
+
+**Offen / bewusst nicht Teil dieser Fixwave:** das reale `ablage-kontrakt.json`/`schritte.json` in
+SharePoint führen `pruefung: 'skript'` für Schritt 3 weiterhin nicht (Weg B, unverändert seit B5)
+— diese Fixwave ändert wie B5/B6 nur App-Code, Prompt-Texte im Werkzeuge-Baum und Test-Fixtures.
+Der Illustrations-Katalog (B7) bleibt ungebaut; sobald er existiert, braucht der Prompt einen
+neuen, eigenen Abschnitt dafür — kein Wiederaufleben von `katalog:` im aktuellen Wortlaut ohne
+diesen Schritt.

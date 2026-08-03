@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert');
 
-const { graph } = require('../app.js');
+const { graph, state } = require('../app.js');
 
 /* Echtes Element aus KWKurse, Site /sites/ffentlicheAngebote */
 const SP_ITEM = {
@@ -108,4 +108,39 @@ test('graph.siteUrl baut den Graph-Pfad aus der CONFIG', () => {
 test('pfadImKursordner(): leerer Ordner heisst Kursordner-Wurzel, ohne fuehrenden Schraegstrich', () => {
   assert.strictEqual(graph.pfadImKursordner('01_briefing', 'x.md'), '01_briefing/x.md');
   assert.strictEqual(graph.pfadImKursordner('', 'VL-001_dossier.json'), 'VL-001_dossier.json');
+});
+
+/* ---------- graph.vorlageLaden: nur ein Erfolg wird gecacht (Fixwave 2026-08-04, I2) ----------
+   Vorher cachte vorlageLaden() JEDES Ergebnis, auch null bei einem Fehlschlag (Netz-Timeout,
+   Datei fehlt) — ein einziger Fehlschlag blockierte damit jeden weiteren Schritt-3-Upload der
+   ganzen Sitzung mit derselben Meldung. graph.zentralDateiRoh wird hier direkt ueberschrieben
+   (statt driveId/token/fetch zu mocken, s. test/ablegen.test.js fuer das schwergewichtigere
+   Muster) — vorlageLaden() selbst ruft nur diese eine Funktion auf. */
+test('vorlageLaden: ein Fehlschlag (null) wird NICHT gecacht — ein zweiter Versuch laedt erneut', async () => {
+  const echt = graph.zentralDateiRoh;
+  let aufrufe = 0;
+  graph.zentralDateiRoh = function () {
+    aufrufe++;
+    return Promise.resolve(aufrufe === 1 ? null : new ArrayBuffer(4));
+  };
+  state.data.vorlage = undefined;
+  try {
+    const erster = await graph.vorlageLaden();
+    assert.strictEqual(erster, null, 'erster Versuch sollte null liefern (Fehlschlag simuliert)');
+    assert.strictEqual(state.data.vorlage, undefined,
+      'ein Fehlschlag haette NICHT gecacht werden duerfen');
+    assert.strictEqual(aufrufe, 1);
+
+    const zweiter = await graph.vorlageLaden();
+    assert.ok(zweiter, 'zweiter Versuch haette die Vorlage liefern muessen');
+    assert.strictEqual(aufrufe, 2, 'der zweite Versuch haette erneut laden muessen, nicht aus dem Cache');
+    assert.strictEqual(state.data.vorlage, zweiter, 'ein Erfolg wird gecacht');
+
+    const dritter = await graph.vorlageLaden();
+    assert.strictEqual(aufrufe, 2, 'ein dritter Aufruf nach Erfolg haette den Cache nutzen muessen');
+    assert.strictEqual(dritter, zweiter);
+  } finally {
+    graph.zentralDateiRoh = echt;
+    state.data.vorlage = undefined;
+  }
 });

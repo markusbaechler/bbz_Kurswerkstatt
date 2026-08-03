@@ -53,7 +53,18 @@ test('mit vollem extras traegt der Kopf Variante, Version, basiert_auf, Zielname
     'Schluss-Satz fehlt');
   assert.match(kopf, /###ILLUSTRATION/, 'Illustrations-Regie-Satz fehlt');
   assert.match(kopf, /szene:/, 'Hinweis auf die szene:-Regie fehlt');
-  assert.match(kopf, /datei:/, 'Hinweis auf das mitgelieferte PNG (datei:) fehlt');
+  assert.match(kopf, /datei:/, 'Hinweis auf das PNG (datei:) fehlt');
+  /* C1 (Fixwave 2026-08-04): datei: ist IMMER Pflicht, nicht mehr nur ein
+     "oder" neben szene: — die alte Fassung liess szene: allein als
+     ausreichend gelten, das Gate (skript-lesen.js) verlangt aber datei:
+     ODER katalog:, und katalog: wird seit I1 nicht mehr beworben. */
+  assert.match(kopf, /datei:.*IMMER Pflicht/, 'datei: ist jetzt IMMER Pflicht, nicht mehr optional');
+  assert.doesNotMatch(kopf, /katalog:/, 'katalog: darf nicht mehr beworben werden (I1)');
+  /* Handoff-Satz Weg Claude (extras.variante 'claude'): eine Person erzeugt
+     das Bild separat, der Chat selbst liefert kein PNG. */
+  assert.match(kopf, /eine Person erzeugt das Bild danach/, 'Handoff-Satz fuer den Claude-Weg fehlt');
+  assert.doesNotMatch(kopf, /liefere das PNG im selben Upload gleich mit/i,
+    'die ChatGPT-Formulierung darf im Claude-Weg nicht auftauchen');
   assert.match(kopf, /FACHQUELLEN \(verbindlich/, 'Modus-Satz (quellengestuetzt) fehlt');
   const zeile = kopf.split('\n').filter((z) => z.indexOf('PROJEKT-WISSEN:') === 0)[0];
   assert.ok(zeile, 'PROJEKT-WISSEN-Zeile fehlt');
@@ -86,6 +97,42 @@ test('ohne extras fehlen Variante, Version, basiert_auf und der Schluss-Satz —
   assert.ok(!kopfLeereExtras.includes('Variante:'), 'Variante wurde geraten (leere extras)');
   assert.ok(!kopfLeereExtras.includes('Version des Lieferobjekts'), 'Version wurde geraten (leere extras)');
   assert.ok(!kopfLeereExtras.includes('basiert_auf:'), 'basiert_auf wurde geraten (leere extras)');
+});
+
+/* C1 (Fixwave 2026-08-04): der Handoff-Satz unterscheidet nach extras.variante
+   — 'chatgpt' darf das PNG im selben Upload gleich mitliefern, jede andere
+   Variante (inkl. keine gesetzte) bekommt den Claude-Handoff (Person erzeugt
+   das Bild separat). */
+test('C1: Handoff-Satz Weg ChatGPT — der Chat darf das PNG selbst mitliefern', () => {
+  const d = dossier.neu('VL-002');
+  d.regulatorik = { stand: '1.1.2026' };
+  const kopf = inhalt.skriptPromptKopf(
+    { kursId: 'VL-002', kurstitel: 'Vorsorge Aufbau', kompetenzfeld: 'Vorsorge' },
+    d,
+    { variante: 'chatgpt' }
+  );
+  assert.match(kopf, /liefere das PNG im selben Upload gleich mit/i, 'ChatGPT-Handoff-Satz fehlt');
+  assert.match(kopf, /GENAU unter dem in datei: genannten Namen/);
+  assert.doesNotMatch(kopf, /eine Person erzeugt das Bild danach/,
+    'die Claude-Formulierung darf im ChatGPT-Weg nicht auftauchen');
+});
+
+test('C1: ohne extras.variante (Default) gilt der Claude-Handoff, kein ChatGPT-Versprechen', () => {
+  const d = dossier.neu('VL-002');
+  d.regulatorik = { stand: '1.1.2026' };
+  const kopf = inhalt.skriptPromptKopf({ kursId: 'VL-002' }, d);
+  assert.match(kopf, /eine Person erzeugt das Bild danach/);
+  assert.doesNotMatch(kopf, /liefere das PNG im selben Upload gleich mit/i);
+});
+
+test('C1: die datei:-Empfehlung nennt die Kurs-ID, ohne d bleibt der Platzhalter {kurs}', () => {
+  const d = dossier.neu('VL-002');
+  d.regulatorik = { stand: '1.1.2026' };
+  const kopf = inhalt.skriptPromptKopf({ kursId: 'VL-002' }, d);
+  assert.match(kopf, /VL-002-illu-<Kapitelnr>\.png/);
+
+  const kopfOhneKurs = inhalt.skriptPromptKopf(null, d);
+  assert.match(kopfOhneKurs, /\{kurs\}-illu-<Kapitelnr>\.png/);
 });
 
 test('quellenfrei heisst quellenfrei, nie eine leere Liste', () => {

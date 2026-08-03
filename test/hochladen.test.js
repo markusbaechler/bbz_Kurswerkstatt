@@ -472,6 +472,12 @@ async function hochladenLaufB5(n, dateiListe, opts) {
   };
   graph.hochladen = function (kursId, ordner, datei, blob) {
     hochladenRufe.push({ ordner: ordner, datei: datei, blob: blob });
+    /* I3-Testhilfe: ab dem N-ten Aufruf (1-basiert) schlaegt graph.hochladen
+       fehl — damit laesst sich der Teilfehler-Pfad (geschafft.length > 0,
+       ein SPAETERER Ablage-Schritt scheitert) gezielt nachstellen. */
+    if (opts.hochladenFehlerAb && hochladenRufe.length >= opts.hochladenFehlerAb) {
+      return Promise.reject(new Error('Graph 500'));
+    }
     return Promise.resolve();
   };
   graph.vorlageLaden = function () {
@@ -678,15 +684,23 @@ test('B5 (m) Baufehler (kaputte Vorlage): nichts wird hochgeladen', async () => 
   assert.match(l.fehlerHinweis || '', /word\/document\.xml/);
 });
 
+/* I2 (Fixwave 2026-08-04): der alte Wortlaut ("… nicht gefunden") klang
+   endgueltig, obwohl `keineVorlage` hier ebenso einen Netz-Timeout wie eine
+   wirklich fehlende Datei stehen koennte — graph.vorlageLaden() liefert in
+   beiden Faellen null. Die neue Meldung sagt "erneut versuchen" statt
+   "nicht gefunden". Der eigentliche Cache-Fix (kein Fehlschlag wird
+   gecacht) ist auf der Netzwerk-Ebene in test/graph.test.js belegt — hier
+   wird nur noch der Controller-Meldetext geprueft, weil graph.vorlageLaden
+   in diesem Testharness komplett ueberschrieben ist (s. hochladenLaufB5). */
 test('B5 (n) keine Vorlage gefunden: nichts wird hochgeladen', async () => {
   const l = await hochladenLaufB5(3, [blockDatei('egal.blocks', blockText())],
     { dossier: DOSSIER_OK, keineVorlage: true });
   assert.strictEqual(l.hochladenRufe.length, 0);
   assert.strictEqual(l.rufe.ordnerInhalt, 0);
   assert.match(l.meldung, /Vorlage/);
-  assert.match(l.meldung, /nicht gefunden/);
+  assert.match(l.meldung, /erneut versuchen/);
   assert.match(l.fehlerHinweis || '', /Vorlage/);
-  assert.match(l.fehlerHinweis || '', /nicht gefunden/);
+  assert.match(l.fehlerHinweis || '', /erneut versuchen/);
 });
 
 /* Review-Finding 3: die Blockdatei eines FREMDEN Kurses darf nicht klaglos
@@ -704,4 +718,24 @@ test('B5 (p) Kurs-ID der Blockdatei weicht vom aktuellen Kurs ab: Abbruch, kein 
   assert.match(l.meldung, /AFL-001/);
   assert.match(l.fehlerHinweis || '', /VL-001/);
   assert.match(l.fehlerHinweis || '', /AFL-001/);
+});
+
+/* I3 (Fixwave 2026-08-04): docx/blocks sind VERSIONIERT (inhalt.hochladeZiel/
+   naechsteVersion) — anders als die Bilder mit ihren festen Namen ueberschreibt
+   ein erneuter Versuch die unvollstaendige Fassung NICHT, er legt die naechste
+   Version daneben. Die alte Meldung ("erneutes Hochladen ist sicher, Graph
+   überschreibt deterministisch") war fuer diesen Fall falsch. Hier: der docx-
+   Upload gelingt (1. Aufruf), der blocks-Upload scheitert (2. Aufruf) —
+   geschafft.length === 1, die Meldung muss die naechste-Version-Wahrheit
+   nennen samt der konkreten unvollstaendigen Versionsnummer. */
+test('I3: docx gelingt, blocks scheitert — die Meldung nennt "naechste Version", nicht "ueberschreibt sicher"', async () => {
+  const l = await hochladenLaufB5(3, [blockDatei('egal.blocks', blockText())],
+    { dossier: DOSSIER_OK, hochladenFehlerAb: 2 });
+  assert.strictEqual(l.hochladenRufe.length, 2, 'docx haette gelingen, blocks scheitern sollen');
+  assert.match(l.meldung, /Bereits abgelegt.*AFL-001_skript-claude_v1\.docx/);
+  assert.match(l.meldung, /nächste, vollständige Version daneben/);
+  assert.match(l.meldung, /überschreibt die unvollständige nicht/);
+  assert.match(l.meldung, /unvollständige v1 in SharePoint von Hand löschen \(Papierkorb\)/);
+  assert.doesNotMatch(l.meldung, /erneutes Hochladen ist sicher/);
+  assert.match(l.fehlerHinweis || '', /nächste, vollständige Version daneben/);
 });
