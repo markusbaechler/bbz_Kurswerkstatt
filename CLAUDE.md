@@ -2459,15 +2459,14 @@ eigene, custom-style Kennungen, die Word nicht umbenennt, und kommen unveränder
   zwischen den Zellen. Ein Titel wird als eigener `pStyle="Quelle"`-Absatz danach gesetzt.
   Anderer ABBILDUNG-Typ (nicht Tabelle): `w:drawing` inline, `r:embed` auf eine neu registrierte
   Bild-Relationship, `wp:docPr id` je Einbettung eindeutig hochgezählt (auch bei
-  Wiederverwendung derselben Datei). **Extent (EMU) = PNG-Pixelbreite/-höhe × 9525** (96 dpi,
-  Koordinator-Vorgabe), gelesen direkt aus dem PNG-IHDR-Chunk (Signatur + Breite/Höhe bei
-  Offset 16/20, big-endian); ist das kein lesbares PNG (z. B. ein Testdouble), greift ein
-  dokumentierter Fallback (900×300, die Standardbreite der SVG-Zeichner). **Bekannte, bewusst
-  nicht in dieser Task gelöste Feinheit:** `diagrammZeichnen.png()` (B3) rendert mit
-  Canvas-Faktor 2 für Bildschärfe — die PNG-Pixelmasse sind dadurch doppelt so gross wie die
-  logische SVG-Grösse; diese Extent-Formel rechnet die PNG-Pixel direkt um, ohne den Faktor
-  herauszurechnen. Ob das im fertigen Dokument zu gross wirkt, klären B7 (Design-Feinschliff)
-  und B9 (Live-Probe), keine stille Annahme in B4.
+  Wiederverwendung derselben Datei). **Extent (EMU) = logische Pixelbreite/-höhe × 9525**
+  (96 dpi, Koordinator-Vorgabe) — die logischen Masse kommen aus dem `bilder`-Kontrakt
+  (`{ dateiname -> { bytes, breite, hoehe } }`, s. Fix-Runde 1 unten), **nicht** aus dem
+  PNG-IHDR-Chunk: `diagrammZeichnen.png()` (B3) rendert mit Canvas-Faktor 2 für Bildschärfe,
+  das IHDR trägt deshalb die DOPPELTE Pixelgrösse. Fehlen `breite`/`hoehe` im Kontrakt (z. B.
+  eine Illustration ohne mitgelieferte Masse), fällt `pngMasse()` auf das IHDR zurück — mit
+  demselben dokumentierten Fallback (900×300, Standardbreite der SVG-Zeichner) für den Fall,
+  dass auch das IHDR nicht lesbar ist (z. B. ein Testdouble).
 - **Dateiname-Konvention der Diagramm-PNGs:** `docxBauen.bildDateiname(kurs, variante, nr)` —
   wortgleiches Muster zu `bildDateiname()` in `skript-bauen.cjs` (Tools-Baum), **öffentlich
   exportiert**, damit B5 beim Rendern denselben Namen erzeugt, den dieser Bauer beim
@@ -2481,6 +2480,12 @@ eigene, custom-style Kennungen, die Word nicht umbenennt, und kommen unveränder
   UND trägt eine Zeile „`datei: …`" UND liegt die Datei in `bilder`, wird sie als Bild direkt vor
   dem HERO-Baustein eingefügt (an „Hero-Position", vor dessen eigenem Inhalt). Fehlt irgendeine
   der drei Bedingungen, wird **stillschweigend nichts eingefügt** — kein Fehler, kein Abbruch.
+- **WISSENSCHECK bekommt eine eigene Formatierung** (Fix-Runde 1, s. u.), spiegelbildlich zu
+  `wissenscheck()` in `skript-bauen.cjs`: „Frage." fett + die Frage normal, jede Antwortzeile ein
+  eigener Absatz, zuletzt „Lösung: X." fett + die Begründung normal — alle Absätze mit demselben
+  `pStyle="Wissenscheck"`. `INTERAKTION` (teilt sich denselben `stil`) bekommt diese Behandlung
+  bewusst NICHT — die Referenz formatiert dort keine Feldzeilen, `docx-bauen.js` schaltet exklusiv
+  auf `b.block === 'WISSENSCHECK'`, nicht auf `b.stil`.
 - **QUELLEN → „Quellenverzeichnis", OFFEN → „Ergänzungen"** (Wortlaut wie der Tools-Bauer:
   „Gelesene Quellen"/„Nicht geöffnet" als Unterabschnitte, E6-Umbenennung „Ergänzungen" statt
   „Offene Punkte"/„OFFEN"). **Eine bewusste Abweichung vom Tools-Bauer:** `markdown()` gibt bei
@@ -2503,25 +2508,26 @@ Pandoc/Markdown, nicht über rohes OOXML — es gibt keine wortgleiche Gegenseit
 `docx-bauen.js` spiegeln könnte. Die Parity-Pflicht aus `constraints.md` gilt für „Block-
 Grammatik, Schema und Diagramm-SVGs" (B2/B3), nicht für den docx-Bauer selbst.
 
-**Tests (`test/docxbauen.test.js`, neu, 20 Fälle):** der Byte-Beweis für `liesBytes()` (drei
-Fälle, s. o.) plus 17 End-zu-Ende-Fälle über eine mit `zipSchreiben.baue()` gebaute Mini-Vorlage
-(`[Content_Types].xml`, `word/document.xml` mit `<w:sectPr>`, `word/_rels/document.xml.rels` mit
-einer bestehenden Relationship, `word/styles.xml`, ein binärer Dummy-Vorlagenteil) und ein
-Fixture-`gelesen` über die **echte** `skriptLesen.lies()`-Kette (ein Kapitel mit allen zwölf
-Bausteinen, einer Vergleichstabelle, einer gezeichneten Abbildung, einer „`- `"-Listenzeile in
-BEISPIEL): `pStyle` je Baustein steht im Ergebnis-`document.xml`, kein „`###`" irgendwo im
-XML, sectPr übernommen (genau einmal), `styles.xml` UND der Binär-Dummy sind über `liesBytes()`
-byte-identisch, bestehende Relationship bleibt + Bild-Relationship kommt dazu, png-Default
-ergänzt bzw. nicht verdoppelt, Extent-EMU aus einem selbstgebauten Fake-PNG-IHDR (200×100 →
-1905000×952500), Vergleichstabelle als `w:tbl`, Quellenverzeichnis/Ergänzungen mit Inhalt und im
-Leerfall („`- keine`"), Ablehnung ohne `<w:sectPr>`/ohne `word/document.xml`, Abbruch bei
-fehlendem Bild, ILLUSTRATION-Vorgriff (Position vor dem Hero-Absatz UND der tolerante
-Übersprung-Fall ohne „`datei:`"-Zeile bzw. ohne passendes Bild). **683 Tests grün** (Baseline
-663 + 20 neue).
+**Tests (`test/docxbauen.test.js`):** der Byte-Beweis für `liesBytes()` (drei Fälle, s. o.) plus
+End-zu-Ende-Fälle über eine mit `zipSchreiben.baue()` gebaute Mini-Vorlage (`[Content_Types].xml`,
+`word/document.xml` mit `<w:sectPr>`, `word/_rels/document.xml.rels` mit einer bestehenden
+Relationship, `word/styles.xml`, ein binärer Dummy-Vorlagenteil) und ein Fixture-`gelesen` über
+die **echte** `skriptLesen.lies()`-Kette (ein Kapitel mit allen zwölf Bausteinen, einer
+Vergleichstabelle, einer gezeichneten Abbildung, einer „`- `"-Listenzeile in BEISPIEL, einem
+WISSENSCHECK mit Antwortoptionen/Lösung/Begründung): `pStyle` je Baustein steht im Ergebnis-
+`document.xml`, kein „`###`" irgendwo im XML, sectPr übernommen (genau einmal), `styles.xml` UND
+der Binär-Dummy sind über `liesBytes()` byte-identisch, bestehende Relationship bleibt +
+Bild-Relationship kommt dazu, png-Default ergänzt bzw. nicht verdoppelt, Vergleichstabelle als
+`w:tbl`, Quellenverzeichnis/Ergänzungen mit Inhalt und im Leerfall („`- keine`"), Ablehnung ohne
+`<w:sectPr>`/ohne `word/document.xml`, Abbruch bei fehlendem Bild, ILLUSTRATION-Vorgriff (Position
+vor dem Hero-Absatz UND der tolerante Übersprung-Fall ohne „`datei:`"-Zeile bzw. ohne passendes
+Bild), Extent-EMU aus logischen Massen UND der IHDR-Fallback (Fix-Runde 1, s. u.),
+WISSENSCHECK-Formatierung UND die INTERAKTION-Gegenprobe (Fix-Runde 1, s. u.). **686 Tests grün**
+(Baseline 663 + 23 neue: 20 aus dem ersten Durchlauf + 3 aus Fix-Runde 1).
 
-**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** in `bausteinAbsaetze()` die
-Kasten-`pStyle`-Vererbung für Listenabsätze stillgelegt (`b.stil` durch `null` ersetzt, sobald
-die Zeile mit „`- `" beginnt), `node --test test/docxbauen.test.js`:
+**Mutationsprobe Politur-Fix (tatsächlich ausgeführt, wie im Brief verlangt):** in
+`bausteinAbsaetze()` die Kasten-`pStyle`-Vererbung für Listenabsätze stillgelegt (`b.stil` durch
+`null` ersetzt, sobald die Zeile mit „`- `" beginnt), `node --test test/docxbauen.test.js`:
 ```
 ℹ tests 20
 ℹ pass 19
@@ -2531,8 +2537,7 @@ die Zeile mit „`- `" beginnt), `node --test test/docxbauen.test.js`:
   AssertionError [ERR_ASSERTION]: Listenabsatz mit Kasten-pStyle nicht gefunden:
 ```
 Genau der eine Politur-Fix-Test fiel rot, alle anderen 19 (inklusive der Byte-Beweis-Tests und
-aller übrigen Baustein-/Tabellen-/Bild-/Anhang-Fälle) blieben grün; danach wiederhergestellt,
-komplette Suite erneut geprüft: `node --test` → **683/683 grün**.
+aller übrigen Baustein-/Tabellen-/Bild-/Anhang-Fälle) blieben grün; danach wiederhergestellt.
 
 **`index.html`:** Script-Tag `docx-bauen.js` steht nach `diagramm-zeichnen.js`, vor `app.js` —
 folgt demselben Cache-Buster-Muster wie jedes andere `*.js`. Ladereihenfolge stellt sicher, dass
@@ -2541,11 +2546,79 @@ stehen (Lazy-Accessoren `Z()`/`ZS()`/`S()`, Muster `xlsx-lesen.js`/`skript-lesen
 
 **Offen / bewusst nicht Teil von B4:** `docx-bauen.js` wird von keinem Aufrufer in `app.js`
 genutzt — B4 liefert nur den Bauer. Die Verdrahtung (Vorlage aus Graph laden, Bilder rendern und
-sammeln, Ergebnis hochladen) folgt mit B5. Der WISSENSCHECK-Baustein wird generisch wie jeder
-andere Kasten gerendert (jede Zeile ein eigener Absatz mit `pStyle="Wissenscheck"`) — keine
-eigene Frage/Lösung/Begründung-Formatierung wie in `wissenscheck()` (Tools-Bauer); das ist eine
-bewusste Vereinfachung, kein Bug, ausserhalb des Task-Briefs. Ob eine damit gebaute `.docx`
-tatsächlich in Word öffnet, ist wie bei B1/B3 **dokumentierte Grenze, keine Live-Probe in dieser
-Task** — das ist Sache von B9 (Live-Probe am Ende der Etappe): B4 verifiziert ausschliesslich
-Struktur (`pStyle`, `w:tbl`, `w:drawing`, rels/Content-Types) und Byte-Treue gegen `zip-lesen.js`,
-nie ein echtes Word-Öffnen.
+sammeln, Ergebnis hochladen) folgt mit B5 — B5 muss beim Aufruf von `diagrammZeichnen.png()`
+die dabei verwendete logische Grösse in denselben `bilder`-Eintrag legen (s. Fix-Runde 1). Ob
+eine damit gebaute `.docx` tatsächlich in Word öffnet, ist wie bei B1/B3 **dokumentierte Grenze,
+keine Live-Probe in dieser Task** — das ist Sache von B9 (Live-Probe am Ende der Etappe): B4
+verifiziert ausschliesslich Struktur (`pStyle`, `w:tbl`, `w:drawing`, rels/Content-Types) und
+Byte-Treue gegen `zip-lesen.js`, nie ein echtes Word-Öffnen.
+
+### Fix-Runde 1 (unabhängiger Review, 2 Important-Findings)
+
+**Finding 1 — Extent-EMU war für jedes B3-Diagramm doppelt so gross wie beabsichtigt.**
+`diagrammZeichnen.png()` (B3) rendert mit Canvas-Faktor 2 (Bildschärfe) — das PNG-IHDR trägt
+dadurch die DOPPELTE Pixelgrösse der logischen SVG-Masse. Die ursprüngliche Fassung von B4 las
+Breite/Höhe ausschliesslich aus dem IHDR und multiplizierte direkt mit 9525 — ein 900×300-Diagramm
+wäre mit 18,75 Zoll Breite im Word gelandet.
+
+**Fix:** der `bilder`-Kontrakt trägt jetzt `{ dateiname -> { bytes, breite, hoehe } }` statt
+`{ dateiname -> Uint8Array }` — `breite`/`hoehe` sind die LOGISCHEN Pixelmasse, die B5 ohnehin
+kennt (dieselben Werte, mit denen B5 `diagrammZeichnen.svg()`/`png()` aufruft). `docxBauen`
+bevorzugt diese Masse **immer**; nur wenn sie fehlen (z. B. eine hochgeladene Illustration ohne
+mitgelieferte Masse), fällt `pngMasse()` auf das PNG-IHDR zurück — mit einem Kommentar an Ort und
+Stelle, dass ein IHDR aus `diagrammZeichnen.png()` den Faktor 2 trägt. **Keine Hartkodierung von
+`faktor=2` in `docx-bauen.js`** (wie vom Review verlangt) — der Bauer kennt B3s Canvas-Faktor gar
+nicht, er verlässt sich ausschliesslich auf die vom Aufrufer mitgelieferte logische Grösse.
+
+**Tests:** ein Fixture-Bild mit IHDR 200×100 (simuliert Faktor 2) und logischer Grösse 100×50 im
+`bilder`-Kontrakt — der Extent MUSS aus 100×50 kommen (`cx="952500" cy="476250"`, 100/50 × 9525),
+nie aus dem verdoppelten IHDR (`cx="1905000"` wird explizit als NICHT vorhanden geprüft). Ein
+zweiter, dedizierter Fallback-Test liefert nur `bytes` (kein `breite`/`hoehe`) und prüft, dass der
+Extent dann korrekt aus dem PNG-IHDR kommt (300×150 → `cx="2857500" cy="1428750"`).
+
+**Mutationsprobe (tatsächlich ausgeführt):** in `bildAbsatzAusEintrag()` die Bevorzugung der
+logischen Masse stillgelegt (`(eintrag.breite && eintrag.hoehe)` durch `(false && …)` ersetzt),
+`node --test test/docxbauen.test.js`:
+```
+ℹ tests 23
+ℹ pass 22
+ℹ fail 1
+
+✖ baue(): das Bild liegt unter word/media/, Extent-EMU stammen aus den LOGISCHEN Massen (Finding 1)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+    assert.ok(xml.indexOf('<wp:extent cx="952500" cy="476250"/>') >= 0)
+```
+Genau der eine Finding-1-Test fiel rot, alle anderen 22 blieben grün; danach wiederhergestellt.
+
+**Finding 2 — WISSENSCHECK rendete die rohe Feldsyntax (`frage:`/`loesung:`/`begruendung:`)
+wörtlich ins Leserdokument.** Der erste Durchlauf behandelte WISSENSCHECK wie jeden anderen
+Kasten-Baustein (`bausteinAbsaetze()`, generisch) — die Feld-Präfixe blieben dadurch als
+sichtbarer Text stehen, obwohl sie reine Steuersyntax sind (Muster: `skript-lesen.js` liest sie
+für andere Zwecke aus, `markdown()` im Tools-Bauer formatiert sie längst weg).
+
+**Fix:** eine neue, dedizierte `wissenscheckAbsaetze(inhalt, pStyle)` spiegelt `wissenscheck()`
+aus `skript-bauen.cjs` formatgleich (Wortlaut an Ort und Stelle abgelesen): „Frage." als fetter
+Run + die Frage normal in einem Absatz, jede Antwortzeile (nicht `frage:`/`loesung:`/
+`begruendung:`) ein eigener Absatz, zuletzt „Lösung: X." fett + die Begründung normal — alle mit
+demselben Kasten-`pStyle="Wissenscheck"`. Der Tools-Bauer setzt das als EINEN Markdown-Absatz mit
+hartem Zeilenumbruch (`zeilenMitUmbruch`); `docx-bauen.js` bildet dieselbe Abfolge stattdessen als
+mehrere `<w:p>`-Absätze ab — konsistent mit dem Rest des Bauers, der ohnehin jede logische Zeile
+zu einem eigenen Absatz macht (`bausteinAbsaetze()`), keine Sonderlogik für harte Umbrüche
+innerhalb eines Absatzes nötig. **`INTERAKTION` bekommt diese Behandlung bewusst NICHT** — ein
+Blick in `markdown()` zeigt, dass der Sonderfall dort exklusiv an `b.block === 'WISSENSCHECK'`
+hängt (`if (b.block === 'WISSENSCHECK') { … wissenscheck(inhalt) … }`), INTERAKTION fällt auf den
+generischen `kasten(b.stil, inhalt)`-Pfad — `docx-bauen.js` prüft in `kapitelAbsaetze()` deshalb
+ebenfalls `b.block`, nicht `b.stil` (beide Bausteine teilen sich `stil: 'Wissenscheck'`, das wäre
+sonst mehrdeutig gewesen).
+
+**Tests:** ein WISSENSCHECK-Fixture mit Frage, zwei Antwortoptionen, Lösung und Begründung — im
+`document.xml` steht kein `frage:`/`loesung:`/`begruendung:`-Literal mehr, dafür Frage, beide
+Optionen, „Lösung: b." und die Begründung als Text, „Frage." UND „Lösung: b." je als eigener
+fetter Run (`<w:r><w:rPr><w:b/></w:rPr><w:t>…`). Eine Gegenprobe belegt, dass INTERAKTION
+unverändert generisch bleibt (sein Inhalt „Mach mit." steht unverändert als einfacher Absatz).
+
+**Tests insgesamt:** `test/docxbauen.test.js` **23 Fälle** (20 + 3 neue: Extent-aus-logischen-
+Massen ersetzt den alten IHDR-Test, ein neuer IHDR-Fallback-Test, WISSENSCHECK-Formatierung,
+INTERAKTION-Gegenprobe — vier neue/geänderte Fälle, netto drei mehr als vorher). **686 Tests
+grün** (Baseline 663 + 23). Komplette Suite nach beiden Wiederherstellungen erneut geprüft:
+`node --test` → **686/686 grün**.

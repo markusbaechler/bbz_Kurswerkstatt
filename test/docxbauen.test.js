@@ -112,7 +112,8 @@ const BLOCKTEXT = [
   '###INTERAKTION', 'Mach mit.',
   '###MERKSATZ', 'Merke dir das.',
   '###DEEPDIVE', 'Tiefer graben.',
-  '###WISSENSCHECK', 'frage: Stimmt das?', 'loesung: ja', 'begruendung: weil.',
+  '###WISSENSCHECK', 'frage: Was trifft zu?', 'a) nichts', 'b) alles',
+  'loesung: b', 'begruendung: weil es so ist',
   '###ABSCHLUSS', 'Zusammenfassung.',
   '###ENDE-KAPITEL',
   '###ZUORDNUNG', 'Kapitel 1 | BX-001-EK-001 | Reihenfolge wie Contract',
@@ -125,7 +126,12 @@ function gelesenFixture() {
 
 function bilderFixture() {
   const bilder = {};
-  bilder[docxBauen.bildDateiname('BX-001', 'claude', 1)] = fakePng(200, 100);
+  // IHDR traegt den Canvas-Faktor 2 aus diagrammZeichnen.png() (200x100) — die
+  // LOGISCHE Groesse (die B5 mitliefert) ist die Haelfte davon (100x50). Bildet
+  // damit den realen Anwendungsfall nach, den Finding 1 der Review adressiert:
+  // wird die logische Groesse ignoriert, waere das Bild im Word doppelt so gross.
+  bilder[docxBauen.bildDateiname('BX-001', 'claude', 1)] =
+    { bytes: fakePng(200, 100), breite: 100, hoehe: 50 };
   return bilder;
 }
 
@@ -148,6 +154,31 @@ test('baue(): pStyle je Baustein steht im document.xml', async () => {
     'Fehlvorstellung', 'Beispiel', 'Wissenscheck', 'Merksatz', 'DeepDive', 'Abschluss', 'Quelle']) {
     assert.ok(xml.indexOf('w:pStyle w:val="' + stil + '"') >= 0, 'pStyle fehlt: ' + stil);
   }
+});
+
+test('baue(): WISSENSCHECK wird formatgleich zum Tools-Bauer gerendert (Finding 2) — keine rohe Feldsyntax im Text', async () => {
+  const { buffer } = vorlageBauen();
+  const out = await docxBauen.baue(buffer, gelesenFixture(), bilderFixture());
+  const xml = await docXmlAus(out);
+  // die rohen Feld-Praefixe duerfen nirgends im Leserdokument stehen
+  assert.strictEqual(xml.indexOf('frage:'), -1);
+  assert.strictEqual(xml.indexOf('loesung:'), -1);
+  assert.strictEqual(xml.indexOf('begruendung:'), -1);
+  // Frage, Antwortoptionen, Loesungsbuchstabe und Begruendung stehen als Text
+  assert.ok(xml.indexOf('Was trifft zu?') >= 0);
+  assert.ok(xml.indexOf('a) nichts') >= 0 && xml.indexOf('b) alles') >= 0);
+  assert.ok(xml.indexOf('Lösung: b.') >= 0);
+  assert.ok(xml.indexOf('weil es so ist') >= 0);
+  // "Frage." und "Lösung: b." stehen als eigener fetter Run (<w:b/>), gefolgt vom normalen Text
+  assert.ok(/<w:r><w:rPr><w:b\/><\/w:rPr><w:t xml:space="preserve">Frage\.<\/w:t><\/w:r>/.test(xml));
+  assert.ok(/<w:r><w:rPr><w:b\/><\/w:rPr><w:t xml:space="preserve">Lösung: b\.<\/w:t><\/w:r>/.test(xml));
+});
+
+test('baue(): INTERAKTION bleibt generisch (keine Feldsyntax-Formatierung wie WISSENSCHECK)', async () => {
+  const { buffer } = vorlageBauen();
+  const out = await docxBauen.baue(buffer, gelesenFixture(), bilderFixture());
+  const xml = await docXmlAus(out);
+  assert.ok(xml.indexOf('Mach mit.') >= 0); // INTERAKTION-Inhalt aus der Fixture, unveraendert als Absatz
 });
 
 test('baue(): kein "###" im erzeugten document.xml', async () => {
@@ -213,13 +244,26 @@ test('baue(): ein bereits vorhandener png-Default wird NICHT verdoppelt', async 
   assert.strictEqual(anzahl, 1);
 });
 
-test('baue(): das Bild liegt unter word/media/ und die Extent-EMU stammen aus dem PNG-IHDR (px * 9525)', async () => {
+test('baue(): das Bild liegt unter word/media/, Extent-EMU stammen aus den LOGISCHEN Massen (Finding 1)', async () => {
   const { buffer } = vorlageBauen();
   const out = await docxBauen.baue(buffer, gelesenFixture(), bilderFixture());
   const zip = zipLesen.oeffne(out.buffer);
   assert.ok(zip.eintraege['word/media/BX-001-claude-abb-001.png']);
   const xml = await docXmlAus(out);
-  assert.ok(xml.indexOf('<wp:extent cx="1905000" cy="952500"/>') >= 0); // 200*9525, 100*9525
+  // bilderFixture() liefert breite=100/hoehe=50 (logisch) bei einem IHDR von 200x100
+  // (Canvas-Faktor 2) — der Extent MUSS aus der logischen Groesse kommen, nicht aus
+  // dem verdoppelten IHDR (das waere cx="1905000" cy="952500").
+  assert.ok(xml.indexOf('<wp:extent cx="952500" cy="476250"/>') >= 0); // 100*9525, 50*9525
+  assert.strictEqual(xml.indexOf('cx="1905000"'), -1, 'Extent kam faelschlich aus dem verdoppelten IHDR');
+});
+
+test('baue(): ohne logische Masse im bilder-Kontrakt faellt der Extent auf das PNG-IHDR zurueck', async () => {
+  const { buffer } = vorlageBauen();
+  const gelesen = gelesenFixture();
+  const bilder = { [docxBauen.bildDateiname('BX-001', 'claude', 1)]: { bytes: fakePng(300, 150) } };
+  const out = await docxBauen.baue(buffer, gelesen, bilder);
+  const xml = await docXmlAus(out);
+  assert.ok(xml.indexOf('<wp:extent cx="2857500" cy="1428750"/>') >= 0); // 300*9525, 150*9525
 });
 
 test('baue(): vergleichstabelle wird eine w:tbl, keine Abbildung', async () => {
@@ -266,7 +310,7 @@ test('baue(): ILLUSTRATION an Hero-Position, wenn datei: gesetzt UND in bilder v
   const gelesen = gelesenFixture();
   gelesen.kapitel[0].teile.ILLUSTRATION = 'datei: illustration.png';
   const bilder = bilderFixture();
-  bilder['illustration.png'] = fakePng(400, 200);
+  bilder['illustration.png'] = { bytes: fakePng(400, 200), breite: 400, hoehe: 200 };
   const out = await docxBauen.baue(buffer, gelesen, bilder);
   const zip = zipLesen.oeffne(out.buffer);
   assert.ok(zip.eintraege['word/media/illustration.png']);

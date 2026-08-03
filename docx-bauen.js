@@ -26,7 +26,18 @@
    Title zu Titel), behaelt aber den kanonischen Namen." Die Bausteinnamen
    (Hero, Story, Beispiel, Merksatz, Fehlvorstellung, DeepDive, Wissenscheck,
    Abschluss, Quelle) sind eigene, custom-style, NICHT eingebaute Kennungen —
-   die eindeutscht Word nicht um. */
+   die eindeutscht Word nicht um.
+
+   `bilder`-Kontrakt (Review-Fix, s. u. Finding 1): `{ dateiname -> { bytes,
+   breite, hoehe } }` — `bytes` ein Uint8Array, `breite`/`hoehe` die LOGISCHEN
+   Pixelmasse (der Aufrufer B5 kennt sie: er ruft diagrammZeichnen.svg()/png()
+   selbst mit genau diesen Werten). Fehlen `breite`/`hoehe`, faellt
+   pngMasse() auf das PNG-IHDR zurueck — bei einem von diagrammZeichnen.png()
+   gerenderten Bild traegt das IHDR den Canvas-Faktor 2 (fuer Bildschaerfe),
+   also DOPPELT so grosse Pixelmasse wie die logische Groesse; ohne die
+   logischen Masse waere jedes B3-Diagramm im Word doppelt so gross wie
+   beabsichtigt. Der Fallback bleibt fuer Bilder ohne bekannte logische
+   Groesse (z. B. eine hochgeladene Illustration ohne mitgelieferte Masse). */
 (function (root) {
   'use strict';
 
@@ -114,6 +125,45 @@
     return out2;
   }
 
+  /* Ein Absatz aus zwei Runs: ein fett gesetzter Praefix, dahinter normaler
+     Text — fuer WISSENSCHECK (s. wissenscheckAbsaetze() unten). */
+  function pAbsatzMitFettPraefix(fett, rest, pStyle) {
+    return '<w:p>' + (pStyle ? '<w:pPr><w:pStyle w:val="' + esc(pStyle) + '"/></w:pPr>' : '') +
+      '<w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">' + esc(fett) + '</w:t></w:r>' +
+      '<w:r><w:t xml:space="preserve">' + esc(rest) + '</w:t></w:r></w:p>';
+  }
+
+  /* WISSENSCHECK ist der einzige Baustein mit eigener Feldsyntax
+     (frage:/loesung:/begruendung:) — Review-Finding 2: die rohe Syntax darf
+     nie im Leserdokument stehen. Formatgleich zu wissenscheck() in
+     IT_Architektur_bbz/output/tools/skript-bauen.cjs nachgebaut (dort
+     Markdown mit hartem Umbruch in EINEM Absatz; hier — weil jede Zeile
+     ohnehin ein eigener <w:p> wird — als eigene Absaetze je Zeile, alle mit
+     demselben Kasten-pStyle): "Frage." fett + die Frage normal, dann jede
+     Antwortzeile ein eigener Absatz, zuletzt "Lösung: X." fett + die
+     Begruendung normal. INTERAKTION bekommt diese Behandlung bewusst NICHT —
+     die Referenz formatiert dort keine Feldzeilen, faellt fuer INTERAKTION
+     auf den generischen kasten(b.stil, inhalt)-Pfad zurueck (skript-bauen.cjs
+     markdown(), Zweig fuer b.block === 'WISSENSCHECK' exklusiv). */
+  function wissenscheckAbsaetze(inhalt, pStyle) {
+    if (!inhalt) return '';
+    var feld = {};
+    var antworten = [];
+    var reFeld = /^(frage|loesung|begruendung):[ \t]*(.*)$/i;
+    String(inhalt).split('\n').forEach(function (z) {
+      var m = z.match(reFeld);
+      if (m) feld[m[1].toLowerCase()] = m[2].trim();
+      else if (z.trim() !== '') antworten.push(zeilenText(z));
+    });
+    var out = '';
+    if (feld.frage) out += pAbsatzMitFettPraefix('Frage.', ' ' + feld.frage, pStyle);
+    antworten.forEach(function (a) { out += pAbsatz(a, pStyle); });
+    if (feld.loesung) {
+      out += pAbsatzMitFettPraefix('Lösung: ' + feld.loesung + '.', ' ' + (feld.begruendung || ''), pStyle);
+    }
+    return out;
+  }
+
   /* ---------- sectPr aus der Vorlage ---------- */
 
   /* Nimmt das LETZTE <w:sectPr> im Vorlagen-document.xml (die abschliessende
@@ -134,7 +184,13 @@
   var FALLBACK_BREITE = 900, FALLBACK_HOEHE = 300; /* Standardbreite der SVG-Zeichner
      (diagramm-zeichnen.js) — Fallback, wenn Bytes kein lesbares PNG-IHDR tragen
      (z. B. ein Nicht-PNG-Testdouble). Dokumentierte Grenze, kein Rateversuch an
-     echten Bildern: ein echtes PNG traegt sein IHDR immer an fester Position. */
+     echten Bildern: ein echtes PNG traegt sein IHDR immer an fester Position.
+
+     NUR ein Rueckfall: bildAbsatzAusEintrag() bevorzugt IMMER die logischen
+     Masse aus dem bilder-Kontrakt, wenn vorhanden (s. Kommentarkopf). Diese
+     Funktion liest ausschliesslich das PNG-IHDR — bei einem von
+     diagrammZeichnen.png() erzeugten Bild ist das der VERDOPPELTE
+     (Canvas-Faktor 2) Pixelwert, keine logische Groesse. */
   function pngMasse(bytes) {
     if (bytes && bytes.length >= 24) {
       var istPng = true;
@@ -148,13 +204,10 @@
     return { breite: FALLBACK_BREITE, hoehe: FALLBACK_HOEHE };
   }
 
-  /* EMU = Pixel * 9525 (96 dpi) — Koordinator-Vorgabe (Task-Brief). Bekannte,
-     bewusst nicht in dieser Task geloeste Feinheit: diagrammZeichnen.png()
-     rendert mit Canvas-Faktor 2 fuer Bildschaerfe — die PNG-Pixelmasse sind
-     dadurch doppelt so gross wie die logische SVG-Groesse. Diese Funktion
-     rechnet die PNG-Pixel direkt in EMU um, ohne den Faktor herauszurechnen;
-     ob das im Dokument zu gross wirkt, klaert die Live-Probe (B9)/der
-     Design-Feinschliff (B7). */
+  /* Extent (EMU) = Pixel * 9525 (96 dpi) — Koordinator-Vorgabe (Task-Brief).
+     breitePx/hoehePx sind hier bereits die LOGISCHEN Masse (aufgeloest von
+     bildAbsatzAusEintrag() — bevorzugt aus dem bilder-Kontrakt, sonst der
+     IHDR-Rueckfall), diese Funktion selbst kennt die Herkunft nicht mehr. */
   function drawingAbsatz(rid, dateiname, breitePx, hoehePx, docPrId) {
     var emuB = breitePx * 9525, emuH = hoehePx * 9525;
     return '<w:p><w:r><w:drawing>' +
@@ -174,17 +227,25 @@
   /* Registriert (einmalig je Dateiname) eine Bild-Relationship und liefert
      den Drawing-Absatz. ctx.docPrZaehler zaehlt JEDE Einbettung (auch eine
      Wiederverwendung derselben Datei) hoch — jedes <wp:docPr id> muss im
-     Dokument eindeutig sein, unabhaengig von der Relationship-Wiederverwendung. */
-  function bildAbsatzAusBytes(dateiname, bytes, ctx) {
+     Dokument eindeutig sein, unabhaengig von der Relationship-Wiederverwendung.
+
+     eintrag = { bytes, breite?, hoehe? } (bilder-Kontrakt, s. Kommentarkopf,
+     Finding 1 der Review). Die logischen Masse aus dem Kontrakt haben IMMER
+     Vorrang vor dem PNG-IHDR — nur wenn beide fehlen, liest pngMasse() das
+     IHDR (das bei einem diagrammZeichnen.png()-Bild den Canvas-Faktor 2
+     traegt, s. o.). */
+  function bildAbsatzAusEintrag(dateiname, eintrag, ctx) {
     var rid = ctx.relIds[dateiname];
     if (!rid) {
       rid = 'rId' + ctx.naechsteRid;
       ctx.naechsteRid += 1;
       ctx.relIds[dateiname] = rid;
-      ctx.neueBilder.push({ dateiname: dateiname, bytes: bytes });
+      ctx.neueBilder.push({ dateiname: dateiname, bytes: eintrag.bytes });
     }
     ctx.docPrZaehler += 1;
-    var masse = pngMasse(bytes);
+    var masse = (eintrag.breite && eintrag.hoehe)
+      ? { breite: eintrag.breite, hoehe: eintrag.hoehe }
+      : pngMasse(eintrag.bytes);
     return drawingAbsatz(rid, dateiname, masse.breite, masse.hoehe, ctx.docPrZaehler);
   }
 
@@ -244,12 +305,12 @@
   function abbildungAbsatz(k, a, ctx) {
     ctx.bildNr += 1;
     var dateiname = bildDateiname(ctx.kurs, ctx.variante, ctx.bildNr);
-    var bytes = ctx.bilder[dateiname];
-    if (!bytes) {
+    var eintrag = ctx.bilder[dateiname];
+    if (!eintrag || !eintrag.bytes) {
       throw new Error('docxBauen.baue: Bild fehlt in bilder: "' + dateiname +
         '" (Kapitel ' + (k.ek || '?') + ')');
     }
-    var absatz = bildAbsatzAusBytes(dateiname, bytes, ctx);
+    var absatz = bildAbsatzAusEintrag(dateiname, eintrag, ctx);
     return absatz + (a.titel ? pAbsatz(a.titel, STYLE_QUELLE) : '');
   }
 
@@ -268,9 +329,9 @@
     if (!m) return '';
     var dateiname = m[1].trim();
     if (!dateiname) return '';
-    var bytes = ctx.bilder[dateiname];
-    if (!bytes) return '';
-    return bildAbsatzAusBytes(dateiname, bytes, ctx);
+    var eintrag = ctx.bilder[dateiname];
+    if (!eintrag || !eintrag.bytes) return '';
+    return bildAbsatzAusEintrag(dateiname, eintrag, ctx);
   }
 
   /* ---------- Titelkopf, Kapitel, Anhang ---------- */
@@ -331,6 +392,10 @@
         });
         return;
       }
+      if (b.block === 'WISSENSCHECK') {
+        out += wissenscheckAbsaetze(k.teile[b.block], b.stil);
+        return;
+      }
       out += bausteinAbsaetze(b, k.teile[b.block]);
     });
     return out;
@@ -356,10 +421,12 @@
 
   /* baue(vorlageArrayBuffer, gelesen, bilder) -> Promise<Uint8Array>.
      gelesen = Ergebnis von skriptLesen.lies(); bilder = { dateiname ->
-     Uint8Array } (gerenderte Diagramm-PNGs aus B3 + hochgeladene
-     Illustrations-PNGs aus B5). Wirft, wenn die Vorlage kein
-     word/document.xml, kein [Content_Types].xml oder kein <w:sectPr> traegt,
-     oder wenn ein nicht-tabellarisches ABBILDUNG-Bild in `bilder` fehlt. */
+     { bytes, breite, hoehe } } (gerenderte Diagramm-PNGs aus B3 +
+     hochgeladene Illustrations-PNGs aus B5 — s. Kommentarkopf, Finding 1
+     der Review: breite/hoehe sind die LOGISCHEN Masse, Vorrang vor dem
+     PNG-IHDR). Wirft, wenn die Vorlage kein word/document.xml, kein
+     [Content_Types].xml oder kein <w:sectPr> traegt, oder wenn ein
+     nicht-tabellarisches ABBILDUNG-Bild in `bilder` fehlt. */
   async function baue(vorlageArrayBuffer, gelesen, bilder) {
     bilder = bilder || {};
     var zip = Z().oeffne(vorlageArrayBuffer);
