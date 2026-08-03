@@ -35,6 +35,8 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `zip-schreiben.js` | Baut ein ZIP-Archiv dependency-frei (Store-only, CRC-32 selbst gerechnet) — das Gegenstueck zu `zip-lesen.js` (Etappe 3b, Task B1) |
 | `xlsx-lesen.js` | Liest eine .xlsx dependency-frei (ZIP + minimales XML) — Blattnamen und Kopfzeile je Blatt, fuer die Upload-Strukturpruefung (T11) |
 | `docx-lesen.js` | Liest eine .docx dependency-frei — Absaetze mit Stil und Text, in Dokumentreihenfolge (Etappe 3, Task A1) |
+| `skript-schema.js` | Die kanonische Block-Grammatik des Selbstlernskripts (Schritt 4) — reine Daten (Etappe 3b, Task B2) |
+| `skript-lesen.js` | Parst die ###-Bloecke eines Selbstlernskripts gegen `skript-schema.js` (Etappe 3b, Task B2) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
 | `ansichten.js` | Kette, alle Kurse, ein Kurs, ein Schritt, Nachschlagen — reine String-Builder |
 | `test/fixture.js` | Testdaten in der Struktur der echten Dateien, ohne echte Prompt-Texte |
@@ -2222,4 +2224,90 @@ blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft: `node 
 
 **Offen / bewusst nicht Teil von B1:** `zip-schreiben.js` wird von keinem Aufrufer in `app.js`/
 `inhalt.js`/`docx-lesen.js` genutzt — B1 liefert nur den Schreiber. Ein docx-Bauer (Content-Types,
-Relationships, `word/document.xml` aus der Blockdatei) folgt mit B2.
+Relationships, `word/document.xml` aus der Blockdatei) folgt mit B4 — B2 portiert zuerst die
+Block-Grammatik selbst (`skript-schema.js`/`skript-lesen.js`, s. u.), B3 den Diagramm-Zeichner;
+der docx-Bauer in B4 baut auf beiden auf.
+
+### Task B2: `skript-schema.js` + `skript-lesen.js` (UMD) + Parity-Wächter im Werkzeug-Baum
+
+Portiert die Block-Grammatik des Selbstlernskripts (Schritt 4) mechanisch aus dem Tools-Baum
+(`IT_Architektur_bbz/output/tools/skript-schema.cjs`/`skript-lesen.cjs`, dort unverändert) in die
+App — Vorstufe für den docx-Bauer (B4) und den Diagramm-Zeichner (B3): beide brauchen ein
+geparstes, geschemaes Skript, keinen rohen Text.
+
+**`skript-schema.js` (neu, Global `root.skriptSchema`)** trägt `SCHEMA` (die zwölf Bausteine in
+Dokumentreihenfolge, `RAHMEN`-Blöcke, die sieben Diagrammtypen, das Wortbudget, die zwei
+Varianten `claude`/`chatgpt`) plus die Helfer `baustein`/`istBaustein`/`pflichtBausteine`/
+`diagrammTyp`/`istDiagrammtyp`/`pflichtfelder`/`istVariante` — reine Daten, keine IO. Wörtlich
+dieselbe Struktur wie `skript-schema.cjs`, nur in ES5-UMD (`var`/`function` statt `const`/
+Arrow-Funktionen, Muster `xlsx-lesen.js`) statt CommonJS mit modernem JS umgeschrieben —
+`deepStrictEqual` prüft Werte, nicht Syntax, ein Rewrite auf ES5 ändert am Vergleichsergebnis
+nichts.
+
+**`skript-lesen.js` (neu, Global `root.skriptLesen`)** parst die `###`-Blöcke eines
+Selbstlernskript-Texts (`lies(quelltext) -> { skript, quellen, kapitel, zuordnung, offen,
+fehler }`) und `attribute(zeile)` (die `nr=1 | ek=… | titel=…`-Attribut-Zeile hinter einem
+Blockkopf). Holt das Schema **lazy** über `S()` — Muster `Z()` in `xlsx-lesen.js`: im Browser
+`root.skriptSchema` (Script-Tag-Reihenfolge in `index.html`), in Node ein Fallback-`require('./
+skript-schema.js')`. Verhalten mechanisch identisch zu `skript-lesen.cjs`, **inklusive des Wurfs**
+(Task W2, Etappe 3: ein Text ganz ohne `###SKRIPT`-Block wirft `Error('###SKRIPT fehlt - kurs=
+und variante= sind Pflicht')`, statt still `kurs: ''` zu liefern) und aller
+Fehlermeldungs-Wortlaute wörtlich (`'Unbekannter Block: ###' + name`, `'Kompetenz doppelt: ' +
+ek`, `'Kapitel ' + ek + ': ###' + name + ' fehlt oder ist leer'` usw.).
+
+**Parity-Pflicht (Global Constraint Etappe 3b): der Wächter lebt im Tools-Baum, nicht in der
+App.** `IT_Architektur_bbz/output/tools/test/app-parity.test.js` (neu, läuft in der
+Tools-Suite, `node --test test/*.test.js`) lädt beide App-Module per Relativpfad
+(`path.join(__dirname, '..', '..', '..', '..', 'bbz_Kurswerkstatt', 'skript-schema.js')` —
+`tools/test` → `tools` → `output` → `IT_Architektur_bbz` → `bbz_vc` → `bbz_Kurswerkstatt`, beide
+Bäume liegen unter `Documents/bbz_vc/`) und vergleicht: (1) `SCHEMA` beider Fassungen
+`deepStrictEqual` — ein Drift hier bedeutet, dass eine Fassung ein neues Baustein-/Diagrammfeld
+bekam, die andere nicht; (2) `lies()` auf einem vollständigen Mini-Skript (`###SKRIPT` +
+`###QUELLEN` + ein Kapitel mit allen zwölf Bausteinen + `###ENDE-KAPITEL` + `###ZUORDNUNG` +
+`###OFFEN`) — das GANZE Ergebnisobjekt `deepStrictEqual`, nicht nur `fehler[]`, weil ein sauberer
+Lauf jedes Feld (`skript`, `quellen`, `kapitel[].teile`, `abbildungen`, `zuordnung`, `offen`)
+befüllt; (3) eine Fehlerliste (unbekannter Block + fehlendes Pflichtfeld + doppelte Kompetenz) —
+nur `fehler[]` verglichen, weil die übrigen Felder schon durch (2) abgedeckt sind; (4) ein
+Wurf-Fixture (kein `###SKRIPT`) — beide Fassungen müssen mit **derselben** `Error.message`
+werfen. **Warum drei Fixtures statt eines:** ein sauberes Zwei-Baustein-Fixture allein hätte elf
+der zwölf Baustein-Verzweigungen in `lies()` ungeprüft gelassen (Auftrag im Task-Brief); die
+Fehlerliste deckt die Abweisungs-Zweige ab (unbekannter Block, Pflichtfeld, Duplikat), das
+Wurf-Fixture den einzigen Fall, der die Funktion überhaupt abbrechen lässt, statt ein Ergebnis
+zurückzugeben.
+
+**App-Testdatei `test/skriptlesen-app.test.js` (neu) prüft bewusst nur vier Kernfälle** (nicht
+alle 17 aus `test/skript-lesen.test.js` im Tools-Baum) — vollständiges Skript ohne Fehler, der
+`###SKRIPT`-Wurf, ein fehlender Pflichtbaustein in `fehler[]`, `attribute()`-Trennung am Strich.
+Die volle Verhaltensabdeckung liegt beim Parity-Wächter (der jede Verzweigung gegen die
+Tools-Fassung spiegelt) plus der bestehenden 264er-Tools-Suite selbst — eine zweite,
+vollständige 17-Fälle-Kopie in der App wäre dieselbe Prüfung ein drittes Mal.
+
+**`index.html`:** Script-Tags `skript-schema.js` (vor `skript-lesen.js`) stehen nach
+`xlsx-lesen.js`, vor `app.js` — folgt demselben Cache-Buster-Muster wie jedes andere `*.js`.
+
+**Tests:** App **644 grün** (Baseline 640 + 4 neue), Tools **268 grün** (Baseline 264 + 4 neue
+Parity-Tests).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** in der App-Fassung von
+`lies()` die Doppel-EK-Prüfung entfernt (`else if (gesehen[kapitel.ek]) fehler.push('Kompetenz
+doppelt: ' + kapitel.ek);` auskommentiert), `node --test test/app-parity.test.js` im TOOLS-Baum:
+```
+✖ Parity: eine Fehlerliste (unbekannter Block + fehlendes Pflichtfeld + doppelte Kompetenz) ist in beiden Fassungen identisch
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+    [
+      'Unbekannter Block: ###VISUALISIERUNG',
+      'Kapitel VL-001-EK-003: ###MERKSATZ fehlt oder ist leer',
+      'Kapitel VL-001-EK-003: ###DEEPDIVE fehlt oder ist leer',
+  +   'Kompetenz doppelt: VL-001-EK-003'
+    ]
+```
+Genau der eine Fehlerlisten-Parity-Test fiel rot (die drei übrigen Parity-Tests blieben grün —
+das Mini-Skript-Fixture (2) enthält keine doppelte Kompetenz, der Wurf-Test (4) und der
+SCHEMA-Test (1) sind von dieser Zeile unabhängig), danach wiederhergestellt: `node --test` (App)
+→ 644/644 grün, `node --test test/*.test.js` (Tools) → 268/268 grün. Das belegt, dass der
+Wächter tatsächlich App-Verhalten prüft, nicht nur Existenz der Dateien.
+
+**Offen / bewusst nicht Teil von B2:** `skript-lesen.js` wird von keinem Aufrufer in `app.js`/
+`inhalt.js` genutzt — B2 liefert nur Schema und Parser. Der Diagramm-Zeichner (B3) und der
+docx-Bauer (B4) rufen `skriptLesen.lies()` künftig auf, um aus dem Blocktext zu bauen.
