@@ -96,6 +96,22 @@ test('ohne Dossier gibt es keinen Kopf', () => {
   assert.equal(inhalt.skriptPromptKopf({ kursId: 'X' }, null), '');
 });
 
+/* F1 (Fixwave-Review): skriptPruefe (A2) verlangt Kurs-ID und Rechtsstand
+   wörtlich im Dokument — aber ohne diese Zeile fordert kein Prompt-Baustein
+   das ein. Der Chat weiss nicht, dass beides sichtbar im Titelbereich stehen
+   muss, bis das Hochladen-Gate es abweist. */
+test('F1: der Kopf verlangt Kurs-ID und Rechtsstand sichtbar im Titelbereich (mit d), fehlt ohne d', () => {
+  const d = dossier.neu('VL-002');
+  d.regulatorik = { stand: '1.1.2026' };
+  const kopf = inhalt.skriptPromptKopf({ kursId: 'VL-002', kurstitel: 'Vorsorge Aufbau', kompetenzfeld: 'Vorsorge' }, d);
+  assert.match(kopf, /Nenne die Kurs-ID und den Rechtsstand GENAU in dieser Schreibweise sichtbar im Dokument \(Titelbereich\)/);
+  assert.match(kopf, /die Kurswerkstatt prüft beides beim Hochladen/);
+
+  const kopfOhneD = inhalt.skriptPromptKopf({ kursId: 'VL-002' }, null);
+  assert.equal(kopfOhneD, '');
+  assert.ok(!/Kurs-ID und den Rechtsstand GENAU/.test(kopfOhneD));
+});
+
 test('ohne gesetzte Selbstlernphase bleibt die Zeile weg', () => {
   const d = dossier.neu('VL-002');
   d.regulatorik = { stand: '1.1.2026' };

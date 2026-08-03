@@ -931,6 +931,9 @@
       z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
       z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
       z.push.apply(z, regulatorikZeilen(d));
+      z.push('');
+      z.push('Nenne die Kurs-ID und den Rechtsstand GENAU in dieser Schreibweise sichtbar im ' +
+             'Dokument (Titelbereich) — die Kurswerkstatt prüft beides beim Hochladen.');
 
       var selbstlernFeld = inhalt.briefingFeld('selbstlern');
       var selbstlernWert = inhalt.briefingWerteAusDossier(d).selbstlern;
@@ -1226,7 +1229,7 @@
         if (gefundenListe.length) {
           fehler.push('Modus quellenfrei, aber Quellen-IDs im Text gefunden: ' +
                        gefundenListe.join(', ') + ' — im Modus quellenfrei sind keine ' +
-                       'Quellen-IDs zulaessig.');
+                       'Quellen-IDs zulässig.');
         }
       } else {
         var dossierIds = (d.quellen || []).map(function (q) { return q && q.id; }).filter(Boolean);
@@ -1251,7 +1254,7 @@
           .forEach(function (id) {
             hinweise.push('Dossier-Quelle ' + id + ' erscheint nicht im Text — ' +
                            'Teil-Lieferung je Lerneinheit ist legitim, vor Schritt 4 ' +
-                           'vervollstaendigen.');
+                           'vervollständigen.');
           });
       }
 

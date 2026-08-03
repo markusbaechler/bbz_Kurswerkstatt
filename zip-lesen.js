@@ -27,7 +27,7 @@
     for (var i = bytes.length - 22; i >= 0; i--) {
       if (leU32(view, i) === 0x06054b50) { eo = i; break; }
     }
-    if (eo < 0) throw new Error('Keine xlsx-Datei: Zip-Verzeichnis nicht gefunden');
+    if (eo < 0) throw new Error('Kein Zip-Archiv: Zip-Verzeichnis nicht gefunden');
     var anzahl = leU16(view, eo + 10);
     var p = leU32(view, eo + 16);
     var e = {};

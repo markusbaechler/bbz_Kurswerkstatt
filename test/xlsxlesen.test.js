@@ -215,10 +215,10 @@ test('ein Blatt ohne Zeilen liefert eine leere Kopfzeile, keinen Crash', async (
   assert.deepStrictEqual(bl, [{ name: 'leer', kopf: [] }]);
 });
 
-test('keine xlsx-Datei (kein Zip): die Promise wird abgelehnt', async () => {
+test('kein Zip-Archiv: die Promise wird abgelehnt (M6: Wortlaut nennt "Zip", nicht "xlsx" — dieselbe Funktion liest auch docx)', async () => {
   const text = Buffer.from('das ist kein Zip', 'utf8');
   const buf = text.buffer.slice(text.byteOffset, text.byteOffset + text.byteLength);
-  await assert.rejects(() => xlsxLesen.blaetterUndKoepfe(buf), /Zip-Verzeichnis nicht gefunden/);
+  await assert.rejects(() => xlsxLesen.blaetterUndKoepfe(buf), /Kein Zip-Archiv: Zip-Verzeichnis nicht gefunden/);
 });
 
 test('ein Zip ohne xl/workbook.xml: die Promise wird abgelehnt', async () => {

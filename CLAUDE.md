@@ -2116,3 +2116,30 @@ ebenfalls nur über die `inhalt.js`-Funktion getestet ist, nicht über einen sim
 der Brief für A3 listet dieselben zwei Testdateien. Das reale `ablage-kontrakt.json` in SharePoint
 führt `chat`/`hochladen` für Schritt 3 noch nicht mit den A2/A3-Feldern nach — Weg B, ausserhalb
 dieser Task.
+
+## Fixwave nach dem Etappe-3-Gesamt-Review (App-Anteil: F1, M6, M7)
+
+**F1 — `skriptPruefe` (A2) verlangte Kurs-ID und Rechtsstand wörtlich im Dokument, aber kein
+Prompt-Baustein forderte das ein.** `inhalt.skriptPromptKopf` trägt seither direkt nach den
+Kurs-/Kompetenzfeld-/Regulatorik-Zeilen einen zusätzlichen GENAU-Satz: „Nenne die Kurs-ID und
+den Rechtsstand GENAU in dieser Schreibweise sichtbar im Dokument (Titelbereich) — die
+Kurswerkstatt prüft beides beim Hochladen." Erscheint nur, wenn `d` da ist — die Funktion liefert
+ohne Dossier ohnehin `''` (unverändert). Test in `test/skriptkopf.test.js` (F1): Zeile vorhanden
+mit `d`, Kopf komplett leer ohne `d`. Mutationsprobe (Zeile auskommentiert): genau dieser eine
+Test fiel rot (6/7 grün), alle anderen blieben grün; danach wiederhergestellt.
+
+**M6 — `zip-lesen.js` warf bei einem kaputten Zip „Keine xlsx-Datei: Zip-Verzeichnis nicht
+gefunden" — irreführend im docx-Gate (Schritt 3), das denselben ZIP-Kern seit A1 mitbenutzt.**
+Neuer Wortlaut: „Kein Zip-Archiv: Zip-Verzeichnis nicht gefunden" — nennt das, was tatsächlich
+geprüft wird (ein ZIP-Verzeichnis), statt eine Dateiart zu behaupten, die an dieser Stelle noch
+gar nicht feststeht. `xlsx-lesen.js` selbst wirft weiterhin „Keine xlsx-Datei: xl/workbook.xml
+fehlt", wenn das ZIP zwar gültig ist, aber keine xlsx enthält — dort bleibt die Dateiart-Aussage
+richtig und unverändert. `test/xlsxlesen.test.js` auf den neuen Wortlaut nachgezogen (Testname
+und Regex).
+
+**M7 — uneinheitliche Umlaute in den neuen `skriptPruefe`-Meldungen.** „zulaessig" →
+„zulässig" (Modus-quellenfrei-Fehler), „vervollstaendigen" → „vervollständigen"
+(Dossier-Quelle-Hinweis) — App-UI-Konvention (echte Umlaute, nur „ß" verboten, Konvention 6).
+Keine bestehenden Tests pinnten den alten Wortlaut, keine Testanpassung nötig.
+
+**629 Tests grün** (628 + 1 neuer F1-Test).
