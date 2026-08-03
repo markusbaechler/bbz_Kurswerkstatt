@@ -2088,7 +2088,7 @@
       var geprueftPflicht = !!(struktur && root.inhalt.erwarteteEndung(inh, n) === 'xlsx');
       var istXlsx = /\.xlsx$/i.test((datei.name || ''));
 
-      function weiterMitUpload() {
+      function weiterMitUpload(hinweise) {
         if (meld) meld.hidden = true;
         knopf.disabled = true; knopf.textContent = 'wird hochgeladen …';
 
@@ -2126,7 +2126,8 @@
           })
           .then(function (ziel) {
             return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
-              state.hinweis = 'Hochgeladen als ' + ziel.datei;
+              state.hinweis = 'Hochgeladen als ' + ziel.datei +
+                (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
               controller.render();
             });
           })
@@ -2154,6 +2155,56 @@
               return;
             }
             weiterMitUpload();
+          })
+          .catch(function (e) {
+            klemmtSichtbar('Datei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
+          });
+        return;
+      }
+
+      /* Skript-Strukturpruefung (A2, Etappe 3) — dasselbe Muster wie das
+         xlsx-Gate oben, fuer den Chat-Weg von Schritt 3: der Chat liefert die
+         .docx direkt (E5), die App prueft beim Hochladen. Haengt am
+         Kontrakt-Feld ablage.pruefung === 'skript' PLUS der Kontrakt-Endung
+         'docx' (F5-Muster: struktur/pruefung allein reicht nicht) — nichts
+         hartkodiert. Laeuft NACH dem xlsx-Gate, weil beide Gates unabhaengig
+         sind (ein Schritt fuehrt in der Praxis nie beide Felder zugleich). */
+      var geprueftPflichtSkript = !!(ab && ab.pruefung === 'skript') &&
+        root.inhalt.erwarteteEndung(inh, n) === 'docx';
+      var istDocx = /\.docx$/i.test((datei.name || ''));
+
+      if (geprueftPflichtSkript) {
+        if (!istDocx) {
+          klemmtSichtbar('Nicht hochgeladen: für diesen Schritt wird eine .docx-Datei mit ' +
+            'geprüfter Struktur erwartet, gewählt wurde "' + (datei.name || '(ohne Namen)') + '".');
+          return;
+        }
+        /* Ohne geladenes Dossier kein Urteil moeglich (skriptPruefe liefert
+           dann null) — Abbruch VOR jedem Netzzugriff, kein arrayBuffer-Lesen,
+           kein graph.ordnerInhalt. state.data.dossier[k.kursId] ist entweder
+           undefined (nie angefordert) oder null (laedt gerade) oder ein
+           Objekt (geladen) — nur Letzteres reicht. */
+        var dSkript = state.data.dossier[k.kursId];
+        if (!dSkript || typeof dSkript !== 'object') {
+          klemmtSichtbar('Nicht hochgeladen: Prüfung braucht das Dossier — zuerst Schritt 1 ' +
+            'abschliessen (Briefing), dann erneut versuchen.');
+          return;
+        }
+        if (meld) meld.hidden = true;
+        knopf.disabled = true; knopf.textContent = 'wird geprüft …';
+        var lesenSkript = (datei.arrayBuffer && typeof datei.arrayBuffer === 'function')
+          ? datei.arrayBuffer()
+          : Promise.reject(new Error('Diese Datei kann nicht gelesen werden.'));
+        lesenSkript
+          .then(function (buf) { return root.docxLesen.absaetze(buf); })
+          .then(function (absaetze) {
+            var befund = root.inhalt.skriptPruefe(absaetze, dSkript, k.kursId);
+            if (befund && befund.fehler.length) {
+              klemmtSichtbar('Skript weicht vom Kontrakt ab — nicht hochgeladen: ' +
+                befund.fehler.join(' · '));
+              return;
+            }
+            weiterMitUpload(befund && befund.hinweise.length ? befund.hinweise : null);
           })
           .catch(function (e) {
             klemmtSichtbar('Datei nicht lesbar — nicht hochgeladen: ' + (e.message || e));

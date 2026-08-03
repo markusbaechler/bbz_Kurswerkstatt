@@ -100,17 +100,29 @@ test('ohne _final bleibt der Upload offen', () => {
   assert.ok(h.indexOf('AFL-001_lernziele-drehbuch_v2.xlsx') >= 0, 'falsche naechste Nummer');
 });
 
-/* ---------- Ansicht: Weg Chat ---------- */
+/* ---------- Ansicht: Weg Hochladen fuer Schritt 3 (A2) ----------
+   Bis A2 war Schritt 3 ein Text-Lieferobjekt mit einem eigenen Chat-Ablege-
+   Block (id="ergebnis"), der hier die Final-Sperre zeigte. Seit A2 ist Schritt
+   3 ein docx-Lieferobjekt wie Schritt 2 die xlsx — der Chat-Text-Block ist
+   verschwunden (s. test/ablegen.test.js), "final ist final" gilt jetzt im
+   Hochladen-Block, weiterhin je Variante getrennt gesperrt. */
 
-test('bei _final zeigt auch der Weg Chat die Sperre', () => {
+test('bei _final zeigt der Hochladen-Block fuer Schritt 3 die Sperre', () => {
   const h = ansichten.einSchritt(INHALT, AFL, 3, null,
-    { ordnerFehlt: false, dateien: d('AFL-001_skript-claude_final.docx') });
-  assert.ok(h.indexOf('Final ist final') >= 0, 'keine Sperrmeldung im Weg Chat');
-  assert.ok(!/id="ergebnis"/.test(h), 'Textfeld trotz Freigabe angeboten');
+    { ordnerFehlt: false, dateien: d('AFL-001_skript-claude_final.docx'), variante: 'claude' });
+  assert.ok(h.indexOf('final ist final') >= 0, 'keine Sperrmeldung im Hochladen-Block');
+  assert.ok(!/id="datei"/.test(h), 'Datei-Input trotz Freigabe angeboten');
 });
 
-test('ohne _final bleibt der Weg Chat offen', () => {
-  const h = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
-  assert.ok(/id="ergebnis"/.test(h), 'Ablegen-Feld fehlt');
-  assert.ok(h.indexOf('Final ist final') < 0);
+test('ohne _final bleibt der Hochladen-Block fuer Schritt 3 offen', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null,
+    { ordnerFehlt: false, dateien: [], variante: 'claude' });
+  assert.ok(/id="datei"/.test(h), 'Datei-Input fehlt');
+  assert.ok(h.indexOf('final ist final') < 0, 'sperrt ohne Grund');
+});
+
+test('die Sperre bei Schritt 3 gilt je Variante, nicht ueber beide hinweg', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null,
+    { ordnerFehlt: false, dateien: d('AFL-001_skript-claude_final.docx'), variante: 'chatgpt' });
+  assert.ok(/id="datei"/.test(h), 'die andere Variante wurde mitgesperrt');
 });

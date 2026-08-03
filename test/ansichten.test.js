@@ -731,8 +731,12 @@ test('mit Ordner bleibt das Versprechen stehen', () => {
   assert.ok(!/class="fehlt"/.test(h));
 });
 
+/* Schritt 3 selbst bietet seit A2 (docx-Lieferobjekt) keinen Ablegen-Block
+   mehr an (s. test/ablegen.test.js) — Schritt 5 bleibt textbasiert und traegt
+   die Ablege-Flaeche unveraendert, deshalb hier als Beleg fuer den generellen
+   Mechanismus. */
 test('die Schrittansicht haelt einen Platz fuer die Fehlermeldung bereit', () => {
-  const h = ansichten.einSchritt(INHALT, DBS, 3, null);
+  const h = ansichten.einSchritt(INHALT, DBS, 5, null);
   assert.ok(/id="ablegefehler"/.test(h), 'kein Platz fuer die Meldung');
   assert.ok(/id="ablegefehler" hidden/.test(h), 'Meldung ist nicht von Anfang an versteckt');
 });

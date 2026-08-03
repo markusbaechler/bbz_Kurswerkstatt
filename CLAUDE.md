@@ -1857,3 +1857,155 @@ Muster (`src="zip-lesen.js"`/`src="docx-lesen.js"`) und werden ohne Sonderfall m
 **Offen / bewusst nicht Teil von A1:** `docx-lesen.js` wird von keinem Aufrufer in `app.js`/
 `inhalt.js` genutzt — A1 liefert nur den Leser, kein Werkzeug, das ihn aufruft. Das folgt mit den
 nächsten App-Tasks der Etappe (A2/A3).
+
+## Task A2: `inhalt.skriptPruefe` + docx-Gate in `controller.hochladen`
+
+Das Drift-Netz für den Chat-Weg von Schritt 3, strukturgleich neben T11 (xlsx-Gate für Schritt 2)
+gebaut — auf A1 aufbauend (`docxLesen.absaetze`). Entscheid E5 (Etappe-3-Plan): **der Chat liefert
+die `.docx` direkt** (wie Schritt 2 die xlsx); die App prüft beim Hochladen, nicht der Mensch am
+Gate allein.
+
+**`inhalt.dateiLieferobjekt(i, schrittId)` — die eine Stelle für „ist das Lieferobjekt eine Datei,
+kein Text" (Konvention 9).** Wahr, wenn `erwarteteEndung` `xlsx` oder `docx` ist. `darfAblegen`
+ersetzt seine Z10-Bedingung `erwarteteEndung !== 'xlsx'` durch `!dateiLieferobjekt(...)` — die
+Frage bleibt dieselbe, nur die Liste der Datei-Endungen wächst um eine. Die vier bestehenden
+Z10-Tests (Schritt 2, xlsx) bleiben dabei unverändert grün, weil xlsx in der Liste bleibt.
+
+**Konsequenz, mit der Z10 nicht rechnen musste: Schritt 3 selbst kippt von „Text" auf „Datei".**
+Schritt 3 (`skript-{variante}`, `ext: docx`) führte bisher `darfAblegen === true` — die Chat-Ablage
+(`#ergebnis`) war die Fläche, in die man die KI-Antwort einfügte. Seit A2 ist ihr Lieferobjekt eine
+docx, also kippt `darfAblegen(i, 3)` auf `false`, genau wie bei Schritt 2 seit Z10. Das reisst
+mehrere bestehende Tests, die noch die alte Realität abbildeten — bereinigt statt umgangen:
+- `test/ablegen.test.js`: die pauschale Prüfung „Ablegen ist erlaubt, wo der Weg Chat vorgesehen
+  ist" verlor ihre Schritt-3-Zeile (Schritt 5 bleibt als Text-Beleg stehen); zwei neue Tests
+  (`dateiLieferobjekt` direkt, plus das Z10-Muster für Schritt 3: `chat` in `wege` UND
+  `erwarteteEndung === 'docx'` UND `darfAblegen === false`) übernehmen die Schritt-3-Aussage
+  explizit. „Schritt 3 bietet die Ablege-Fläche an" wurde zu „Schritt 3 bietet KEINE Ablege-Fläche
+  mehr" gedreht (kein `#ergebnis`, kein `ablegen`-Knopf, der Hochladen-Block bleibt); der
+  Zielnamen-Test daneben lief unverändert weiter — der Hochladen-Block zeigt denselben
+  Zielnamen-Mechanismus (`hochladeZiel`/`naechsteDatei` teilen sich die Version je Variante).
+- `test/final.test.js`: „bei `_final` zeigt auch der Weg Chat die Sperre"/„ohne `_final` bleibt der
+  Weg Chat offen" prüften die Chat-Ablage-Sperre für Schritt 3 — es gibt sie nicht mehr. Ersetzt
+  durch dieselbe Prüfung im Hochladen-Block (`id="datei"` statt `id="ergebnis"`, `final ist final`
+  im `box achtung`), inklusive der Je-Variante-Trennung (Muster `varianten.test.js`).
+- `test/ansichten.test.js`: „die Schrittansicht hält einen Platz für die Fehlermeldung bereit"
+  prüfte `id="ablegefehler"` an Schritt 3 — dort gibt es das Feld nicht mehr. Auf Schritt 5
+  (weiterhin textbasiert, unverändert) umgestellt; der Mechanismus selbst (ein Platz für die
+  Meldung, von Anfang an `hidden`) ist nicht schritt-3-spezifisch.
+
+**`ablageVon()` reicht das Kontrakt-Feld `pruefung` durch — wie `gate`, nicht wie `struktur`
+(T11).** T11 liest `struktur` über eine eigene `strukturVon()`, weil sie nirgends sonst gebraucht
+wird; `pruefung` dagegen wird in `controller.hochladen` direkt neben `ordner`/`gate` gelesen (die
+schon über `ablageVon()` kommen) — eine zusätzliche, eigene Accessor-Funktion nur für ein Feld
+wäre eine zweite Form für dieselbe Art Frage gewesen. `ablageVon(...).pruefung` ist `null`, wo der
+Kontrakt das Feld nicht führt.
+
+**`inhalt.skriptPruefe(absaetze, d, kursId) -> { fehler: [], hinweise: [] } | null`** — reine
+Funktion, kein DOM, kein Netz. `null`, wenn `d` kein (geladenes) Dossier ist — ungeprüft ist nie
+grün, der Aufrufer MUSS den Fall behandeln (Muster `strukturPruefe`/T11). Regeln, Parity zu der
+Werkzeug-Abnahme W2 (dieselben Grundregeln, aber bewusst weicher bei fehlenden Dossier-Q-IDs — s.
+unten):
+- Gesamttext = `absaetze.map(a => a.text).join('\n')`.
+- Kurs-ID nicht im Text → Fehler. `d.regulatorik.stand` gesetzt, aber nicht im Text → Fehler (der
+  GESETZTE Rechtsstand-Kopf gab ihn vor); ist `stand` nicht gesetzt, wird nichts erfunden — kein
+  Fehler.
+- `[ZU PRÜFEN`/`[ZU PRUEFEN` im Text → Fehler (E6: „das nervt", offene Punkte gehören gesammelt in
+  einen `Ergänzungen`-Abschnitt, nicht verstreut im Fliesstext).
+- Kein Absatz, dessen Text mit „Ergänzungen"/„Ergaenzungen" beginnt → Fehler.
+- Modus `quellengestuetzt` (Dossier-Default): eine Q-ID im Text, die keine Dossier-Quelle ist →
+  Fehler je ID; gar keine Q-ID im Text → Fehler („Leseliste fehlt"); Dossier-Q-IDs, die im Text
+  FEHLEN → **Hinweis**, kein Fehler — eine Teil-Lieferung je Lerneinheit ist legitim, hart wird das
+  erst in der Werkzeug-Abnahme W2 vor Schritt 4.
+- Modus `quellenfrei`: `/quellenfrei/i` nicht im Text → Fehler (Ausweis-Pflicht); vorhandene Q-IDs
+  → Fehler („quellenfrei, aber Quellen-IDs im Text").
+
+**Q-ID-Wortgrenze — eine Quelle statt zwei Kopien (Konvention 9, Etappe-3-Plan-Constraint „Q-ID-
+Regex … je genau eine Stelle").** `quellenSpiegel` (Z7) und `skriptPruefe` (A2) müssen exakt
+dieselbe Regel benutzen — sonst zählt „Q-0158" in der einen Prüfung als Treffer für „Q-015" und in
+der anderen nicht. Die Regex `\bQ-\d{3}\b` samt Fund-Logik ist deshalb in eine private Hilfsfunktion
+`qIds(text)` (in `inhalt.js`, kein Export — beide Aufrufer liegen im selben Modul) gezogen;
+`quellenSpiegel` wurde auf denselben Aufruf umgestellt (rein mechanisches Refactoring, ihr
+Verhalten ist unverändert — die bestehende Testsuite dafür bleibt der Beleg).
+
+**`controller.hochladen` (app.js) — ein zweites, strukturgleiches Gate NACH dem bestehenden
+T11-xlsx-Gate.** `geprueftPflichtSkript = !!(ab && ab.pruefung === 'skript') &&
+erwarteteEndung(inh, n) === 'docx'` — hängt wie bei T11 an ZWEI Bedingungen, nicht an der lokalen
+Dateiendung allein. Ist es scharf:
+1. Die gewählte Datei MUSS als `.docx` erkennbar sein — sonst laute Abweisung (F5-Wortlaut-Muster:
+   „für diesen Schritt wird eine .docx-Datei mit geprüfter Struktur erwartet …"), kein
+   `docxLesen`-Aufruf.
+2. Das Dossier MUSS geladen sein — `state.data.dossier[kursId]` muss ein Objekt sein
+   (`undefined` = nie angefordert, `null` = lädt gerade, beides reicht nicht). Fehlt es: Abbruch
+   „Prüfung braucht das Dossier — zuerst Schritt 1 abschliessen …", **kein** `datei.arrayBuffer()`,
+   kein Netzzugriff. Ohne dieses Gate würde `skriptPruefe` `null` liefern und der Controller hätte
+   nichts, worüber er urteilen könnte — der Guard sitzt bewusst VOR dem Datei-Lesen, nicht erst im
+   `.then()`.
+3. Erst dann `datei.arrayBuffer()` → `docxLesen.absaetze` → `inhalt.skriptPruefe(absaetze, d,
+   kursId)`. `fehler.length` → Abbruch, **beide** Kanäle wie bei T11: `#hochladefehler`
+   (Klartext) UND `state.fehlerHinweis` (übersteht ein Zwischen-Render, Muster `quelleErfassen`-
+   I10). Sonst läuft der Upload wie bisher; `hinweise` werden an die Erfolgsmeldung angehängt
+   („Hochgeladen als … — Hinweis: …"). Ein Lesefehler der Datei selbst → „Datei nicht lesbar —
+   nicht hochgeladen: …" (T11-Wortlaut-Muster).
+
+Beide Gates sind unabhängig — ein Schritt führt in der Praxis nie sowohl `struktur` (T11) als auch
+`pruefung: 'skript'` (A2), aber selbst wenn: `weiterMitUpload()` nimmt jetzt einen optionalen
+`hinweise`-Parameter, den nur der Erfolgszweig des A2-Gates befüllt, das T11-Gate ruft ihn weiter
+ohne Argument.
+
+**Fixture:** `test/fixture.js` Schritt `'3'` bekommt zusätzlich `pruefung: 'skript'` — das Gate
+hängt NUR am Kontrakt-Feld + `erwarteteEndung === 'docx'`, nichts ist hartkodiert.
+
+**Tests:** `test/skriptpruefe.test.js` (neu, 11 Fälle — die fünf aus dem Task-Brief plus sechs
+ergänzende: Kurs-ID/Rechtsstand-Fehler einzeln, kein Rechtsstand-Fehler ohne gesetzten Stand,
+„Leseliste fehlt" ohne jede Q-ID, die ASCII-Schreibweise „Ergaenzungen", leere Absätze/Quellen ohne
+Crash). `test/hochladen.test.js` — fünf neue Integrationstests nach T11-Muster (Fake-`graph`,
+Fake-DOM, `docxLesen.absaetze` direkt gemockt statt einer echten ZIP-Fixture, analog zum
+bestehenden `xlsxLesen.blaetterUndKoepfe`-Mock): (a) sauberes docx → Upload läuft, Hinweis in der
+Erfolgsmeldung; (b) ein Fehler-Befund → Abbruch, beide Meldungskanäle, kein `graph.hochladen`;
+(c) Dossier `undefined` → Abbruch „Prüfung braucht das Dossier", null Netzzugriffe, `docxLesen`
+nie aufgerufen; (d) `.doc` statt `.docx` bei scharfem Gate → laute Abweisung, kein stiller Bypass
+(F5-Muster); (e) kein `pruefung`-Feld → kein Gate, Verhalten wie vor Etappe 3, läuft auch ohne
+geladenes Dossier durch. `test/ablegen.test.js` — die A2-Bedingung wird analog zu Z10 explizit
+geprüft (`darfAblegen(INHALT, '3') === false` mit den zwei Testvoraussetzungen). Ein bestehender
+T11-Test (`hochladen.test.js`, „F5: struktur-Feld allein ohne Kontrakt-ext xlsx…") führte nach der
+Fixture-Änderung testweise BEIDE Gates auf Schritt 3 — dort wird `pruefung` jetzt gezielt entfernt,
+damit der Test wieder ausschliesslich das ältere xlsx-Gate isoliert prüft. **620 Tests grün**
+(Baseline 601 + 19: 11 in `skriptpruefe.test.js`, 5 in `hochladen.test.js`, 2 in `ablegen.test.js`
+netto nach der Z10-Bereinigung, 1 in `final.test.js` netto nach dem Ersatz der beiden
+Chat-Sperre-Tests durch drei Hochladen-Sperre-Tests, 0 netto in `ansichten.test.js` nach der
+Schritt-5-Umstellung).
+
+**Mutationsproben (tatsächlich ausgeführt):**
+
+1. `controller.hochladen`, `geprueftPflichtSkript` auf `false && …` gesetzt (das Gate greift nie),
+   `node --test test/hochladen.test.js`:
+   ```
+   ℹ tests 28
+   ℹ pass 24
+   ℹ fail 4
+
+   ✖ (a) Schritt 3, sauberes docx: der Upload laeuft, Hinweise landen in der Erfolgsmeldung
+   ✖ (b) ein Fehler-Befund: der Upload wird abgebrochen, nichts geht an graph.hochladen
+   ✖ (c) Dossier nicht geladen (undefined): Abbruch VOR jedem Netzzugriff, kein Datei-Lesen
+   ✖ (d) eine Nicht-docx-Datei bei scharfem Gate wird laut abgewiesen, kein stiller Bypass
+   ```
+   Genau die vier Gate-abhängigen Tests fielen rot — Test (e) („kein `pruefung`-Feld …") blieb
+   grün, wie es sein muss: er prüft ja gerade den Fall OHNE Gate. Danach wiederhergestellt.
+2. `inhalt.skriptPruefe`, den `[ZU PRÜFEN`-Marker-Check auf `if (false && /\[ZU PR…/i.test(text))`
+   gesetzt, `node --test test/skriptpruefe.test.js`:
+   ```
+   ℹ tests 11
+   ℹ pass 10
+   ℹ fail 1
+
+   ✖ unbekannte Q-ID, Marker und fehlende Ergaenzungen sind Fehler
+     AssertionError: assert.ok(r.fehler.some((f) => /ZU PR/i.test(f)))
+   ```
+   Genau der eine Marker-Test fiel rot, alle anderen zehn blieben grün; danach wiederhergestellt,
+   komplette Suite erneut geprüft: `node --test` → **620/620 grün**.
+
+**Offen / bewusst nicht Teil von A2:** das reale `ablage-kontrakt.json` in SharePoint führt
+`pruefung` für Schritt 3 noch nicht (Weg B — diese Task ändert nur App-Code und Test-Fixture).
+Solange es fehlt, greift das Gate nirgends live (`ablage.pruefung` bleibt `null`) — kein
+Regressionsrisiko, aber auch noch kein Live-Nutzen, bis SharePoint nachgezogen ist. Ebenso offen:
+A3 (nächster Task der Etappe, laut Plan-Reihenfolge A1→A2→A3).

@@ -10,6 +10,21 @@
     return String(x).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
+  /* Eine Quelle fuer die Q-ID-Wortgrenzen-Regel (Konvention 9 / Etappe-3-
+     Global-Constraints: "Q-ID-Regex ... je genau eine Stelle"). quellenSpiegel
+     (Z7) und skriptPruefe (A2) muessen exakt dieselbe Regel verwenden — sonst
+     zaehlt "Q-0158" in der einen Pruefung als Treffer fuer Q-015 und in der
+     anderen nicht. \bQ-\d{3}\b: ein Wortgrenzen-Regex, global ueber den ganzen
+     Text, liefert eine Map { 'Q-001': true, ... } der GEFUNDENEN IDs. */
+  function qIds(text) {
+    var re = /\bQ-\d{3}\b/g;
+    var gefunden = {};
+    var t = String(text == null ? '' : text);
+    var m;
+    while ((m = re.exec(t))) gefunden[m[0]] = true;
+    return gefunden;
+  }
+
   var DATEIEN = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz', 'hf'];
   var PFLICHT = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz'];  /* hf darf fehlen */
 
@@ -185,8 +200,12 @@
       var datei = e.datei
         ? e.datei.replace('{K}', kursId)
         : (kursId + '_' + lief + '_v{N}.' + e.ext);
+      /* pruefung (A2, Etappe 3): durchgereichtes Kontrakt-Feld wie gate — die
+         eine Stelle, an der controller.hochladen nachsieht, ob fuer dieses
+         Lieferobjekt ein Struktur-Gate greift (T11: xlsx/struktur, A2:
+         docx/skript), s. dort. */
       return { ordner: e.ordner, datei: datei, format: e.format, gate: e.gate || null,
-               wege: e.wege || [], variante: variante || null };
+               wege: e.wege || [], variante: variante || null, pruefung: e.pruefung || null };
     },
 
     /* --- Ablegen: welche Version, welcher Name --- */
@@ -325,17 +344,30 @@
       return treffer;
     },
 
+    /* Ist das Lieferobjekt dieses Schritts eine DATEI (kommt nie als Fliesstext
+       aus dem Chat) statt Text? A2, Etappe 3 — die eine Stelle fuer diese
+       Frage (Konvention 9): xlsx (Schritt 2, T11/T12) und docx (Schritt 3, E5
+       — der Chat liefert das Skript direkt, die App prueft beim Hochladen).
+       darfAblegen() nutzt sie statt einer eigenen, an dieselbe Endungsliste
+       gebundenen Bedingung — waechst die Liste (ein drittes Dateiformat), gibt
+       es nur eine Stelle zum Anpassen. */
+    dateiLieferobjekt: function (i, schrittId) {
+      var e = inhalt.erwarteteEndung(i, schrittId);
+      return e === 'xlsx' || e === 'docx';
+    },
+
     /* Der Weg Chat ist nur dort vorgesehen, wo der Kontrakt ihn nennt — UND nur
-       fuer textbasierte Lieferobjekte (Z10). Ein Chat liefert eine xlsx als
-       DATEI — sein Ergebnis kommt ueber den Weg Hochladen herein; die
-       Text-Ablagefläche wäre eine Sackgasse. Seit T12 liefert der Chat die
-       .xlsx fuer Schritt 2 direkt; der Kontrakt fuehrt dort seither auch
-       'chat' in wege (Default-Weg), die Text-Ablage bleibt aber gesperrt. */
+       fuer textbasierte Lieferobjekte (Z10, erweitert A2). Ein Chat liefert
+       eine xlsx oder docx als DATEI — sein Ergebnis kommt ueber den Weg
+       Hochladen herein; die Text-Ablagefläche wäre eine Sackgasse. Seit T12
+       liefert der Chat die .xlsx fuer Schritt 2 direkt, seit A2 die .docx fuer
+       Schritt 3 (E5); der Kontrakt fuehrt dort seither auch 'chat' in wege
+       (Default-Weg), die Text-Ablage bleibt aber gesperrt. */
     darfAblegen: function (i, schrittId) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
       if (!e || !Array.isArray(e.wege)) return false;
       return e.wege.indexOf('chat') >= 0 && !!e.lieferobjekt &&
-             inhalt.erwarteteEndung(i, schrittId) !== 'xlsx';
+             !inhalt.dateiLieferobjekt(i, schrittId);
     },
 
     /* Ebenso das Hochladen: nur wo der Kontrakt es nennt. Gedacht fuer die
@@ -1027,15 +1059,101 @@
     quellenSpiegel: function (text, d) {
       if (text == null) return null;
       var quellen = (d && d.quellen) || [];
-      var gefunden = {};
-      var re = /\bQ-\d{3}\b/g;
-      var t = String(text);
-      var m;
-      while ((m = re.exec(t))) gefunden[m[0]] = true;
+      var gefunden = qIds(text);
       var fehlend = quellen
         .map(function (q) { return q.id; })
         .filter(function (id) { return id && !gefunden[id]; });
       return { fehlend: fehlend, gesamt: quellen.length };
+    },
+
+    /* --- Der Skript-Pruefer (A2, Etappe 3) ---
+       Das Drift-Netz fuer den Chat-Weg von Schritt 3: der Chat liefert die
+       .docx direkt (E5, wie Schritt 2 die xlsx) — die App prueft beim
+       Hochladen, statt dem Fachurteil am Gate die ganze Last zu ueberlassen.
+       Parity zu W2 (der Werkzeug-Abnahme, s. dort): dieselben Grundregeln,
+       aber bewusst WEICHER bei fehlenden Dossier-Q-IDs — eine Teil-Lieferung
+       je Lerneinheit ist hier legitim, hart wird das erst in der
+       Werkzeug-Abnahme W2 vor Schritt 4.
+
+       skriptPruefe(absaetze, d, kursId) -> { fehler: [], hinweise: [] } | null.
+       null, wenn d kein (geladenes) Dossier ist — ungeprueft ist nie gruen,
+       der Aufrufer MUSS diesen Fall behandeln (Muster strukturPruefe/T11).
+
+       Q-ID-Abgleich per Wortgrenze (\bQ-\d{3}\b, s. qIds() oben) — NIE per
+       Zeilen-Syntax: dieselbe Regel wie quellenSpiegel (Z7), damit ein
+       "Q-0158" in keiner der beiden Pruefungen faelschlich als Treffer fuer
+       "Q-015" zaehlt. */
+    skriptPruefe: function (absaetze, d, kursId) {
+      if (!d || typeof d !== 'object') return null;
+      var liste = Array.isArray(absaetze) ? absaetze : [];
+      var text = liste.map(function (a) { return (a && a.text) || ''; }).join('\n');
+      var fehler = [];
+      var hinweise = [];
+
+      if (kursId && text.indexOf(kursId) < 0) {
+        fehler.push('Kurs-ID ' + kursId + ' fehlt im Text.');
+      }
+
+      var regulatorik = d.regulatorik || {};
+      if (regulatorik.stand && text.indexOf(regulatorik.stand) < 0) {
+        fehler.push('Rechtsstand ' + regulatorik.stand + ' fehlt im Text — der ' +
+                     'GESETZTE Rechtsstand-Kopf gab ihn vor.');
+      }
+
+      /* E6: kein [ZU PRÜFEN] im Fliesstext — offene Punkte gehoeren gesammelt
+         in den Abschnitt "Ergänzungen" am Skript-Ende, nicht verstreut. */
+      if (/\[ZU PR(Ü|UE)FEN/i.test(text)) {
+        fehler.push('Marker "[ZU PRÜFEN" im Fliesstext gefunden — offene Punkte gehören ' +
+                     'gesammelt in den Abschnitt "Ergänzungen" (E6).');
+      }
+
+      var hatErgaenzungen = liste.some(function (a) {
+        return /^(Ergänzungen|Ergaenzungen)/.test(String((a && a.text) || ''));
+      });
+      if (!hatErgaenzungen) {
+        fehler.push('Kein Abschnitt "Ergänzungen" am Skript-Ende (E6).');
+      }
+
+      var gefunden = qIds(text);
+      var gefundenListe = Object.keys(gefunden);
+
+      if (d.content_modus === 'quellenfrei') {
+        if (!/quellenfrei/i.test(text)) {
+          fehler.push('Modus quellenfrei: Ausweis "quellenfrei" fehlt im Text.');
+        }
+        if (gefundenListe.length) {
+          fehler.push('Modus quellenfrei, aber Quellen-IDs im Text gefunden: ' +
+                       gefundenListe.join(', ') + ' — im Modus quellenfrei sind keine ' +
+                       'Quellen-IDs zulaessig.');
+        }
+      } else {
+        var dossierIds = (d.quellen || []).map(function (q) { return q && q.id; }).filter(Boolean);
+        var dossierSet = {};
+        dossierIds.forEach(function (id) { dossierSet[id] = true; });
+
+        gefundenListe
+          .filter(function (id) { return !dossierSet[id]; })
+          .forEach(function (id) {
+            fehler.push('Unbekannte Quellen-ID im Text: ' + id + ' — keine Dossier-Quelle.');
+          });
+
+        if (!gefundenListe.length) {
+          fehler.push('Leseliste fehlt — keine Quellen-ID im Text (Modus quellengestuetzt ' +
+                       'verlangt Belege).');
+        }
+
+        /* Fehlende Dossier-Q-IDs sind ein HINWEIS, kein Fehler: eine
+           Teil-Lieferung je Lerneinheit ist legitim (s. Kommentarkopf). */
+        dossierIds
+          .filter(function (id) { return !gefunden[id]; })
+          .forEach(function (id) {
+            hinweise.push('Dossier-Quelle ' + id + ' erscheint nicht im Text — ' +
+                           'Teil-Lieferung je Lerneinheit ist legitim, vor Schritt 4 ' +
+                           'vervollstaendigen.');
+          });
+      }
+
+      return { fehler: fehler, hinweise: hinweise };
     },
 
     /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 1) ---

@@ -164,16 +164,21 @@ function xlsxDatei(name, arrayBufferErgebnis) {
 /* Legt den Controller in einen Zustand, in dem nur noch der Klick auf
    "Hochladen" fehlt. inh wird pro Aufruf frisch geklont, damit ein Test das
    struktur-Feld gefahrlos entfernen/aendern kann, ohne INHALT fuer die
-   anderen Tests der Datei zu verfaellschen. */
-async function hochladenLauf(n, dateiObjekt, inhOverride) {
+   anderen Tests der Datei zu verfaellschen. dossierOverride (A2) wird nach
+   state.data.dossier['AFL-001'] gestempelt — undefined (Default) heisst "nicht
+   geladen", wie im echten State (s. app.js state.data.dossier: {}). */
+async function hochladenLauf(n, dateiObjekt, inhOverride, dossierOverride) {
   const meldung = { textContent: '', hidden: true };
   const hochgeladenMit = { ordner: null, datei: null };
+  const rufe = { ordnerInhalt: 0 };
 
   state.data.inhalt = inhOverride || JSON.parse(JSON.stringify(INHALT));
   state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
                         schritt: +n, status: 'inArbeit' }];
   state.data.dateien = {};
+  state.data.dossier = { 'AFL-001': dossierOverride };
   state.fehlerHinweis = null;
+  state.hinweis = null;
   state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: String(n),
                      werkzeugId: null, werk: null, variante: null, weg: null };
 
@@ -186,6 +191,7 @@ async function hochladenLauf(n, dateiObjekt, inhOverride) {
   };
 
   graph.ordnerInhalt = function (kursId, ordner) {
+    rufe.ordnerInhalt++;
     hochgeladenMit.ordnerGelesen = ordner;
     return Promise.resolve([]);
   };
@@ -201,7 +207,8 @@ async function hochladenLauf(n, dateiObjekt, inhOverride) {
   controller.hochladen(String(n), knopf);
   await new Promise(function (r) { setTimeout(r, 30); });
   return { hochgeladenMit: hochgeladenMit, meldung: meldung.textContent,
-           fehlerHinweis: state.fehlerHinweis, knopf: knopf };
+           fehlerHinweis: state.fehlerHinweis, hinweis: state.hinweis,
+           rufe: rufe, knopf: knopf };
 }
 
 test('struktur vorhanden, Datei sauber: der Upload laeuft normal durch', async () => {
@@ -280,8 +287,108 @@ test('F5: struktur-Feld allein ohne Kontrakt-ext xlsx schaltet das Gate nicht sc
   const mitFremderEndung = JSON.parse(JSON.stringify(INHALT));
   mitFremderEndung['ablage-kontrakt'].schritte['3'] = Object.assign(
     {}, mitFremderEndung['ablage-kontrakt'].schritte['3'], { struktur: INHALT['ablage-kontrakt'].schritte['2'].struktur });
+  /* Seit A2 fuehrt Schritt 3 zusaetzlich pruefung:'skript' (das eigene
+     docx-Gate, s. u.) — fuer DIESEN Test (der ausschliesslich das aeltere
+     xlsx-Gate/T11 isoliert pruefen soll) wird es entfernt, sonst wuerde das
+     neue Gate hier mitgreifen und den Upload ueber einen anderen Pfad
+     (docxLesen) blockieren, obwohl genau das nicht Gegenstand dieses Tests ist. */
+  delete mitFremderEndung['ablage-kontrakt'].schritte['3'].pruefung;
   const l = await hochladenLauf(3, xlsxDatei('AFL-001_skript-claude_v1.docx'), mitFremderEndung);
   assert.strictEqual(gerufen, false, 'xlsxLesen haette nicht aufgerufen werden duerfen — Kontrakt erwartet docx, nicht xlsx');
   assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_skript-claude_v1.docx',
     'der Upload haette normal laufen sollen, das Gate ist hier nicht scharf');
+});
+
+/* ---------- controller.hochladen: Skript-Strukturpruefung fuer Schritt 3 (A2) ----------
+   Dasselbe Drift-Netz-Muster wie T11, fuer den Chat-Weg von Schritt 3: der
+   Chat liefert die .docx direkt (E5) — die App prueft beim Hochladen gegen
+   inhalt.skriptPruefe(). Das Gate haengt am Kontrakt-Feld pruefung:'skript'
+   PLUS der Kontrakt-Endung 'docx' (dieselbe F5-Bindung wie bei xlsx/struktur)
+   UND braucht zusaetzlich das geladene Dossier — ohne das kein Urteil. */
+
+require('../docx-lesen.js');
+const { docxLesen } = require('../docx-lesen.js');
+
+function docxDatei(name, arrayBufferErgebnis) {
+  return {
+    name: name,
+    arrayBuffer: function () {
+      return arrayBufferErgebnis instanceof Error
+        ? Promise.reject(arrayBufferErgebnis)
+        : Promise.resolve(arrayBufferErgebnis || new ArrayBuffer(0));
+    }
+  };
+}
+
+const DOSSIER_OK = {
+  regulatorik: { stand: '1.1.2026' },
+  content_modus: 'quellengestuetzt',
+  quellen: [{ id: 'Q-001' }, { id: 'Q-002' }]
+};
+
+test('(a) Schritt 3, sauberes docx: der Upload laeuft, Hinweise landen in der Erfolgsmeldung', async () => {
+  docxLesen.absaetze = function () {
+    return Promise.resolve([
+      { stil: null, text: 'AFL-001 Skript, Rechtsstand 1.1.2026' },
+      { stil: null, text: 'Text mit Beleg Q-001.' },
+      { stil: null, text: 'Ergänzungen' },
+      { stil: null, text: '- keine' }
+    ]);
+  };
+  const l = await hochladenLauf(3, docxDatei('egal.docx'), null, DOSSIER_OK);
+  assert.strictEqual(l.meldung, '', 'kein Upload-Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochgeladenMit.ordner, '03_content');
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_skript-claude_v1.docx',
+    'ohne getroffene Variantenwahl gilt die erste (claude)');
+  assert.match(l.hinweis || '', /Q-002/, 'die fehlende Dossier-Quelle Q-002 sollte als Hinweis erscheinen');
+  assert.strictEqual(l.knopf.disabled, true, 'der Knopf bleibt waehrend des Uploads gesperrt');
+});
+
+test('(b) ein Fehler-Befund: der Upload wird abgebrochen, nichts geht an graph.hochladen', async () => {
+  docxLesen.absaetze = function () {
+    return Promise.resolve([
+      { stil: null, text: 'Ohne Kurscode, ohne Ergaenzungsabschnitt, mit Q-099.' }
+    ]);
+  };
+  const l = await hochladenLauf(3, docxDatei('egal.docx'), null, DOSSIER_OK);
+  assert.strictEqual(l.hochgeladenMit.datei, null, 'trotz Befund hochgeladen');
+  assert.match(l.meldung, /Skript weicht vom Kontrakt ab/);
+  assert.match(l.fehlerHinweis || '', /Skript weicht vom Kontrakt ab/,
+    'state.fehlerHinweis fehlt — ein Zwischen-Render koennte sonst die Meldung verlieren');
+  assert.strictEqual(l.knopf.disabled, false, 'der Knopf muss nach dem Abbruch wieder bedienbar sein');
+});
+
+test('(c) Dossier nicht geladen (undefined): Abbruch VOR jedem Netzzugriff, kein Datei-Lesen', async () => {
+  let docxGerufen = false;
+  docxLesen.absaetze = function () { docxGerufen = true; return Promise.resolve([]); };
+  const l = await hochladenLauf(3, docxDatei('egal.docx'), null, undefined);
+  assert.strictEqual(docxGerufen, false, 'die Datei haette nie gelesen werden duerfen');
+  assert.strictEqual(l.rufe.ordnerInhalt, 0, 'kein Netzzugriff erwartet');
+  assert.strictEqual(l.hochgeladenMit.datei, null);
+  assert.match(l.meldung, /Prüfung braucht das Dossier/);
+  assert.match(l.fehlerHinweis || '', /Prüfung braucht das Dossier/);
+  assert.strictEqual(l.knopf.disabled, false, 'der Knopf muss wieder bedienbar sein');
+});
+
+test('(d) eine Nicht-docx-Datei bei scharfem Gate wird laut abgewiesen, kein stiller Bypass', async () => {
+  let docxGerufen = false;
+  docxLesen.absaetze = function () { docxGerufen = true; return Promise.resolve([]); };
+  const l = await hochladenLauf(3, docxDatei('AFL-001_skript-claude_v1.doc'), null, DOSSIER_OK);
+  assert.strictEqual(docxGerufen, false, 'docxLesen haette fuer eine Nicht-docx nicht aufgerufen werden duerfen');
+  assert.strictEqual(l.hochgeladenMit.datei, null, 'die Datei haette NICHT hochgeladen werden duerfen');
+  assert.match(l.meldung, /\.docx/);
+  assert.match(l.meldung, /AFL-001_skript-claude_v1\.doc\b/);
+  assert.match(l.fehlerHinweis || '', /\.docx/);
+  assert.strictEqual(l.knopf.disabled, false, 'der Knopf muss nach der Abweisung wieder bedienbar sein');
+});
+
+test('(e) kein pruefung-Feld am Schritt: keine Skript-Pruefung, Verhalten wie vor Etappe 3', async () => {
+  let docxGerufen = false;
+  docxLesen.absaetze = function () { docxGerufen = true; return Promise.resolve([]); };
+  const ohnePruefung = JSON.parse(JSON.stringify(INHALT));
+  delete ohnePruefung['ablage-kontrakt'].schritte['3'].pruefung;
+  const l = await hochladenLauf(3, docxDatei('egal.docx'), ohnePruefung, undefined);
+  assert.strictEqual(docxGerufen, false, 'docxLesen haette ohne pruefung-Feld nicht aufgerufen werden duerfen');
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_skript-claude_v1.docx',
+    'ohne Gate laeuft der Upload unveraendert durch — auch ohne geladenes Dossier');
 });

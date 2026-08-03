@@ -81,8 +81,11 @@ test('naechsteDatei verweigert Schritte mit festem Dateinamen', () => {
 
 /* ---------- Darf hier ueberhaupt abgelegt werden? ---------- */
 
-test('Ablegen ist erlaubt, wo der Weg Chat vorgesehen ist', () => {
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 3), true);
+/* Schritt 3 stand hier frueher mit true — seit A2 (Etappe 3) ist sein
+   Lieferobjekt eine docx (s. den eigenen A2-Block weiter unten): der Chat
+   liefert sie direkt (E5), die Text-Ablage waere eine Sackgasse. Schritt 5
+   bleibt textbasiert und damit unveraendert erlaubt. */
+test('Ablegen ist erlaubt, wo der Weg Chat vorgesehen ist und das Lieferobjekt Text ist', () => {
   assert.strictEqual(inhalt.darfAblegen(INHALT, 5), true);
 });
 
@@ -107,6 +110,26 @@ test('Schritt 2 fuehrt jetzt den Weg Chat, die Text-Ablage bleibt aber gesperrt 
   assert.strictEqual(inhalt.erwarteteEndung(INHALT, 2), 'xlsx', 'Testvoraussetzung: Schritt 2 ist xlsx');
   assert.strictEqual(inhalt.darfAblegen(INHALT, 2), false,
     'Ein Chat liefert eine xlsx als Datei — die Text-Ablage waere eine Sackgasse');
+});
+
+/* ---------- A2 (Etappe 3): dasselbe fuer Schritt 3 — docx-Lieferobjekt ----------
+   Seit A2 liefert der Chat auch das Skript aus Schritt 3 direkt als .docx (E5,
+   wie Schritt 2 die xlsx seit T12/Z10). inhalt.dateiLieferobjekt() ist die eine
+   Stelle fuer "ist das Lieferobjekt eine Datei" (xlsx ODER docx) — darfAblegen()
+   nutzt sie statt einer eigenen, an eine einzelne Endung gebundenen Bedingung. */
+test('inhalt.dateiLieferobjekt: wahr fuer xlsx und docx, falsch fuer Text-Lieferobjekte', () => {
+  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 2), true, 'Schritt 2 ist xlsx');
+  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 3), true, 'Schritt 3 ist docx');
+  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 5), false, 'Schritt 5 ist md (Text)');
+  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 6), false, 'Schritt 6 ist mbz — eine Datei, aber weder xlsx noch docx');
+});
+
+test('Schritt 3 fuehrt den Weg Chat, die Text-Ablage bleibt aber gesperrt — docx-Lieferobjekt (A2)', () => {
+  const e = INHALT['ablage-kontrakt'].schritte['3'];
+  assert.ok(e.wege.indexOf('chat') >= 0, 'Testvoraussetzung: Schritt 3 fuehrt chat in wege');
+  assert.strictEqual(inhalt.erwarteteEndung(INHALT, 3), 'docx', 'Testvoraussetzung: Schritt 3 ist docx');
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 3), false,
+    'Der Chat liefert eine docx als Datei (E5) — die Text-Ablage waere eine Sackgasse');
 });
 
 /* ---------- Was das Ablegen am Stand aendert ---------- */
@@ -135,13 +158,17 @@ test('ein bereits fertiger aktueller Schritt wird durch Ablegen wieder inArbeit'
 
 const { ansichten } = require('../ansichten.js');
 
-test('Schritt 3 bietet die Ablege-Flaeche an', () => {
+/* Seit A2 (docx-Lieferobjekt, s. o.) bietet Schritt 3 keine Chat-Text-Ablage
+   mehr an — dasselbe Muster wie Schritt 2 seit Z10 (xlsx). Der Hochladen-Block
+   bleibt die einzige Ablageflaeche und nennt den Zielnamen weiterhin vorab. */
+test('Schritt 3 bietet KEINE Ablege-Flaeche mehr — docx ist eine Datei, kein Text (A2)', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 3, null, { dateien: [] });
-  assert.ok(/id="ergebnis"/.test(h), 'kein Eingabefeld');
-  assert.ok(/data-action="ablegen"/.test(h), 'kein Ablegen-Knopf');
+  assert.ok(!/id="ergebnis"/.test(h), 'Text-Ablagefeld erscheint trotz docx-Lieferobjekt');
+  assert.ok(!/data-action="ablegen"/.test(h), 'Ablegen-Knopf erscheint trotz docx-Lieferobjekt');
+  assert.ok(/data-action="hochladen"/.test(h), 'der Hochladen-Block fuer die docx ist verschwunden');
 });
 
-test('die Ablege-Flaeche nennt den Zieldateinamen vorab', () => {
+test('die Hochladen-Flaeche nennt den Zieldateinamen unter der gewaehlten Variante vorab', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 3, null,
     { dateien: [{ name: 'DBS-001_skript-claude_v1.docx' }] });
   assert.ok(/03_content\/DBS-001_skript-claude_v2\.docx/.test(h), 'Zielname fehlt oder falsch');
