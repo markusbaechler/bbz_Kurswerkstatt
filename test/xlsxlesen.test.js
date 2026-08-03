@@ -2,6 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert');
 const zlib = require('node:zlib');
 
+/* zip-lesen.js vorab requiren, damit root.zipLesen steht, BEVOR xlsx-lesen.js
+   geladen wird — dieselbe Reihenfolge wie in index.html (Etappe 3, Task A1:
+   der ZIP-Kern liegt seither dort, xlsx-lesen.js nutzt ihn ueber Z()). */
+require('../zip-lesen.js');
 const { xlsxLesen } = require('../xlsx-lesen.js');
 
 /* ---------- Test-Helper: eine minimale xlsx als ArrayBuffer bauen ----------

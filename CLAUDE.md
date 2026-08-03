@@ -31,7 +31,9 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `index.html` | App-Shell + **gesamtes CSS** (`:root`-Tokens oben, aus v0.2 übernommen) |
 | `app.js` | `CONFIG` · `state` · `helpers` · `controller` |
 | `dossier.js` | Das Kursdossier — reine Funktionen: Schema, Status, Quellen |
+| `zip-lesen.js` | ZIP-Kern (Central Directory, Entpacken) + XML-Text-Dekoder — geteilt von `xlsx-lesen.js` und `docx-lesen.js` (Etappe 3, Task A1) |
 | `xlsx-lesen.js` | Liest eine .xlsx dependency-frei (ZIP + minimales XML) — Blattnamen und Kopfzeile je Blatt, fuer die Upload-Strukturpruefung (T11) |
+| `docx-lesen.js` | Liest eine .docx dependency-frei — Absaetze mit Stil und Text, in Dokumentreihenfolge (Etappe 3, Task A1) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
 | `ansichten.js` | Kette, alle Kurse, ein Kurs, ein Schritt, Nachschlagen — reine String-Builder |
 | `test/fixture.js` | Testdaten in der Struktur der echten Dateien, ohne echte Prompt-Texte |
@@ -1765,3 +1767,93 @@ B). Solange SharePoint nicht nachgezogen ist, bleibt der Default-Weg dort weiter
 Live-Effekt, bis jemand `chat` dort ergänzt. Ebenso offen: `guide-1` (SharePoint) müsste ein
 `stepsProWeg.chat` bekommen, damit die Wegwahl-Leiste in Schritt 2 überhaupt sichtbar wird — bis
 dahin zeigt die Anleitung dort weiterhin nur `g.steps`, unabhängig vom gewählten Weg.
+
+## Etappe 3
+
+Baut nicht auf dem Kursdossier auf, sondern erweitert die Lesefähigkeit der App: bisher konnte
+sie nur `.xlsx` dependency-frei lesen (T11). Etappe 3 zieht dafür zuerst den ZIP-Kern heraus, den
+ein zweites Dateiformat (`.docx`) ebenfalls braucht — eine ZIP-Quelle statt zweier Kopien
+(Konvention 9), bevor der zweite Leser überhaupt entsteht.
+
+### Task A1: ZIP-Kern nach `zip-lesen.js` + `docx-lesen.js` neu
+
+**`zip-lesen.js` (neu) trägt seither den kompletten ZIP-Kern, wörtlich aus `xlsx-lesen.js`
+verschoben, Verhalten unverändert:** Central-Directory-Parsing (`zipEintraege`), lokale Header
+(`rohBytes`), Entpacken (`inflateRaw`/`entpacke`, weiterhin `DecompressionStream('deflate-raw')`,
+Konvention 1 — keine Abhängigkeit) sowie der XML-Text-Dekoder (`text()`, Tags strippen,
+Entitäten, Whitespace). API: `zipLesen.oeffne(arrayBuffer) -> { eintraege, lies(name) ->
+Promise<string> }` — `eintraege` ist dasselbe Central-Directory-Objekt wie bisher, `lies()`
+entpackt einen Eintrag on-demand und liefert bei einem fehlenden Namen `Promise.resolve('')`
+(bisheriges `entpacke(!eintrag)`-Verhalten, jetzt hinter `lies()` verborgen). `zipLesen.text(s)`
+ist derselbe Dekoder wie vorher, nur verschoben.
+
+**`xlsx-lesen.js` behält seine API und die gesamte xlsx-eigene XML-Logik** (Zellen, Spaltennummer,
+die Kopfzeilen-Regel aus T11) — nur der ZIP-/Text-Kern ist raus, ersetzt durch `Z().oeffne(...)`/
+`Z().text(...)`. `Z()` ist ein Lazy-Accessor nach dem Muster von `I()` in `ansichten.js`: im
+Browser liest er `root.zipLesen` (gesetzt durch die Script-Tag-Reihenfolge in `index.html` —
+`zip-lesen.js` steht dort VOR `xlsx-lesen.js`/`docx-lesen.js`), in Node fällt er auf ein eigenes
+`require('./zip-lesen.js')` zurück, falls `root.zipLesen` fehlen sollte. **Der Umzug ist
+verhaltensneutral:** alle 12 bestehenden `test/xlsxlesen.test.js`-Tests blieben unverändert grün,
+die einzige Änderung an dieser Datei ist ein zusätzliches `require('../zip-lesen.js')` im
+Test-Kopf (vor dem `require` von `xlsx-lesen.js`), damit `root.zipLesen` beim Laden steht — genau
+das ist der Beweis, dass der Kern-Umzug nichts am xlsx-Verhalten geändert hat.
+
+**`docx-lesen.js` (neu) liest eine .docx dependency-frei — Absätze mit Stil und Text, in
+Dokumentreihenfolge.** Kein vollwertiger docx-Parser: keine Tabellen, keine
+Listen-Nummerierung, keine Bilder, nur Fliesstext je Absatz aus `word/document.xml` (dieselbe
+Grenze wie bei `xlsx-lesen.js`/T11 — nur so viel XML-Logik wie für den jeweiligen Zweck nötig).
+`docxLesen.absaetze(arrayBuffer) -> Promise<[{stil, text}]>`: `stil` ist der `w:pStyle`-Wert des
+Absatzes (`null` ohne eigenen Stil), `text` sind alle `<w:t>`-Fragmente des Absatzes
+zusammengefügt. Wirft (verwirft die Promise), wenn `arrayBuffer` kein Zip ist oder
+`word/document.xml` fehlt — dieselbe Fehlerlogik wie bei `xlsx-lesen.js`, nur auf die docx-eigene
+Pflichtdatei gemünzt. **Ein selbstschliessender leerer Absatz (`<w:p/>`) taucht NICHT im Ergebnis
+auf** — der Absatz-Regex (`/<w:p[ >][\s\S]*?<\/w:p>/g`) verlangt ein öffnendes UND ein
+schliessendes `<w:p>`-Tag, ein `/>`-Absatz matcht nicht. Das ist gewollt: ein Absatz ohne jeden
+Lauf trägt ohnehin weder Text noch Stil.
+
+**Abweichung von der Implementationsskizze im Task-Brief (dokumentiert, kein zweiter
+Freibrief):** die Skizze mappte jedes `<w:t>`-Fragment EINZELN durch `Z().text()` und fügte die
+Ergebnisse danach zusammen (`.map(Z().text).join('')`). `Z().text()` trimmt am Ende jedes
+Aufrufs — bei mehreren Läufen im selben Absatz (`<w:t>Erster </w:t><w:t>Satz.</w:t>`) verschluckte
+das den Leerraum an der Lauf-Grenze: `"ErsterSatz."` statt `"Erster Satz."`, belegt durch den
+ersten Testlauf (Brief-Test „absaetze liefert Text und Stil je Absatz…" schlug genau daran fehl).
+Fix: erst ALLE `<w:t>`-Fragmente eines Absatzes roh zusammenfügen, DANN einmal durch `Z().text()`
+dekodieren — das Trimmen greift dann nur noch an Anfang/Ende des ganzen Absatztexts, ein inneres
+Leerzeichen an einer Lauf-Grenze bleibt erhalten. Kein Eingriff in `zip-lesen.js`/`Z().text()`
+selbst — die Funktion bleibt wortgleich mit der bisherigen `xlsx-lesen.js`-Fassung (Konvention 9:
+eine XML-Text-Quelle für beide Leser), nur die docx-eigene Aufrufreihenfolge in `docx-lesen.js`
+ist angepasst.
+
+**Tests:** `test/docxlesen.test.js` (neu) — drei Fälle aus dem Task-Brief: Text/Stil je Absatz in
+Dokumentreihenfolge, Abweisung bei Nicht-Zip UND bei fehlendem `word/document.xml`, Entitäten
+(`&amp;`, `&#x2014;`) und geschachtelte Runs werden dekodiert. Der ZIP-Bau-Helfer (`zipBauen`) ist
+in dieser Datei eigens gehalten (Central Directory + lokale Header, unkomprimiert) statt aus
+`test/xlsxlesen.test.js` importiert — dort darf laut Brief NUR der require-Kopf geändert werden,
+ein Export des dortigen Helfers hätte diese Grenze verletzt; die ZIP-Format-Logik ist dadurch an
+zwei Stellen im Testcode vorhanden, aber bewusst (Testhelfer, mit Augenmass — Konvention 9 gilt
+hier nachrangig gegenüber der Brief-Vorgabe „xlsxlesen.test.js nur der require-Kopf"). **601
+Tests grün** (Baseline 598 + 3 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die `word/document.xml`-Guard-Zeile in
+`docx-lesen.js` auf `if (false && !zip.eintraege['word/document.xml']) throw …` gesetzt,
+`node --test test/docxlesen.test.js`:
+```
+ℹ tests 3
+ℹ pass 2
+ℹ fail 1
+
+✖ kein Zip und Zip ohne word/document.xml werden abgewiesen
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+```
+Genau der eine Abweisungs-Test fiel rot (der Nicht-Zip-Fall im selben Test blieb grün, weil der
+ZIP-Kern selbst — unverändert — schon dort wirft), die anderen beiden Tests blieben grün; danach
+wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **601/601 grün**.
+
+**`index.html`:** Script-Tags `zip-lesen.js` und `docx-lesen.js` stehen VOR `xlsx-lesen.js`,
+davor `app.js` unverändert. Der Deploy-Workflow (`.github/workflows/deploy.yml`) stampt jedes
+`*.js` per `sed` gegen `src="$f"` im Cache-Buster-Schritt — die neuen Tags folgen demselben
+Muster (`src="zip-lesen.js"`/`src="docx-lesen.js"`) und werden ohne Sonderfall miterfasst.
+
+**Offen / bewusst nicht Teil von A1:** `docx-lesen.js` wird von keinem Aufrufer in `app.js`/
+`inhalt.js` genutzt — A1 liefert nur den Leser, kein Werkzeug, das ihn aufruft. Das folgt mit den
+nächsten App-Tasks der Etappe (A2/A3).

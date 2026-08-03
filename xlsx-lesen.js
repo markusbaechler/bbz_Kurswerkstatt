@@ -10,98 +10,25 @@
    erste Zeile werden uebersprungen, sonst erzeugte jede Contract-Excel mit
    einer Titelzeile vier Fehlalarme, die contract-pruefen.cjs nicht kennt.
 
-   Eine xlsx ist ein ZIP. Dieselbe Zip-/XML-Logik wie
-   IT_Architektur_bbz/output/tools/contract-lesen.cjs (dort mit zlib, weil
-   Node-Tool) — hier mit DecompressionStream('deflate-raw'), nativ in Chrome/
-   Edge und seit Node 18 auch im Test ohne Zusatzabhaengigkeit (node --test
-   dieser Datei laeuft nativ dagegen, s. test/xlsxlesen.test.js). Kein
-   Paketmanager, keine Abhaengigkeit — Konvention 1. */
+   Eine xlsx ist ein ZIP. Der ZIP-Kern (Central-Directory-Parsing, Entpacken,
+   XML-Text-Dekoder) lebt seit Etappe 3 (Task A1) in zip-lesen.js — geteilt mit
+   docx-lesen.js, eine ZIP-Quelle statt zweier Kopien (Konvention 9). Diese
+   Datei enthaelt nur noch die xlsx-eigene XML-Auswertung (Blaetter, Zeilen,
+   Zellen, Kopfzeilen-Regel). Kein Paketmanager, keine Abhaengigkeit —
+   Konvention 1. */
 (function (root) {
   'use strict';
 
-  function leU16(view, o) { return view.getUint16(o, true); }
-  function leU32(view, o) { return view.getUint32(o, true); }
-
-  function textDecode(bytes) {
-    return new TextDecoder('utf-8').decode(bytes);
-  }
-
-  /* ---------- ZIP: Central Directory + lokale Eintraege ---------- */
-
-  /* Sucht das End-of-Central-Directory-Record vom Dateiende her (es kann ein
-     ZIP-Kommentar dahinterstehen — deshalb keine feste Position). */
-  function zipEintraege(bytes, view) {
-    var eo = -1;
-    for (var i = bytes.length - 22; i >= 0; i--) {
-      if (leU32(view, i) === 0x06054b50) { eo = i; break; }
-    }
-    if (eo < 0) throw new Error('Keine xlsx-Datei: Zip-Verzeichnis nicht gefunden');
-    var anzahl = leU16(view, eo + 10);
-    var p = leU32(view, eo + 16);
-    var e = {};
-    for (var k = 0; k < anzahl; k++) {
-      var nl = leU16(view, p + 28), el = leU16(view, p + 30), cl = leU16(view, p + 32);
-      var name = textDecode(bytes.subarray(p + 46, p + 46 + nl));
-      e[name] = {
-        name: name,
-        lho: leU32(view, p + 42),
-        methode: leU16(view, p + 10),
-        csize: leU32(view, p + 20)
-      };
-      p += 46 + nl + el + cl;
-    }
-    return e;
-  }
-
-  /* Die Groesse aus der Central Directory gilt, nicht die aus dem lokalen
-     Header — bei gesetztem Data-Descriptor-Bit (gp flag bit 3) steht dort 0. */
-  function rohBytes(bytes, view, eintrag) {
-    var nl = leU16(view, eintrag.lho + 26), el = leU16(view, eintrag.lho + 28);
-    var start = eintrag.lho + 30 + nl + el;
-    return bytes.subarray(start, start + eintrag.csize);
-  }
-
-  function inflateRaw(bytes) {
-    if (typeof DecompressionStream === 'undefined') {
-      return Promise.reject(new Error(
-        'DecompressionStream nicht verfuegbar — deflate-komprimierte xlsx-Eintraege ' +
-        'koennen in dieser Umgebung nicht entpackt werden.'));
-    }
-    var ds = new DecompressionStream('deflate-raw');
-    var stream = new Blob([bytes]).stream().pipeThrough(ds);
-    return new Response(stream).arrayBuffer().then(function (buf) {
-      return new Uint8Array(buf);
-    });
-  }
-
-  /* Methode 0 = ungespeichert, 8 = deflate — mehr erzeugt xlsx nie. */
-  function entpacke(bytes, view, eintrag) {
-    if (!eintrag) return Promise.resolve('');
-    var roh = rohBytes(bytes, view, eintrag);
-    if (eintrag.methode === 0) return Promise.resolve(textDecode(roh));
-    if (eintrag.methode !== 8) {
-      return Promise.reject(new Error('Nicht unterstuetzte Zip-Kompression in "' +
-        eintrag.name + '": Methode ' + eintrag.methode +
-        ' (erwartet 0 = ungespeichert oder 8 = deflate).'));
-    }
-    return inflateRaw(roh).then(textDecode).catch(function (err) {
-      throw new Error('Eintrag "' + eintrag.name + '" liess sich nicht entpacken ' +
-        '(deflate-Fehler): ' + (err && err.message ? err.message : err));
-    });
+  /* Lazy-Accessor (Muster I() in ansichten.js): root.zipLesen ist gesetzt,
+     sobald zip-lesen.js vorher geladen/ge-required wurde — im Browser per
+     Script-Tag-Reihenfolge (index.html), in Node per require-Kopf im Test. */
+  function Z() {
+    if (root.zipLesen) return root.zipLesen;
+    if (typeof module !== 'undefined' && module.exports) return require('./zip-lesen.js').zipLesen;
+    throw new Error('zip-lesen.js nicht geladen');
   }
 
   /* ---------- XML: nur so viel wie fuer Blattnamen + Kopfzeile noetig ---------- */
-
-  function text(s) {
-    return String(s == null ? '' : s)
-      .replace(/<[^>]*>/g, '')
-      .replace(/&#x([0-9a-f]+);/gi, function (_, n) { return String.fromCharCode(parseInt(n, 16)); })
-      .replace(/&#(\d+);/g, function (_, n) { return String.fromCharCode(+n); })
-      .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-      .replace(/&amp;/g, '&')            /* zuletzt, sonst doppelt aufgeloest */
-      .replace(/\s+/g, ' ').trim();
-  }
 
   function spalteNr(ref) {
     var n = 0, buchstaben = ref.replace(/\d+/g, '');
@@ -120,11 +47,11 @@
       var vM = c.match(/<v>([\s\S]*?)<\/v>/);
       var wert = '';
       if (typ === 'inlineStr') {
-        wert = (c.match(/<t[^>]*>[\s\S]*?<\/t>/g) || []).map(text).join('').trim();
+        wert = (c.match(/<t[^>]*>[\s\S]*?<\/t>/g) || []).map(Z().text).join('').trim();
       } else if (typ === 's') {
         wert = ss[+(vM ? vM[1] : -1)] || '';
       } else if (vM !== undefined && vM !== null) {
-        wert = text(vM[1]);
+        wert = Z().text(vM[1]);
       }
       while (out.length < spalte) out.push('');
       out[spalte] = wert;
@@ -156,14 +83,13 @@
      mehrstufige Entpack-Pipeline (workbook, rels, je Blatt) blieb sonst
      schwer lesbar verschachtelt. */
   async function blaetterUndKoepfe(arrayBuffer) {
-    var bytes = new Uint8Array(arrayBuffer);
-    var view = new DataView(arrayBuffer);
-    var e = zipEintraege(bytes, view);
+    var zip = Z().oeffne(arrayBuffer);
+    var e = zip.eintraege;
     if (!e['xl/workbook.xml']) throw new Error('Keine xlsx-Datei: xl/workbook.xml fehlt');
 
-    var wb = await entpacke(bytes, view, e['xl/workbook.xml']);
-    var rels = await entpacke(bytes, view, e['xl/_rels/workbook.xml.rels']);
-    var ssXml = e['xl/sharedStrings.xml'] ? await entpacke(bytes, view, e['xl/sharedStrings.xml']) : '';
+    var wb = await zip.lies('xl/workbook.xml');
+    var rels = await zip.lies('xl/_rels/workbook.xml.rels');
+    var ssXml = e['xl/sharedStrings.xml'] ? await zip.lies('xl/sharedStrings.xml') : '';
 
     var ziel = {};
     (rels.match(/<Relationship[^>]*>/g) || []).forEach(function (r) {
@@ -172,7 +98,7 @@
     });
 
     var ss = (ssXml.match(/<si>[\s\S]*?<\/si>/g) || []).map(function (si) {
-      return (si.match(/<t[^>]*>[\s\S]*?<\/t>/g) || []).map(text).join('');
+      return (si.match(/<t[^>]*>[\s\S]*?<\/t>/g) || []).map(Z().text).join('');
     });
 
     /* \s nach "sheet" verlangen, sonst matcht der Container <sheets> mit. */
@@ -182,14 +108,14 @@
       var ridM = s.match(/r:id="([^"]+)"/);
       var rid = ridM ? ridM[1] : null;
       var pfad = 'xl/' + (ziel[rid] || '');
-      return { name: text(nameM ? nameM[1] : ''), pfad: pfad };
+      return { name: Z().text(nameM ? nameM[1] : ''), pfad: pfad };
     });
 
     var out = [];
     for (var n = 0; n < sheets.length; n++) {
       var sh = sheets[n];
       if (!e[sh.pfad]) continue;
-      var xml = await entpacke(bytes, view, e[sh.pfad]);
+      var xml = await zip.lies(sh.pfad);
       var zeilenXml = xml.match(/<row[\s\S]*?<\/row>/g) || [];
       out.push({ name: sh.name, kopf: kopfzeile(zeilenXml, ss) });
     }
