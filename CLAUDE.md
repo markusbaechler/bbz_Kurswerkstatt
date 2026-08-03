@@ -32,6 +32,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `app.js` | `CONFIG` · `state` · `helpers` · `controller` |
 | `dossier.js` | Das Kursdossier — reine Funktionen: Schema, Status, Quellen |
 | `zip-lesen.js` | ZIP-Kern (Central Directory, Entpacken) + XML-Text-Dekoder — geteilt von `xlsx-lesen.js` und `docx-lesen.js` (Etappe 3, Task A1) |
+| `zip-schreiben.js` | Baut ein ZIP-Archiv dependency-frei (Store-only, CRC-32 selbst gerechnet) — das Gegenstueck zu `zip-lesen.js` (Etappe 3b, Task B1) |
 | `xlsx-lesen.js` | Liest eine .xlsx dependency-frei (ZIP + minimales XML) — Blattnamen und Kopfzeile je Blatt, fuer die Upload-Strukturpruefung (T11) |
 | `docx-lesen.js` | Liest eine .docx dependency-frei — Absaetze mit Stil und Text, in Dokumentreihenfolge (Etappe 3, Task A1) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
@@ -2143,3 +2144,82 @@ und Regex).
 Keine bestehenden Tests pinnten den alten Wortlaut, keine Testanpassung nötig.
 
 **629 Tests grün** (628 + 1 neuer F1-Test).
+
+## Etappe 3b
+
+Baut auf Etappe 3 (Task A1, `zip-lesen.js`/`docx-lesen.js`) auf: die App bekommt eine
+Schreibfähigkeit fürs ZIP-Format — die Vorstufe dafür, dass sie ein Word-Dokument selbst bauen
+kann (Entscheid Markus, 2026-08-03, „E5-Revision": der Chat liefert für Schritt 3 künftig die
+Blockdatei, nicht mehr die .docx — Inhalt vom Modell, Form vom Werkzeug).
+
+### Task B1: `zip-schreiben.js` — Store-ZIP dependency-frei
+
+**`zip-schreiben.js` (neu) ist das Gegenstück zu `zip-lesen.js`: `zipSchreiben.baue(eintraege) ->
+Uint8Array`, `eintraege = [{ name, daten }]`** — `daten` ist ein `Uint8Array` (unverändert
+übernommen) ODER ein String (über `TextEncoder` nach UTF-8 kodiert, dieselbe Kodierung, die
+`zip-lesen.js` beim Lesen erwartet). Store-only (Kompressionsmethode 0 = ungespeichert), CRC-32
+selbst gerechnet (Tabelle im Modul, Standard-Polynom `0xEDB88320`), lokaler Header + Central
+Directory + End-of-Central-Directory-Record korrekt aufgebaut (ZIP-Spec 4.3.7/4.3.12/4.3.16).
+UTF-8-Flag (Bit 11 im General-Purpose-Flag) wird gesetzt, wenn der Dateiname Nicht-ASCII-Zeichen
+enthält — geprüft per `charCodeAt > 0x7F`, nicht über eine Bibliothek.
+
+**Store statt Deflate ist bewusst (YAGNI, wie im Brief vorgegeben):**
+`CompressionStream('deflate-raw')` gäbe es zwar — dieselbe Browser-/Node-Bordmittel-Familie wie
+`DecompressionStream` in `zip-lesen.js` — aber Store hält CRC/Längen trivial korrekt (komprimierte
+Grösse = unkomprimierte Grösse, kein Streaming, keine zweite Fehlerquelle). Eine damit gebaute
+docx wird ~2–3× grösser als eine von Word selbst deflate-komprimierte, bleibt aber weit unter
+jeder für diese App relevanten Graph-Uploadgrenze (s. „Der Weg Hochladen" oben).
+
+**Datums-/Zeitfelder in jedem Header stehen fest auf 0** (DOS-Datum/-Zeit 1980-01-01 00:00:00) —
+das macht `baue()` deterministisch: derselbe Input erzeugt immer dieselben Bytes. Das ist
+gewollt, kein Mangel: Word/Excel lesen ein ZIP unabhängig vom Datumsfeld im Header korrekt, und
+ein deterministisches Ergebnis vereinfacht jeden Byte-für-Byte-Vergleich (Round-trip-Test,
+künftige Diffs zwischen zwei Läufen).
+
+**Round-trip-Kontrakt, `zip-lesen.js` als Prüfstein:** `zipLesen.oeffne(zipSchreiben.baue(e).buffer)
+.lies(name)` liefert jeden Eintrag zeichenidentisch zurück — belegt in `test/zipschreiben.test.js`
+mit einem einzelnen Text-Eintrag, mehreren Einträgen (Offsets/Central-Directory-Zählung korrekt),
+einem leeren Eintrag, einem Umlaut-Namen (UTF-8-Flag gesetzt UND der Name bleibt über
+`zip-lesen.js` auffindbar), Nicht-ASCII-Inhalt als String sowie `daten` als `Uint8Array` statt
+String. **`zip-lesen.js` prüft CRCs beim Lesen nie** (`entpacke()` liefert bei Methode 0 einfach
+`textDecode(roh)`, ohne den CRC-Wert je zu vergleichen) — ein Round-trip-Test allein würde eine
+falsch berechnete CRC deshalb nicht fangen. `test/zipschreiben.test.js` prüft die CRC-Korrektheit
+deshalb zusätzlich UND direkt: das CRC-32-Feld (Offset 14) des ersten lokalen Headers wird aus den
+gebauten Bytes gelesen und gegen den bekannten Vektor `CRC32('abc') = 0x352441C2` verglichen —
+unabhängig von `zip-lesen.js`.
+
+**Word öffnet eine so gebaute docx? Dokumentierte Grenze, keine Live-Probe in dieser Task** —
+das ist Sache von B9 (Live-Probe am Ende der Etappe, s. `constraints.md`/Task-Reihenfolge). B1
+liefert ausschliesslich den ZIP-Schreiber, verifiziert gegen `zip-lesen.js`; ob eine damit gebaute
+docx echte Word-Struktur (Content-Types, Relationships, `word/document.xml` mit gültigem
+`w:document`-Namespace etc.) trägt, entscheidet der Aufrufer (B2 ff.), nicht dieses Modul —
+`zip-schreiben.js` kennt kein docx-eigenes XML, nur ZIP-Bytes.
+
+**Tests:** `test/zipschreiben.test.js` (neu, 11 Fälle) — CRC-Vektor direkt aus dem Header gelesen,
+Rundgang mit einem/mehreren Einträgen, leerer Eintrag (CRC-32 eines leeren Inputs ist 0, eigens
+mitgeprüft), Umlaut-Name mit UTF-8-Flag-Probe (gesetzt UND nicht gesetzt bei reinem ASCII-Namen),
+Nicht-ASCII-Stringinhalt, `Uint8Array`-Input, leeres/fehlendes `eintraege`-Argument, Methode
+bleibt in jedem Eintrag Store (0). **640 Tests grün** (Baseline 629 + 11 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** `crc32()` auf `return 0;` gestutzt (Tabelle/Schleife
+stillgelegt), `node --test test/zipschreiben.test.js`:
+```
+ℹ tests 11
+ℹ pass 10
+ℹ fail 1
+
+✖ CRC-32 von "abc" ist der bekannte Vektor 0x352441C2
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  0 !== 891568578
+```
+Genau der eine CRC-Vektor-Test fiel rot (der leere-Eintrag-Test bleibt zufällig grün, weil
+CRC-32 von `''` ohnehin `0` ist — deckungsgleich mit der Mutation), alle anderen zehn Tests
+blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` →
+**640/640 grün**.
+
+**`index.html`:** Script-Tag `zip-schreiben.js` steht direkt neben `zip-lesen.js` (davor), vor
+`docx-lesen.js` — folgt demselben Cache-Buster-Muster wie jedes andere `*.js` (s. A1).
+
+**Offen / bewusst nicht Teil von B1:** `zip-schreiben.js` wird von keinem Aufrufer in `app.js`/
+`inhalt.js`/`docx-lesen.js` genutzt — B1 liefert nur den Schreiber. Ein docx-Bauer (Content-Types,
+Relationships, `word/document.xml` aus der Blockdatei) folgt mit B2.
