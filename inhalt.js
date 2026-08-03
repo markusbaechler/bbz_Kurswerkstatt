@@ -60,6 +60,40 @@
     return z;
   }
 
+  /* Eine Quelle pro Begriff (A3, Etappe 3 — zweiter Aufrufer neben
+     lernzielePromptKopf): Rechtsstand/Zusatz/SAQ, herausgezogen aus
+     lernzielePromptKopf, wo der Block seit Etappe 2 stand. Wortlaut
+     unveraendert — bestehende Tests (test/lernzielekopf.test.js) pruefen
+     genau ihn. */
+  function regulatorikZeilen(d) {
+    var z = [];
+    var regulatorik = d.regulatorik || {};
+    z.push('Rechtsstand: ' + (regulatorik.stand || 'NICHT ANGEGEBEN'));
+    if (String(regulatorik.zusatz || '').trim()) {
+      z.push('Zusatz: ' + regulatorik.zusatz);
+    }
+    z.push('SAQ-Rezertifizierung: ' + (regulatorik.saq_rezert ? 'ja' : 'nein'));
+    return z;
+  }
+
+  /* Eine Quelle pro Begriff (A3, Etappe 3 — zweiter Aufrufer neben
+     lernzielePromptKopf): die PROJEKT-WISSEN-Zeile (T13), herausgezogen aus
+     lernzielePromptKopf. Nur Datei-Quellen — eine Link-Quelle steht schon im
+     FACHQUELLEN-Block und wird direkt aufgerufen, nicht als Ablage im
+     Projekt-Wissen erwartet. Wortlaut unveraendert. */
+  function projektWissenZeilen(d) {
+    var z = [];
+    var projektWissen = (d.quellen || []).map(function (q) { return q.datei; }).filter(Boolean);
+    if (projektWissen.length) {
+      z.push('');
+      z.push('PROJEKT-WISSEN: Diese Datei-Quellen müssen im Projekt-Wissen liegen: ' +
+             projektWissen.join('; ') + '.');
+      z.push('Fehlt dir eine davon: nenne sie in der Phase-1-Frageliste — lies nie eine ' +
+             'andere an ihrer Stelle.');
+    }
+    return z;
+  }
+
   var inhalt = {
     dateien: DATEIEN,
 
@@ -204,8 +238,14 @@
          eine Stelle, an der controller.hochladen nachsieht, ob fuer dieses
          Lieferobjekt ein Struktur-Gate greift (T11: xlsx/struktur, A2:
          docx/skript), s. dort. */
+      /* lieferobjekt (A3, Etappe 3): dasselbe aufgeloeste lief wie im
+         Dateinamen — EINE Stelle statt eines zweiten inhalt.lieferobjektVon()-
+         Aufrufs an jeder Stelle, die nur den Status/die Kennung dieses
+         Lieferobjekts braucht (z. B. der Kaltstart-Kasten Schritt 3 in
+         ansichten.js: dossier.statusVon(d, ablageVon(i,'2',k).lieferobjekt)). */
       return { ordner: e.ordner, datei: datei, format: e.format, gate: e.gate || null,
-               wege: e.wege || [], variante: variante || null, pruefung: e.pruefung || null };
+               wege: e.wege || [], variante: variante || null, pruefung: e.pruefung || null,
+               lieferobjekt: lief };
     },
 
     /* --- Ablegen: welche Version, welcher Name --- */
@@ -824,12 +864,7 @@
       z.push('');
       z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
       z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
-      var regulatorik = d.regulatorik || {};
-      z.push('Rechtsstand: ' + (regulatorik.stand || 'NICHT ANGEGEBEN'));
-      if (String(regulatorik.zusatz || '').trim()) {
-        z.push('Zusatz: ' + regulatorik.zusatz);
-      }
-      z.push('SAQ-Rezertifizierung: ' + (regulatorik.saq_rezert ? 'ja' : 'nein'));
+      z.push.apply(z, regulatorikZeilen(d));
       /* Version/basiert_auf — nur, wenn app.js sie aus einem frischen
          dateien-Cache mitgibt (s. Kommentar oben). Feldnamen wie im
          Steckbrief-Schema (Prozess-Spec §3): version, basiert_auf. */
@@ -845,19 +880,86 @@
       }
       z.push('');
       z.push.apply(z, fachquellenZeilen(d));
-      /* PROJEKT-WISSEN (T13): nur Datei-Quellen — eine Link-Quelle wird direkt
-         aufgerufen, nicht als Ablage im Projekt-Wissen erwartet. Muster wie
+      /* PROJEKT-WISSEN (T13, herausgezogen als projektWissenZeilen in A3):
+         nur Datei-Quellen — eine Link-Quelle wird direkt aufgerufen, nicht
+         als Ablage im Projekt-Wissen erwartet. Muster wie
          dossier.positivliste(), hier ohne Abhaengigkeit zu dossier.js erneut
          gebildet (inhalt.js kennt dossier.js bewusst nicht, s. app.js-Aufrufer
-         fuer die uebrigen Dossier-Funktionen). Ohne Dossier keine Zeile — kein
-         zweiter if(d)-Zweig noetig, wir sind schon hinter dem fruehen return. */
-      var projektWissen = (d.quellen || []).map(function (q) { return q.datei; }).filter(Boolean);
-      if (projektWissen.length) {
+         fuer die uebrigen Dossier-Funktionen). */
+      z.push.apply(z, projektWissenZeilen(d));
+      z.push('');
+      z.push('=== ENDE DER ANGABEN ===');
+      z.push('');
+      return z.join('\n');
+    },
+
+    /* Prompt-Kopf fuer Schritt 3 (Content-Skript), A3 Etappe 3 — dasselbe
+       Prinzip wie briefingPromptKopf/lernzielePromptKopf: was die App schon
+       weiss, muss der Chat nicht erfragen. E5 (Entscheid Markus 2026-07-31):
+       der Chat liefert die .docx direkt (wie Schritt 2 die xlsx), die App
+       prueft sie beim Hochladen (skriptPruefe, A2) — dieser Kopf ist der
+       GESETZTE Teil, den skriptPruefe voraussetzt (Kurs-ID, Rechtsstand,
+       Quellen-Q-IDs).
+
+       Rahmen und gemeinsame Saetze NICHT dupliziert (Konvention 9): Kurs/
+       Kompetenzfeld-Zeilen wie in briefingPromptKopf/lernzielePromptKopf,
+       Rechtsstand/Zusatz/SAQ ueber regulatorikZeilen(d) (zweiter Aufrufer),
+       FACHQUELLEN GENAU-Block ueber fachquellenZeilen(d) (dritter Aufrufer),
+       PROJEKT-WISSEN-Zeile ueber projektWissenZeilen(d) (zweiter Aufrufer).
+       Ohne d (kein Dossier geladen — Schritt 1 nie durchlaufen) gibt es
+       keinen Kopf.
+
+       extras = { variante, version, basiertAuf, zielname } — reine
+       Anzeigewerte, von app.js aus bereits geladenen dateien-Caches
+       berechnet (T13-Muster: inhalt.gewaehlteVariante/naechsteVersion/
+       geltendeDatei/hochladeZiel — nichts neu erfunden). Fehlt ein Feld,
+       fehlt seine Zeile: die Funktion raet nie.
+
+       Selbstlernphase (E3, Ruhe-Regel "Zeit immer indikativ, die Lernziele
+       fuehren"): aus dem Dossier-Scope via briefingWerteAusDossier(d), Label
+       und Einheit an der EINEN Stelle in BRIEFING_FELDER abgelesen (Feld-ID
+       'selbstlern') — nie hier hartkodiert, aendert sich Label/Einheit dort,
+       zieht dieser Kopf automatisch mit. Nur, wenn ein Wert gesetzt ist. */
+    skriptPromptKopf: function (kurs, d, extras) {
+      if (!d) return '';
+      extras = extras || {};
+      var z = [];
+      z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
+      z.push('Diese Werte sind gesetzt. Übernimm sie. Frage sie NICHT erneut ab, rechne sie');
+      z.push('nicht um und bewerte sie nicht.');
+      z.push('');
+      z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
+      z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
+      z.push.apply(z, regulatorikZeilen(d));
+
+      var selbstlernFeld = inhalt.briefingFeld('selbstlern');
+      var selbstlernWert = inhalt.briefingWerteAusDossier(d).selbstlern;
+      if (selbstlernFeld && String(selbstlernWert == null ? '' : selbstlernWert).trim()) {
         z.push('');
-        z.push('PROJEKT-WISSEN: Diese Datei-Quellen müssen im Projekt-Wissen liegen: ' +
-               projektWissen.join('; ') + '.');
-        z.push('Fehlt dir eine davon: nenne sie in der Phase-1-Frageliste — lies nie eine ' +
-               'andere an ihrer Stelle.');
+        z.push(selbstlernFeld.label + (selbstlernFeld.einheit ? ' (' + selbstlernFeld.einheit + ')' : '') +
+               ': ' + selbstlernWert + ' (indikativ — die Lernziele führen).');
+      }
+
+      if (extras.variante) {
+        z.push('');
+        z.push('Variante: ' + extras.variante);
+      }
+      if (typeof extras.version === 'number') {
+        z.push('');
+        z.push('Version des Lieferobjekts: ' + extras.version + '.');
+        z.push('Setze im YAML-Feld \'version\' des _steckbrief GENAU diese Zahl, keine andere.');
+      }
+      if (extras.basiertAuf) {
+        z.push('');
+        z.push('basiert_auf: ' + extras.basiertAuf);
+        z.push('Setze im YAML-Feld \'basiert_auf\' des _steckbrief GENAU diesen Dateinamen.');
+      }
+      z.push('');
+      z.push.apply(z, fachquellenZeilen(d));
+      z.push.apply(z, projektWissenZeilen(d));
+      if (extras.zielname) {
+        z.push('');
+        z.push('Liefere in Phase 2 DIREKT die Datei ' + extras.zielname + ' zum Herunterladen.');
       }
       z.push('');
       z.push('=== ENDE DER ANGABEN ===');

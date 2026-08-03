@@ -773,6 +773,24 @@
        Inhalt). */
     if (String(schrittId) === '2') h += quellenSpiegelBox(ablageDaten);
 
+    /* A3, Etappe 3: Schritt 3 startet erst NACH dem freigegebenen Contract aus
+       Schritt 2 (Gate 1) — ohne die _final-Fassung kennen weder Chat noch
+       Claude Code die Lernziele, an denen sich das Skript ausrichtet. Gleiche
+       Kaltstart-Optik wie der Schritt-2-Kasten oben, KEIN Disable der Knoepfe
+       (Muster: Altkurse/laufende Migrationen muessen weiterarbeiten koennen).
+       Das Lieferobjekt von Schritt 2 kommt aus ablageVon('2', ...) — NIE
+       'lernziele-drehbuch' hartkodiert, sonst veraltet der Kasten, sobald der
+       Kontrakt das Lieferobjekt umbenennt. */
+    if (String(schrittId) === '3' && ablageDaten.dossier) {
+      var ablageSchritt2 = I().ablageVon(inh, '2', kurs ? kurs.kursId : '<Kurs>');
+      var lieferobjektSchritt2 = ablageSchritt2 ? ablageSchritt2.lieferobjekt : null;
+      if (lieferobjektSchritt2 &&
+          root.dossier.statusVon(ablageDaten.dossier, lieferobjektSchritt2) !== 'final') {
+        h += '<div class="box achtung"><span class="bt">Kein freigegebener Contract</span>' +
+             'Schritt 3 braucht die <code>_final</code>-Fassung aus Gate 1.</div>';
+      }
+    }
+
     /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
        nicht hinter den Leitplanken. Der Masterprompt zuerst. */
     if (hilfsmittel.length) {

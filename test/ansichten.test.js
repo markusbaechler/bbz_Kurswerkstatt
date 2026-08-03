@@ -343,6 +343,29 @@ test('Schritt 2 mit freigegebenem Briefing (status.briefing final) zeigt keinen 
   assert.doesNotMatch(html, /Kein freigegebenes Briefing/);
 });
 
+/* ---------- A3, Etappe 3: Schritt 3 erbt aus dem Dossier + Contract ---------- */
+
+test('Schritt 3 ohne freigegebenen Contract (Gate 1) zeigt den Kein-freigegebener-Contract-Kasten', () => {
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, DBS, 3, null, props);
+  assert.match(html, /Kein freigegebener Contract/);
+  assert.match(html, /class="box achtung"/, 'dieselbe Kasten-Optik wie der Schritt-2-Kaltstart-Hinweis fehlt');
+  /* Knoepfe bleiben bedienbar (Muster Schritt-2-Kasten) — kein disabled im Kasten selbst. */
+});
+
+test('Schritt 3 mit freigegebenem Contract (status final, ueber ablageVon(2).lieferobjekt) zeigt keinen Kasten', () => {
+  const lieferobjekt2 = INHALT['ablage-kontrakt'].schritte['2'].lieferobjekt;
+  const props = { dossier: {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: { [lieferobjekt2]: 'final' }, offen: [], entschieden: []
+  } };
+  const html = ansichten.einSchritt(INHALT, DBS, 3, null, props);
+  assert.doesNotMatch(html, /Kein freigegebener Contract/);
+});
+
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/So gehst du vor/.test(h));

@@ -970,6 +970,15 @@
           gateLaeuft: k ? !!state.gateLaeuft[k.kursId + '/' + p.schrittId] : false
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
+        /* A3, Etappe 3: Schritt 3 erbt den GESETZTEN Contract-Stand (Version,
+           basiert_auf) aus Schritt 2 — dafuer muss der Schritt-2-Ordner-Cache
+           ebenfalls geladen sein, nicht nur der eigene (03_content). Ordner
+           kommt aus ablageVon('2', ...), nichts hartkodiert (dasselbe Muster
+           wie der Kaltstart-Kasten in ansichten.js). */
+        if (k && String(p.schrittId) === '3') {
+          var ab2Nachladen = root.inhalt.ablageVon(inh, '2', k.kursId);
+          if (ab2Nachladen) controller.ordnerNachladen(k.kursId, ab2Nachladen.ordner);
+        }
         /* Auf Schritt 1 stehen die Projekt-Instruktionen, und die tragen das
            Briefing. Es wurde aber nur auf Schritt 2 geladen — deshalb stand dort
            IMMER "[FEHLT]", auch wenn 01_briefing/ eine freigegebene Fassung hielt.
@@ -2362,6 +2371,46 @@
               if (basiertAuf3) extras3.basiertAuf = basiertAuf3;
             }
             text2 = root.inhalt.lernzielePromptKopf(kurs3, d3, extras3) + text2;
+          }
+        }
+        /* Schritt 3 (A3, Etappe 3): Titel/Kompetenzfeld/Rechtsstand/Quellen aus
+           dem Dossier wie Schritt 2 — zusaetzlich Variante, Version,
+           basiert_auf (der GESETZTE Contract-Stand aus Schritt 2) und der
+           Zielname der .docx, damit der Chat sie direkt liefert (E5), statt
+           nachzufragen. T13-Muster: jedes Extra kommt aus einem bereits
+           geladenen Cache (ordnerNachladen fuer 03_content UND — seit diesem
+           Task — fuer den Schritt-2-Ordner, s. controller.render()), nichts
+           wird geraten. basiertAuf nur, wenn der Contract wirklich final ist
+           (finalVorhanden) — sonst bleibt das Feld weg, der Kaltstart-Kasten
+           in der Ansicht warnt ohnehin schon. */
+        if (String(state.position.schrittId) === '3' && w.type === 'prompt') {
+          var kurs4 = nav.kurs();
+          var d4 = kurs4 ? state.data.dossier[kurs4.kursId] : null;
+          if (d4 && typeof d4 === 'object') {
+            var inh4 = state.data.inhalt;
+            var extras4 = {};
+            var variante4 = root.inhalt.gewaehlteVariante(inh4, '3', state.position.variante);
+            if (variante4) extras4.variante = variante4;
+            /* Der Zielname haengt an der gewaehlten Variante — ablageVon UND
+               hochladeZiel bekommen sie deshalb explizit mit. */
+            var ab3 = root.inhalt.ablageVon(inh4, '3', kurs4.kursId, variante4);
+            if (ab3 && ab3.lieferobjekt) {
+              var dateien3 = state.data.dateien[kurs4.kursId + '/' + ab3.ordner];
+              if (Array.isArray(dateien3)) {
+                extras4.version = root.inhalt.naechsteVersion(dateien3, kurs4.kursId, ab3.lieferobjekt);
+                var ziel4 = root.inhalt.hochladeZiel(inh4, '3', kurs4.kursId, dateien3, variante4);
+                if (ziel4) extras4.zielname = ziel4.datei;
+              }
+            }
+            var ab2Fuer3 = root.inhalt.ablageVon(inh4, '2', kurs4.kursId);
+            if (ab2Fuer3 && ab2Fuer3.lieferobjekt) {
+              var dateien2Fuer3 = state.data.dateien[kurs4.kursId + '/' + ab2Fuer3.ordner];
+              if (Array.isArray(dateien2Fuer3) &&
+                  root.inhalt.finalVorhanden(dateien2Fuer3, kurs4.kursId, ab2Fuer3.lieferobjekt)) {
+                extras4.basiertAuf = root.inhalt.geltendeDatei(dateien2Fuer3, kurs4.kursId, ab2Fuer3.lieferobjekt);
+              }
+            }
+            text2 = root.inhalt.skriptPromptKopf(kurs4, d4, extras4) + text2;
           }
         }
         kopieren(text2, t);

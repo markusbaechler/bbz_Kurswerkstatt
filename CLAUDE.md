@@ -2009,3 +2009,110 @@ Schritt-5-Umstellung).
 Solange es fehlt, greift das Gate nirgends live (`ablage.pruefung` bleibt `null`) — kein
 Regressionsrisiko, aber auch noch kein Live-Nutzen, bis SharePoint nachgezogen ist. Ebenso offen:
 A3 (nächster Task der Etappe, laut Plan-Reihenfolge A1→A2→A3).
+
+## Task A3: `inhalt.skriptPromptKopf` + Kaltstart-Kasten Schritt 3 + Contract-Nachladen
+
+Der GESETZTE Prompt-Kopf für Schritt 3, den `skriptPruefe` (A2) beim Prüfen voraussetzt
+(Kurs-ID, Rechtsstand, Quellen-Q-IDs) — dasselbe Prinzip wie `briefingPromptKopf` (Schritt 1) und
+`lernzielePromptKopf` (Schritt 2, Etappe 2): was die App schon weiss, muss der Chat nicht mehr
+erfragen. E5 (Entscheid Markus 2026-07-31): der Chat liefert die `.docx` direkt, statt danach zu
+fragen.
+
+**Konvention 9 zuerst durchgesetzt, bevor der dritte Kopf entsteht:** zwei Blöcke standen bisher
+nur inline in `lernzielePromptKopf` — Rechtsstand/Zusatz/SAQ und die PROJEKT-WISSEN-Zeile (T13).
+Beide sind als private Helfer `regulatorikZeilen(d)` und `projektWissenZeilen(d)` (Muster
+`fachquellenZeilen`, Etappe 1e/2) herausgezogen; `lernzielePromptKopf` ruft sie jetzt statt des
+Inline-Codes, Wortlaut unverändert — die bestehenden `test/lernzielekopf.test.js`-Tests blieben
+dabei alle grün (Beleg, dass der Umzug rein mechanisch war). `fachquellenZeilen` bekommt mit
+`skriptPromptKopf` seinen dritten Aufrufer.
+
+**`inhalt.skriptPromptKopf(kurs, d, extras) -> string`, `''` ohne `d`.** Zeilen, in dieser
+Reihenfolge: Kurs/Titel/Kompetenzfeld · Rechtsstand/Zusatz/SAQ (`regulatorikZeilen`) ·
+Selbstlernphase (nur wenn im Dossier-Scope gesetzt) · `Variante: {variante}` ·
+`Version des Lieferobjekts: {version}` · `basiert_auf: {basiertAuf}` · FACHQUELLEN GENAU-Block
+bzw. Modus-Satz (`fachquellenZeilen`) · PROJEKT-WISSEN-Zeile (`projektWissenZeilen`) ·
+Schluss-Satz „Liefere in Phase 2 DIREKT die Datei {zielname} zum Herunterladen." Jede extras-Zeile
+nur, wenn der Wert gesetzt ist — die Funktion **rät nie**, genau wie `lernzielePromptKopf` seit
+T13.
+
+**Selbstlernphase, E3 (Ruhe-Regel „Zeit immer indikativ, die Lernziele führen"):** gelesen über
+`inhalt.briefingWerteAusDossier(d).selbstlern` — Label und Einheit kommen dabei aus
+`inhalt.briefingFeld('selbstlern')`, nie hier hartkodiert. Ändert sich Label/Einheit einmal in
+`BRIEFING_FELDER`, zieht dieser Kopf automatisch mit (Konvention 9). Der Zusatz „(indikativ — die
+Lernziele führen)" hängt fest an der Zeile, weil ein reines Zahlenfeld ohne diesen Hinweis als
+harte Vorgabe gelesen würde — genau das, was E3 ausschliesst.
+
+**`extras = { variante, version, basiertAuf, zielname }` — T13-Muster, von `app.js` aus bereits
+geladenen Caches berechnet, nichts wird geraten:**
+- `variante` — `inhalt.gewaehlteVariante(inh, '3', state.position.variante)`.
+- `version` — `inhalt.naechsteVersion(dateien03, kursId, lieferobjekt3)` über den 03_content-Cache
+  (den `controller.ordnerNachladen` für die Schritt-Ansicht ohnehin lädt).
+- `basiertAuf` — `inhalt.geltendeDatei(dateien02, kursId, lieferobjekt2)` über den
+  02_lernziele-Cache, **nur wenn `inhalt.finalVorhanden(...)` für dieses Lieferobjekt wahr ist** —
+  ist der Contract noch nicht final, bleibt das Feld weg; der Kaltstart-Kasten (s. u.) warnt
+  ohnehin bereits.
+- `zielname` — `inhalt.hochladeZiel(inh, '3', kursId, dateien03, variante)` (dieselbe
+  Namenslogik wie beim Weg Hochladen selbst, nichts neu erfunden) — hängt an der gewählten
+  Variante.
+
+**`inhalt.ablageVon()` bekommt ein zusätzliches Feld `lieferobjekt` im Rückgabeobjekt** — dasselbe
+aufgelöste `lief`, das schon in den Dateinamen einging, jetzt auch direkt lesbar. Grund: sowohl
+der Kaltstart-Kasten in `ansichten.js` als auch der `kopieren`-Handler in `app.js` brauchen die
+Lieferobjekt-Kennung von Schritt 2 (für `dossier.statusVon`/`finalVorhanden`/`geltendeDatei`),
+ohne dafür ein zweites Mal `inhalt.lieferobjektVon()` aufzurufen. Rein additiv — kein bestehender
+Test prüft das Rückgabeobjekt per `deepStrictEqual` als Ganzes (nur einzelne Felder wie `.wege`),
+das neue Feld bricht nichts.
+
+**Kaltstart-Kasten Schritt 3 (`ansichten.js`, `einSchritt`):** sichtbar, wenn ein Dossier geladen
+ist UND `dossier.statusVon(d, lieferobjektSchritt2) !== 'final'`, wobei `lieferobjektSchritt2`
+**ausschliesslich** aus `inhalt.ablageVon(inh, '2', kursId).lieferobjekt` kommt — nie
+`'lernziele-drehbuch'` oder `'02_lernziele'` hartkodiert, sonst veraltet der Kasten, sobald der
+Kontrakt das Lieferobjekt umbenennt. Text: „Kein freigegebener Contract — Schritt 3 braucht die
+`_final`-Fassung aus Gate 1." Dieselbe Optik (`box achtung`) wie der Schritt-2-Kasten aus Etappe 2
+Task 3, **keine** Knöpfe disabled (Muster dort: Altkurse/laufende Migrationen müssen
+weiterarbeiten können — nur der Hinweis soll deutlich sein).
+
+**Contract-Nachladen (`app.js`, `controller.render()`):** die Schritt-Ansicht lädt bisher nur den
+eigenen Ordner (`ab.ordner`, hier `03_content`) nach. Für `basiert_auf`/den Kaltstart-Kasten
+braucht Schritt 3 zusätzlich den Schritt-2-Ordner (`02_lernziele`) im `state.data.dateien`-Cache —
+ein zweiter `controller.ordnerNachladen(kursId, ordner)`-Aufruf, ausgelöst nur bei
+`schrittId === '3'`, Ordner aus `inhalt.ablageVon(inh, '2', kursId)`, nichts hartkodiert (dasselbe
+Kontrakt-Feld, das auch der Kaltstart-Kasten liest).
+
+**`kopieren`-Handler, Schritt-3-Zweig (`app.js`):** Muster identisch zum Schritt-2-Zweig (T13):
+ohne geladenes Dossier (`state.data.dossier[kursId]` kein Objekt) bleibt `text2` unverändert —
+`skriptPromptKopf` liefert dann `''`. Mit Dossier werden `variante`/`version`/`zielname` aus dem
+03_content-Cache und `basiertAuf` aus dem 02_lernziele-Cache berechnet (s. o.), über
+`ablageVon(...).lieferobjekt` statt eines zweiten `lieferobjektVon()`-Aufrufs.
+
+**Tests:** `test/skriptkopf.test.js` (neu, Muster `test/lernzielekopf.test.js`) — voller Kopf mit
+Kurs/Titel/Kompetenzfeld/Rechtsstand/GENAU-Quellenliste; mit vollem `extras` stehen Variante,
+Version, `basiert_auf`, Schluss-Satz, FACHQUELLEN, PROJEKT-WISSEN und die indikative
+Selbstlernphase; ohne `extras` (bzw. mit leerem Objekt) fehlen genau diese Zeilen, der Rest bleibt;
+`quellenfrei` zeigt den Quellenfrei-Satz, keine GENAU-Liste; ohne `d` `''`; ohne gesetzte
+Selbstlernphase bleibt die Zeile weg. `test/ansichten.test.js` — zwei neue Fälle: Schritt 3 ohne
+freigegebenen Contract zeigt den Kasten (`box achtung`), mit `status[lieferobjekt2] === 'final'`
+(Lieferobjekt gelesen aus `INHALT['ablage-kontrakt'].schritte['2'].lieferobjekt`, nicht
+hartkodiert) verschwindet er. **628 Tests grün** (Baseline 620 + 8: 6 in `skriptkopf.test.js`, 2
+in `ansichten.test.js`).
+
+**Mutationsprobe (tatsächlich ausgeführt, laut Brief):** die `basiert_auf`-Zeile in
+`skriptPromptKopf` auf `if (false && extras.basiertAuf)` gesetzt, `node --test
+test/skriptkopf.test.js`:
+```
+ℹ tests 6
+ℹ pass 5
+ℹ fail 1
+
+✖ mit vollem extras traegt der Kopf Variante, Version, basiert_auf, Zielname, Modus-Satz, FACHQUELLEN, PROJEKT-WISSEN und die indikative Selbstlernphase
+  AssertionError [ERR_ASSERTION]: basiert_auf fehlt
+```
+Genau der eine Extras-Test fiel rot, alle anderen fünf blieben grün; danach wiederhergestellt,
+komplette Suite erneut geprüft: `node --test` → **628/628 grün**.
+
+**Offen / bewusst nicht Teil von A3:** kein dediziertes App.js-Testfile für den `kopieren`-
+Handler-Zweig bzw. das Contract-Nachladen — dasselbe Muster wie bei T13 (Schritt 2), wo `extras3`
+ebenfalls nur über die `inhalt.js`-Funktion getestet ist, nicht über einen simulierten DOM-Klick;
+der Brief für A3 listet dieselben zwei Testdateien. Das reale `ablage-kontrakt.json` in SharePoint
+führt `chat`/`hochladen` für Schritt 3 noch nicht mit den A2/A3-Feldern nach — Weg B, ausserhalb
+dieser Task.
