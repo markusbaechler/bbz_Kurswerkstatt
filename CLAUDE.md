@@ -37,6 +37,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `docx-lesen.js` | Liest eine .docx dependency-frei — Absaetze mit Stil und Text, in Dokumentreihenfolge (Etappe 3, Task A1) |
 | `skript-schema.js` | Die kanonische Block-Grammatik des Selbstlernskripts (Schritt 4) — reine Daten (Etappe 3b, Task B2) |
 | `skript-lesen.js` | Parst die ###-Bloecke eines Selbstlernskripts gegen `skript-schema.js` (Etappe 3b, Task B2) |
+| `diagramm-zeichnen.js` | Zeichnet die sechs Bild-Diagrammtypen als SVG-String und wandelt SVG zu PNG (Browser-only) (Etappe 3b, Task B3) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
 | `ansichten.js` | Kette, alle Kurse, ein Kurs, ein Schritt, Nachschlagen — reine String-Builder |
 | `test/fixture.js` | Testdaten in der Struktur der echten Dateien, ohne echte Prompt-Texte |
@@ -2307,6 +2308,89 @@ das Mini-Skript-Fixture (2) enthält keine doppelte Kompetenz, der Wurf-Test (4)
 SCHEMA-Test (1) sind von dieser Zeile unabhängig), danach wiederhergestellt: `node --test` (App)
 → 644/644 grün, `node --test test/*.test.js` (Tools) → 268/268 grün. Das belegt, dass der
 Wächter tatsächlich App-Verhalten prüft, nicht nur Existenz der Dateien.
+
+### Task B3: `diagramm-zeichnen.js` (UMD) + SVG→PNG im Browser
+
+Portiert die sechs Bild-Zeichner des Diagramm-Vokabulars (Schritt 4) mechanisch aus dem
+Tools-Baum (`IT_Architektur_bbz/output/tools/diagramm-rendern.cjs`, dort unverändert) in die
+App und ergänzt eine Browser-only Funktion, die aus dem SVG-String ein PNG macht — Vorstufe für
+den docx-Bauer (B4), der Bilder als PNG einbetten muss, keine SVGs (Word stellt SVG im
+`w:drawing`-Pfad nicht zuverlässig dar).
+
+**`diagramm-zeichnen.js` (neu, Global `root.diagrammZeichnen`)** trägt `svg(abbildung, opts) ->
+string` für alle sechs Zeichner (`kompositions-leiste`, `waage`, `schema`, `drift`, `zeitachse`,
+`payoff`) — wörtlich dieselbe Logik wie `diagramm-rendern.cjs`, nur in ES5-UMD (`var`/`function`
+statt `const`/Arrow-Funktionen/`flatMap`, Muster `skript-schema.js`/B2) statt CommonJS. Holt das
+Schema **lazy** über `S()` (Muster `Z()`/`S()` in `xlsx-lesen.js`/`skript-lesen.js`): im Browser
+`root.skriptSchema` (Script-Tag-Reihenfolge in `index.html`), in Node ein Fallback-`require('./
+skript-schema.js')`. Farben stehen wie in der Tools-Fassung ausschliesslich in `style=` oder als
+fester Wert — nie als Präsentationsattribut (`fill="var(...)"` löst der Browser dort nicht auf,
+die Linie bliebe unsichtbar, 2026-07-24).
+
+**Die Vergleichstabelle wird NICHT gezeichnet — exakt gespiegelt, nicht „verbessert".** Wie in
+`diagramm-rendern.cjs` prüft `svg()` zuerst `typ.alsTabelle` (aus `skript-schema.js`
+`diagrammtypen`) und wirft `'Typ "' + t + '" wird als Tabelle gesetzt, nicht gezeichnet'`, bevor
+sie überhaupt einen Zeichner sucht — `vergleichstabelle` hat keinen Eintrag in `ZEICHNER`. Der
+docx-Bauer (B4) baut daraus eine echte Word-Tabelle (`alsTabelle`), kein Bild — Text bleibt so
+wählbar und bricht sauber um (Kommentar in `skript-schema.js`).
+
+**`png(svgText, breite, hoehe) -> Promise<Uint8Array>` ist Browser-only.** `new Image()` lädt
+einen `Blob([svgText], {type:'image/svg+xml'})` über `URL.createObjectURL`; ein `<canvas>` mit
+Faktor 2 (`canvas.width/height = breite/hoehe * 2`, `ctx.scale(2,2)`) zeichnet das Bild scharf
+auch bei Zoom/Retina; `canvas.toBlob('image/png')` liefert den PNG-Blob, dessen `arrayBuffer()`
+zu `Uint8Array` wird. `URL.revokeObjectURL` läuft in **beiden** Pfaden — `img.onload` UND
+`img.onerror` — damit ein misslungenes Laden keine Object-URL leakt. Fehlt `document`/`Image`/
+`URL.createObjectURL` (Node) oder liefert `getContext('2d')` nichts, lehnt die Promise mit einer
+klaren Fehlermeldung ab (`'diagrammZeichnen.png() braucht einen Browser (document/Image/Canvas)
+— in Node nicht verfuegbar.'`), statt eines rohen `ReferenceError` — Muster T11
+(`DecompressionStream` in `xlsx-lesen.js`): **dokumentierte Grenze, keine Live-Probe in dieser
+Task.** Ob ein so erzeugtes PNG tatsächlich ein gültiges Bild ist, das Word öffnet, entscheidet
+Task B9 (Live-Probe am Ende der Etappe) — in Node lässt sich `Image`/`canvas.toBlob` nicht
+ausführen, es gibt dort keinen Pfad zu testen, anders als bei T11, wo Node `DecompressionStream`
+wenigstens teilweise selbst bereitstellt.
+
+**Parity-Pflicht (Global Constraint Etappe 3b): der Wächter lebt weiter im Tools-Baum, nicht in
+der App.** `IT_Architektur_bbz/output/tools/test/app-parity.test.js` (erweitert, kein neues
+File — Auflösung des Koordinators) lädt `diagramm-zeichnen.js` zusätzlich per Relativpfad neben
+`skript-schema.js`/`skript-lesen.js` und vergleicht für **jeden der sechs Bild-Typen** ein
+Fixture: `svg()` beider Fassungen `strictEqual` (byte-identisch), einmal im Normalfall und
+einmal mit `{mitTitel:false}` (deckt den Kopf-abschneiden-Pfad in `rahmen()` gleich mit ab) —
+zwölf neue Parity-Tests. Die Fixtures decken je Typ mindestens ein Pflichtfeld ab
+(`werte`/`reihen`/`links`+`rechts`/`schritte`/`punkte`/`ebenen`, gemäss `skript-schema.js`
+`diagrammtypen[].felder`). `vergleichstabelle` hat keinen eigenen Parity-Test — es gibt nichts
+zu zeichnen, der Wurf-Zweig ist bereits durch den bestehenden `SCHEMA`-Parity-Test (Task B2)
+abgedeckt, der `alsTabelle` mitvergleicht.
+
+**App-Testdatei `test/diagrammzeichnen.test.js` (neu) prüft bewusst Kernfälle je Typ** (Muster
+B2, `test/skriptlesen-app.test.js`): je Typ ein positiver Fall (SVG enthält erwartete Werte/
+Beschriftungen escaped), die Escaping-Fälle für Titel und Werte, die Wurf-Fälle aus der
+Tools-Fassung (negative Werte, nicht-numerische Werte, leere Pflichtfelder je Typ, Payoff-Punkt
+ohne Komma, `vergleichstabelle`, unbekannter Typ), `mitTitel:false`, das `var()`-Attributverbot,
+sowie der klare Wurf von `png()` in Node. Die volle Verhaltensabdeckung von `svg()` (byte-genauer
+Vergleich) liegt beim Parity-Wächter; diese Datei prüft, dass die App-Fassung für sich allein
+sinnvoll funktioniert und wirft, ohne den Tools-Baum zu brauchen.
+
+**`index.html`:** Script-Tag `diagramm-zeichnen.js` steht nach `skript-lesen.js`, vor `app.js` —
+folgt demselben Cache-Buster-Muster wie jedes andere `*.js`.
+
+**Tests:** App **663 grün** (Baseline 644 + 19 neue), Tools **280 grün** (Baseline 268 + 12 neue
+Parity-Tests).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** in der App-Fassung von
+`diagramm-zeichnen.js` die erste Farbe der `PALETTE`-Konstante geändert (`'#1F5C8B'` →
+`'#000000'`), `node --test test/app-parity.test.js` im TOOLS-Baum:
+```
+ℹ tests 16
+ℹ pass 8
+ℹ fail 8
+```
+Genau die acht Tests der vier PALETTE-nutzenden Typen fielen rot
+(`kompositions-leiste`/`drift`/`zeitachse`/`schema`, je einmal normal und einmal mit
+`mitTitel:false`) — `waage` und `payoff` (feste Farben `AKZENT`/`GRAU`/`TEXT`, keine `PALETTE`)
+blieben in beiden Varianten grün, ebenso alle vier bestehenden Skript-Parity-Tests aus B2.
+Danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` (App) → 663/663 grün,
+`node --test test/*.test.js` (Tools) → 280/280 grün. Das belegt, dass der erweiterte Wächter
+tatsächlich die gerenderten SVG-Bytes vergleicht, nicht nur Existenz/Signatur der Funktion.
 
 **Offen / bewusst nicht Teil von B2:** `skript-lesen.js` wird von keinem Aufrufer in `app.js`/
 `inhalt.js` genutzt — B2 liefert nur Schema und Parser. Der Diagramm-Zeichner (B3) und der
