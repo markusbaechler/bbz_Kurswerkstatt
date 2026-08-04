@@ -2298,7 +2298,17 @@
               controller.render();
             });
           })
-          .catch(function (e) { klemmt('Nicht hochgeladen. ' + (e.message || e)); });
+          .catch(function (e) {
+            /* klemmtSichtbar, nicht nur klemmt (B9-F3-Nachzug, Review-Fund):
+               dieser Zweig deckt den einfachen xlsx-/mbz-Upload ab (Schritt 2
+               und 6) — ein Netz-/Business-Fehler hier (z. B. graph.hochladen
+               schlaegt fehl) landete bisher nur lokal am #hochladefehler-
+               Knoten, ohne state.fehlerHinweis/state.data.uploadMeldung zu
+               setzen; ein Zwischen-Render konnte den Knoten aushaengen, bevor
+               die Person ihn las (Muster quelleErfassen-I10, wie im
+               skriptbau-Pfad direkt darunter). */
+            klemmtSichtbar('Nicht hochgeladen. ' + (e.message || e));
+          });
       }
 
       /* Der Blockdatei-Bau (B5, Etappe 3b) — "Bau + Ablage in EINEM Vorgang"

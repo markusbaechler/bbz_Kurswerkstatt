@@ -189,7 +189,8 @@ function xlsxDatei(name, arrayBufferErgebnis) {
    anderen Tests der Datei zu verfaellschen. dossierOverride (A2) wird nach
    state.data.dossier['AFL-001'] gestempelt — undefined (Default) heisst "nicht
    geladen", wie im echten State (s. app.js state.data.dossier: {}). */
-async function hochladenLauf(n, dateiObjekt, inhOverride, dossierOverride) {
+async function hochladenLauf(n, dateiObjekt, inhOverride, dossierOverride, opts) {
+  opts = opts || {};
   const meldung = { textContent: '', hidden: true };
   const hochgeladenMit = { ordner: null, datei: null };
   const rufe = { ordnerInhalt: 0 };
@@ -218,6 +219,11 @@ async function hochladenLauf(n, dateiObjekt, inhOverride, dossierOverride) {
     return Promise.resolve([]);
   };
   graph.hochladen = function (kursId, ordner, datei) {
+    /* B9-F3-Nachzug-Testhilfe: opts.hochladenWirft laesst den einfachen
+       xlsx-/mbz-Uploadpfad (weiterMitUpload) am Netzaufruf selbst scheitern,
+       um dessen .catch(...) gezielt zu treffen — unabhaengig vom
+       struktur-Befund-Pfad, der schon vorher abbricht. */
+    if (opts.hochladenWirft) return Promise.reject(opts.hochladenWirft);
     hochgeladenMit.ordner = ordner; hochgeladenMit.datei = datei;
     return Promise.resolve();
   };
@@ -990,6 +996,34 @@ test('B9-F3 (b): ein erfolgreicher xlsx-Upload setzt state.data.uploadMeldung mi
   const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'));
   assert.match(l.hinweis || '', /Hochgeladen als/, 'Testvoraussetzung: Erfolg');
   assert.deepStrictEqual(state.data.uploadMeldung, { typ: 'ok', text: l.hinweis });
+});
+
+/* B9-F3-Nachzug (Review-Fund, F3): der .catch(...) des einfachen xlsx-/
+   mbz-Uploadpfads (weiterMitUpload) rief bisher nur klemmt(...) statt
+   klemmtSichtbar(...) — ein Netz-/Business-Fehler NACH dem struktur-Befund-
+   Gate (z. B. graph.hochladen schlaegt fehl) setzte weder
+   state.fehlerHinweis noch state.data.uploadMeldung, nur den lokalen
+   #hochladefehler-Knoten ohne render(). Der Erfolgspfad (B9-F3 (b) oben)
+   war bereits korrekt auf klemmtSichtbar-Niveau (uploadMeldung typ 'ok') —
+   hier fehlte nur der Fehler-Zweig. */
+test('B9-F3-Nachzug (a): der xlsx-Uploadpfad scheitert am Netzaufruf — state.fehlerHinweis UND uploadMeldung typ fehler', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten'] },
+      { name: '2_Eingangskompetenzen', kopf: ['EK-ID','Thema','Definition','Wissensziel','Bloom-Stufe','Wie prüfbar (MC/MR)','Wie lernbar bei Lücken?'] },
+      { name: '3_Drehbuch', kopf: ['Uhrzeit','Dauer','Thema','Phase (W/U/G)','Lernziel-ID','Erwartetes Verhalten / Ergebnis','Aktivität Trainer / Moderation','Material & Hilfsmittel'] },
+      { name: '_steckbrief', kopf: ['feld','wert'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'), undefined, undefined,
+    { hochladenWirft: new Error('Graph 500') });
+  assert.strictEqual(l.hochgeladenMit.datei, null, 'Testvoraussetzung: der Netzaufruf ist gescheitert');
+  assert.match(l.meldung, /Nicht hochgeladen\..*Graph 500/, 'lokale Meldung fehlt oder nennt den Fehler nicht');
+  assert.match(l.fehlerHinweis || '', /Graph 500/,
+    'state.fehlerHinweis fehlt — ein Zwischen-Render koennte sonst die Meldung verlieren (wie im struktur-Befund-Pfad)');
+  assert.deepStrictEqual(state.data.uploadMeldung, { typ: 'fehler', text: l.meldung },
+    'uploadMeldung haette denselben Text wie die lokale Meldung tragen sollen');
+  assert.strictEqual(l.knopf.disabled, false, 'der Knopf muss nach dem Fehler wieder bedienbar sein');
 });
 
 test('B9-F3 (b\'): ein erfolgreicher B5-Upload traegt die Hinweise-Anhaenge in uploadMeldung', async () => {

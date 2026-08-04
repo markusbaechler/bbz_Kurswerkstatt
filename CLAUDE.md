@@ -3452,6 +3452,13 @@ bereits für den Formular-Erhalt).
 
 **Ergebnis: 737/737 Tests grün** (Baseline 728 + 9 neue).
 
+**Nachzug (F3-Review, 2026-08-04):** der `.catch(...)` des einfachen xlsx-/mbz-Uploadpfads
+(`weiterMitUpload`) rief bis dahin nur `klemmt(...)` statt `klemmtSichtbar(...)` — ein
+Netz-/Business-Fehler NACH dem T11-Struktur-Gate (z. B. ein scheiterndes `graph.hochladen`)
+setzte weder `state.fehlerHinweis` noch `state.data.uploadMeldung`, nur den lokalen, render-
+flüchtigen `#hochladefehler`-Knoten; der Erfolgspfad war bereits korrekt. Geschlossen mit einem
+neuen Test in `test/hochladen.test.js` („B9-F3-Nachzug (a)"), **738/738 Tests grün**.
+
 **Mutationsprobe (tatsächlich ausgeführt):** das Rendern von `uploadMeldung` in `ansichten.js`
 auf `if (false && ablageDaten.uploadMeldung && ablageDaten.uploadMeldung.text)` gesetzt,
 `node --test test/hochladen.test.js`:
