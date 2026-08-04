@@ -2688,6 +2688,26 @@
     } else { fertig(); }
   }
 
+  /* K1 (Etappe 4): der Download der Projekt-Wissen-Datei ist ein reiner
+     Client-Vorgang — kein Graph-Schreiben, die Datei landet nicht in
+     SharePoint. Muster: Blob → Objekt-URL → unsichtbarer <a download> →
+     Klick → Aufraeumen (revokeObjectURL). Fehlt document/URL/Blob (Node,
+     Tests ohne DOM), tut die Funktion nichts — derselbe Rueckfall wie
+     diagrammZeichnen.png() fuer Nicht-Browser-Umgebungen. */
+  function herunterladenDatei(name, text) {
+    if (typeof document === 'undefined' || typeof URL === 'undefined' ||
+        !URL.createObjectURL || typeof Blob === 'undefined') return;
+    var blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   if (typeof document !== 'undefined') {
     document.addEventListener('input', function (e) {
       if (e.target && e.target.dataset && e.target.dataset.feld) controller.briefingFelderZaehlen();
@@ -2865,6 +2885,23 @@
         var karte3 = t.closest('.wtool');
         var sicht = karte3 && karte3.querySelector('.prompt.on');
         if (sicht) kopieren(sicht.textContent, t);
+        return;
+      }
+      if (a === 'instruktionen-herunterladen') {
+        /* K1: dieselben Werte, aus denen ansichten.instruktionenBlock die
+           Ansicht baut (s. controller.render(), Schritt-1-Zweig) — kein
+           zweiter Rechenweg fuer Briefing/Dossier/Ordnername. Kein
+           Graph-Zugriff, reiner Client-Download. */
+        var kursDL = nav.kurs();
+        if (!kursDL) return;
+        var inhDL = state.data.inhalt;
+        var briefingDL = state.data.briefing[kursDL.kursId];
+        var dossierDL = state.data.dossier[kursDL.kursId];
+        var ordnDL = state.data.ordner[kursDL.kursId];
+        var langtext = root.inhalt.projektInstruktionenLang(inhDL, kursDL, briefingDL,
+          ordnDL ? ordnDL.name : null,
+          (dossierDL && typeof dossierDL === 'object') ? dossierDL : null);
+        herunterladenDatei(root.inhalt.projektWissenDateiname(kursDL), langtext);
         return;
       }
       if (a === 'fassung') {

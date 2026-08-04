@@ -9,6 +9,11 @@ const { INHALT, KURSE } = require('./fixture.js');
 const AFL = KURSE[1];
 const BRIEFING = '# Kursbriefing AFL-001\n\nZielgruppe: Kundenberater\nScope: [OFFEN] Derivate';
 
+/* K1 (Etappe 4): die Claude-Fassung fuer INHALT/AFL/BRIEFING/'AFL-001_x' (ohne
+   Dossier), byte-genau erfasst VOR dem K1-Umbau — der Pin, der belegt, dass der
+   Claude-Zweig durch die ChatGPT-Kompaktfassung nicht angefasst wurde. */
+const CLAUDE_FIXTURE = "# Projekt-Instruktionen — Kurs AFL-001 — Anlagefondslizenz\nKompetenzfeld: Vermögen & Vorsorge\n\n<rolle>\n<!-- Rolle & Kontext -->\nDu bist didaktischer Co-Autor im bbz-Produktionsprozess „Lerninhalte umgiessen\" für diesen Weiterbildungskurs (Kompetenzfeld: Vermögen & Vorsorge), gebaut nach dem W-U-G-Modell. Öffentliche Weiterbildung, kein bankinternes oder kundenspezifisches Material. Du lieferst Entwürfe; final wird nur, was ein Mensch freigibt.\n</rolle>\n\n<schritte>\n<!-- Die acht Produktionsschritte -->\n- Schritt 1 — Kursbriefing  (chat, claude-code)\n- Schritt 2 — Lernziele  [Gate 1 · 4-Augen]  (chat, claude-code, hand)\n- Schritt 3 — Content  (chat, claude-code)\n- Schritt 4 — Validierung  [Sign-off]  (chat, claude-code)\n- Schritt 5 — Didaktik  (chat, claude-code)\n- Schritt 6 — Moodle-Bau  (claude-code)\n- Schritt 7 — Fach-Review  [Gate 2 · Schluss]  (kurswerkstatt)\n- Schritt 8 — Kuratierung  (chat, claude-code)\nWohin genau (Ordner, Dateiname) ein Ergebnis kommt, sagt der Masterprompt des jeweiligen Schritts — das allgemeine Muster dazu steht unter „Ablage\".\n</schritte>\n\n<ablage>\n<!-- Ablage — verbindlich -->\nBibliothek Kursproduktion (SharePoint), Kursordner AFL-001_x/.\nUnterordner: 00_input · 01_briefing · 02_lernziele · 03_content · 04_validierung · 05_didaktik · 06_moodle · 07_abnahme · 08_backbone. Diese Struktur kommt aus dem Ablage-Kontrakt — nicht selbst erfinden oder ergänzen.\nDateiname: {K}_{lieferobjekt}_v{N}.{ext}, freigegeben: {K}_{lieferobjekt}_final.{ext}. Gibt es eine _final, gilt sie (entsteht durch Umbenennen, nie durch Kopieren); sonst die höchste Versionsnummer. Verboten darin: .\nGate-Protokolle liegen als _gate.md neben der Datei. Der Stand steht in KWKurse (Schritt, Status), nie im Ordner; Referenzen zeigen auf die Kurs-ID, nie auf einen Pfad.\n</ablage>\n\n<regeln>\n<!-- Feste Regeln -->\n- Belegregel: Fachliche Aussagen, Zahlen, Fristen und Definitionen nur aus einer freigegebenen Projektquelle. Fehlt der Beleg: [ZU PRÜFEN: <was> — Quelle fehlt], nie raten. Kennzeichnungen wörtlich: [ENTWURF — unvalidiert] · [NEU — Sign-off nötig] · [FREIGEGEBEN DURCH: … / DATUM: …].\n- Sprache: Deutsch (Schweiz) — „ss\" statt „ß\", echte Umlaute im Fliesstext.\n- IDs bleiben bei Textänderung bestehen und werden nie wiederverwendet: Lernziel AFL-001-LZ-###, Eingangskompetenz AFL-001-EK-###.\n- Nur ein Mensch gibt frei; die KI vergibt nie „fertig\". Fehlt eine Projektdatei, benenne die Lücke — nicht rekonstruieren.\n</regeln>\n\n<kursbriefing>\n<!-- Das freigegebene Kursbriefing -->\nAus AFL-001_briefing (Schritt 1). Es ist die Leitplanke für alles Weitere — bei Widerspruch zu einer Annahme gilt das Briefing.\n\n# Kursbriefing AFL-001\n\nZielgruppe: Kundenberater\nScope: [OFFEN] Derivate\n</kursbriefing>\n\n<arbeitsweise>\nHalte dich in jedem Chat an den jeweiligen Masterprompt UND an diese Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den Konflikt, statt ihn still aufzulösen. Bearbeite nur den angeforderten Schritt, nicht vorauseilend den nächsten.\n</arbeitsweise>";
+
 /* ---------- Geltende Fassung ---------- */
 
 test('_final schlaegt jede Nummer', () => {
@@ -214,8 +219,11 @@ test('ohne Angabe gilt die Claude-Fassung', () => {
 
 /* Der Grund, warum beide aus derselben Quelle gebaut werden: sie duerfen sich in
    der Verpackung unterscheiden, im Inhalt niemals. Sonst arbeiten Claude und
-   ChatGPT nach verschiedenen Regeln, ohne dass es jemand merkt. */
-test('beide Fassungen tragen denselben Inhalt', () => {
+   ChatGPT nach verschiedenen Regeln, ohne dass es jemand merkt.
+   K1 (Etappe 4): die EINE geplante Ausnahme ist der kursbriefing-Teil — die
+   ChatGPT-Kompaktfassung ersetzt ihn durch einen Verweis auf die Projekt-
+   Wissen-Datei (s. u.), jeder andere Teil bleibt wortgleich in beiden. */
+test('beide Fassungen tragen denselben Inhalt — ausser dem kursbriefing-Teil, den die ChatGPT-Kompaktfassung seit K1 nur noch verweist', () => {
   const teile = inhalt.projektInstruktionenTeile(INHALT, AFL, BRIEFING);
   const c = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude');
   const g = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'chatgpt');
@@ -231,6 +239,7 @@ test('beide Fassungen tragen denselben Inhalt', () => {
   teile.forEach(function (t) {
     const inhaltsblock = flach(t.zeilen.join('\n'));
     assert.ok(flach(c).indexOf(inhaltsblock) >= 0, 'Claude fehlt: ' + t.tag);
+    if (t.tag === 'kursbriefing') return;
     assert.ok(flach(g).indexOf(inhaltsblock) >= 0, 'ChatGPT fehlt: ' + t.tag);
   });
 });
@@ -242,10 +251,11 @@ test('beide Fassungen tragen die Vorrangregel gegenueber den Masterprompts', () 
   });
 });
 
-test('beide Fassungen tragen das Briefing woertlich', () => {
-  ['claude', 'chatgpt'].forEach(function (f) {
-    assert.ok(inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, f).indexOf(BRIEFING) >= 0, f);
-  });
+test('die Claude-Fassung traegt das Briefing woertlich, die ChatGPT-Kompaktfassung verweist nur noch darauf (K1)', () => {
+  const c = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude');
+  assert.ok(c.indexOf(BRIEFING) >= 0, 'Claude: Briefing fehlt');
+  const g = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'chatgpt');
+  assert.ok(g.indexOf(BRIEFING) < 0, 'ChatGPT-Kompaktfassung traegt den Briefing-Volltext trotzdem');
 });
 
 test('die alten Ordner fehlen in BEIDEN Fassungen', () => {
@@ -527,4 +537,74 @@ test('umbrechen behaelt die Einrueckung einer Aufzaehlung', () => {
   z.slice(1).forEach(function (x) {
     assert.ok(/^  \S/.test(x), 'Fortsetzung ohne Einrueckung: ' + JSON.stringify(x));
   });
+});
+
+/* ---------- Etappe 4, Task K1: ChatGPT-Kompaktfassung + Projekt-Wissen-Langfassung ----------
+   Live-Befund: die generierten ChatGPT-Projekt-Instruktionen ueberschreiten mit dem
+   eingebetteten Briefing-Volltext locker die 8000-Zeichen-Grenze des ChatGPT-
+   Instruktionsfelds — >15'000 Zeichen waren gemessen. Die Kompaktfassung
+   (projektInstruktionen(..., 'chatgpt', ...)) ersetzt darum NUR den
+   kursbriefing-Teil durch einen Verweis auf die Projekt-Wissen-Datei;
+   projektInstruktionenLang() liefert die bisherige Vollfassung fuer genau diese
+   herunterladbare Datei. Der Claude-Zweig bleibt unveraendert — er geht nicht
+   ueber ein laengenbeschraenktes Formularfeld. */
+
+test('K1 (a): die Kompaktfassung traegt das Briefing NICHT, wohl aber den Verweis mit dem Dateinamen', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'chatgpt', 'AFL-001_x');
+  assert.ok(t.indexOf(BRIEFING) < 0, 'Briefing-Volltext steht trotzdem in der Kompaktfassung');
+  assert.strictEqual(inhalt.projektWissenDateiname(AFL), 'AFL-001_projekt-instruktionen.md');
+  assert.ok(t.indexOf(inhalt.projektWissenDateiname(AFL)) >= 0,
+    'Verweis auf die Projekt-Wissen-Datei (GENAU der Dateiname) fehlt');
+});
+
+test('K1 (b): ein sehr langes Briefing aendert die Laenge der Kompaktfassung nicht', () => {
+  const kurz = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'chatgpt', 'AFL-001_x');
+  const langesBriefing = '# Kursbriefing\n\n' + 'x'.repeat(20000);
+  const lang = inhalt.projektInstruktionen(INHALT, AFL, langesBriefing, 'chatgpt', 'AFL-001_x');
+  assert.strictEqual(lang.length, kurz.length,
+    'Kompaktfassung waechst mit dem Briefing — haengt noch am Volltext, statt nur zu verweisen');
+});
+
+test('K1 (c): projektInstruktionenLang traegt den Briefing-Volltext weiterhin, im ChatGPT-Schema', () => {
+  const t = inhalt.projektInstruktionenLang(INHALT, AFL, BRIEFING, 'AFL-001_x');
+  assert.ok(t.indexOf(BRIEFING) >= 0, 'Briefing-Volltext fehlt in der Langfassung');
+  assert.ok(/=== \d+\. KURSBRIEFING ===/i.test(t) || t.indexOf('=== ') >= 0,
+    'Langfassung traegt nicht das ChatGPT-Trennschema');
+});
+
+test('K1 (d): die Claude-Fassung ist byte-identisch zu vor dem Umbau (Fixture-Vergleich)', () => {
+  const t = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'claude', 'AFL-001_x');
+  assert.strictEqual(t, CLAUDE_FIXTURE);
+});
+
+test('K1 (e): die Ansicht zeigt die Zeichenzahl, den Achtung-Kasten erst ab 8000 Zeichen und den Download-Knopf', () => {
+  const hKurz = ansichten.einSchritt(INHALT, AFL, 1, null,
+    { ordnerFehlt: false, briefing: BRIEFING, ordnerName: 'AFL-001_x' });
+  /* Praeziser als ein generisches /\d+ Zeichen/ — der Block zeigt auch die
+     Laenge des rohen, eingelesenen Briefings ("Briefing ... N Zeichen"),
+     das darf hier nicht faelschlich als Beleg fuer den NEUEN Zaehler zaehlen. */
+  assert.ok(/ChatGPT-Kompaktfassung: \d+ Zeichen/.test(hKurz), 'Zeichenzahl der Kompaktfassung fehlt');
+  assert.ok(hKurz.indexOf('zu lang für das ChatGPT-Feld') < 0,
+    'Achtung-Kasten zeigt sich, obwohl die Kompaktfassung kurz ist');
+  assert.ok(/data-action="instruktionen-herunterladen"/.test(hKurz), 'Download-Knopf fehlt');
+  assert.ok(hKurz.indexOf('Projekt-Wissen-Datei herunterladen') >= 0, 'Knopfbeschriftung fehlt/weicht ab');
+
+  /* Ein Dossier mit sehr vielen Quellen blaeht die Kompaktfassung ueber 8000
+     Zeichen auf, OHNE dass der Briefing-Volltext je hineinginge (b) — der
+     realistische Weg, wie die Grenze in der Kompaktfassung ueberhaupt noch
+     erreicht wird. */
+  const vieleQuellen = [];
+  for (let n = 1; n <= 150; n++) {
+    vieleQuellen.push({ id: 'Q-' + String(n).padStart(3, '0'),
+      titel: 'Quelle Nr. ' + n + ' mit einem langen Titel zum Aufblasen der Kompaktfassung',
+      herausgeber: 'Herausgeber ' + n, stand: '2026', datei: 'quelle-' + n + '.pdf' });
+  }
+  const dGross = { dossier: 1, kurs: 'AFL-001', scope: {}, content_modus: 'quellengestuetzt',
+    quellen: vieleQuellen, status: {}, offen: [], entschieden: [] };
+  const laenge = inhalt.projektInstruktionen(INHALT, AFL, BRIEFING, 'chatgpt', 'AFL-001_x', dGross).length;
+  assert.ok(laenge >= 8000, 'Testvoraussetzung: Kompaktfassung muss >= 8000 Zeichen erreichen — ist ' + laenge);
+  const hLang = ansichten.einSchritt(INHALT, AFL, 1, null,
+    { ordnerFehlt: false, briefing: BRIEFING, ordnerName: 'AFL-001_x', dossier: dGross });
+  assert.ok(hLang.indexOf('zu lang für das ChatGPT-Feld') >= 0,
+    'Achtung-Kasten fehlt trotz einer Kompaktfassung ueber 8000 Zeichen');
 });

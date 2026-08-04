@@ -108,6 +108,80 @@
     return z;
   }
 
+  /* K1 (Etappe 4): das Briefing wortwoertlich eingebettet macht die ChatGPT-
+     Fassung >15'000 Zeichen lang — zu lang fuer das 8000-Zeichen-Instruktions-
+     feld eines ChatGPT-Projekts (Live-Befund). Die Kompaktfassung ersetzt
+     darum NUR den kursbriefing-Teil durch einen Verweis auf die Projekt-
+     Wissen-Datei (projektWissenDateiname); die Datei selbst traegt weiterhin
+     den Volltext (projektInstruktionenLang). teileKompakt() ist die EINE
+     Stelle, an der diese Ersetzung passiert — Kopieren (Ansicht) und
+     Herunterladen (app.js) rufen beide projektInstruktionen()/
+     projektInstruktionenLang(), nie eine eigene Kuerzungslogik. */
+  function teileKompakt(teile, kurs) {
+    return teile.map(function (t) {
+      if (t.tag !== 'kursbriefing') return t;
+      return {
+        tag: t.tag,
+        titel: t.titel,
+        zeilen: [
+          'Das freigegebene Kursbriefing (Volltext) liegt in der Projekt-Wissen-Datei ' +
+          inhalt.projektWissenDateiname(kurs) + '. Lies sie zu Beginn jedes Chats; bei ' +
+          'Widerspruch zwischen diesen Instruktionen und der Datei gilt die Datei.'
+        ]
+      };
+    });
+  }
+
+  /* Kopf und Vorrangregel sind fuer alle drei Renderformen (Claude, ChatGPT-
+     kompakt, ChatGPT-lang) identisch — eine Quelle statt dreier Kopien
+     (Konvention 9). */
+  function kopfUndArbeitsweise(kurs) {
+    return {
+      kopf: 'Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel +
+            '\nKompetenzfeld: ' + (kurs.kompetenzfeld || 'offen'),
+      /* Einzige Stelle, an der die Vorrangregel steht (Konvention 9: eine
+         Quelle pro Begriff) — nicht zusaetzlich noch einmal unter "Feste Regeln". */
+      arbeitsweise: 'Halte dich in jedem Chat an den jeweiligen Masterprompt UND an diese ' +
+        'Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den Konflikt, ' +
+        'statt ihn still aufzulösen. Bearbeite nur den angeforderten Schritt, nicht ' +
+        'vorauseilend den nächsten.'
+    };
+  }
+
+  function renderClaude(teile, kopf, arbeitsweise) {
+    var z = [];
+    z.push('# ' + kopf);
+    teile.forEach(function (t) {
+      z.push('');
+      z.push('<' + t.tag + '>');
+      z.push('<!-- ' + t.titel + ' -->');
+      z.push(t.zeilen.join('\n'));
+      z.push('</' + t.tag + '>');
+    });
+    z.push('');
+    z.push('<arbeitsweise>');
+    z.push(arbeitsweise);
+    z.push('</arbeitsweise>');
+    return z.join('\n');
+  }
+
+  function renderChatgpt(teile, kopf, arbeitsweise) {
+    var z = [];
+    z.push('=== ' + kopf.split('\n')[0].toUpperCase() + ' ===');
+    z.push(kopf.split('\n')[1]);
+    teile.forEach(function (t, n) {
+      z.push('');
+      z.push('=== ' + (n + 1) + '. ' + t.titel.toUpperCase() + ' ===');
+      z.push(t.zeilen.join('\n'));
+    });
+    z.push('');
+    z.push('=== ARBEITSWEISE ===');
+    z.push(arbeitsweise);
+    /* Das Eingabefeld der ChatGPT-Projekteinstellungen bricht nicht um;
+       Zeilen von 300 Zeichen sind dort unlesbar. Markus am 2026-07-29. */
+    return inhalt.umbrechen(z.join('\n'), 100);
+  }
+
   var inhalt = {
     dateien: DATEIEN,
 
@@ -1553,51 +1627,38 @@
       return teile;
     },
 
-    /* Die zwei Fassungen. Gleicher Inhalt, andere Verpackung:
+    /* Die EINE Quelle fuer den Namen der Projekt-Wissen-Datei (K1) — der
+       Verweis-Satz in der Kompaktfassung und der Download-Knopf (Ansicht/
+       app.js) rufen beide diese Funktion, nie einen eigenen Namen. */
+    projektWissenDateiname: function (kurs) {
+      return kurs.kursId + '_projekt-instruktionen.md';
+    },
+
+    /* Die drei Renderformen. Gleicher Inhalt, andere Verpackung:
        Claude arbeitet mit XML-Tags, ChatGPT mit Trenn-Ueberschriften — dasselbe
-       Tool-Tuning, das die Masterprompts schon benutzen. */
+       Tool-Tuning, das die Masterprompts schon benutzen.
+       K1: die ChatGPT-Fassung ist seither die KOMPAKTFASSUNG — sie ersetzt den
+       kursbriefing-Teil durch einen Verweis (teileKompakt), weil der
+       eingebettete Volltext das 8000-Zeichen-Instruktionsfeld sprengt. Die
+       Claude-Fassung bleibt unveraendert (kein Feldlimit dort). */
     projektInstruktionen: function (i, kurs, briefing, fassung, ordnerName, d) {
       var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing, ordnerName, d);
-      var kopf = 'Projekt-Instruktionen — Kurs ' + kurs.kursId + ' — ' + kurs.kurstitel +
-                 '\nKompetenzfeld: ' + (kurs.kompetenzfeld || 'offen');
-      /* Einzige Stelle, an der die Vorrangregel steht (Konvention 9: eine Quelle
-         pro Begriff) — nicht zusaetzlich noch einmal unter "Feste Regeln". */
-      var arbeitsweise = 'Halte dich in jedem Chat an den jeweiligen Masterprompt UND an diese ' +
-             'Instruktionen. Bei Widerspruch gelten diese Instruktionen; benenne den Konflikt, ' +
-             'statt ihn still aufzulösen. Bearbeite nur den angeforderten Schritt, nicht ' +
-             'vorauseilend den nächsten.';
-      var z = [];
-
+      var ka = kopfUndArbeitsweise(kurs);
       if (fassung === 'chatgpt') {
-        z.push('=== ' + kopf.split('\n')[0].toUpperCase() + ' ===');
-        z.push(kopf.split('\n')[1]);
-        teile.forEach(function (t, n) {
-          z.push('');
-          z.push('=== ' + (n + 1) + '. ' + t.titel.toUpperCase() + ' ===');
-          z.push(t.zeilen.join('\n'));
-        });
-        z.push('');
-        z.push('=== ARBEITSWEISE ===');
-        z.push(arbeitsweise);
-        /* Das Eingabefeld der ChatGPT-Projekteinstellungen bricht nicht um;
-           Zeilen von 300 Zeichen sind dort unlesbar. Markus am 2026-07-29. */
-        return inhalt.umbrechen(z.join('\n'), 100);
+        return renderChatgpt(teileKompakt(teile, kurs), ka.kopf, ka.arbeitsweise);
       }
+      return renderClaude(teile, ka.kopf, ka.arbeitsweise);
+    },
 
-      /* Claude */
-      z.push('# ' + kopf);
-      teile.forEach(function (t) {
-        z.push('');
-        z.push('<' + t.tag + '>');
-        z.push('<!-- ' + t.titel + ' -->');
-        z.push(t.zeilen.join('\n'));
-        z.push('</' + t.tag + '>');
-      });
-      z.push('');
-      z.push('<arbeitsweise>');
-      z.push(arbeitsweise);
-      z.push('</arbeitsweise>');
-      return z.join('\n');
+    /* Die vollstaendige ChatGPT-Fassung MIT eingebettetem Briefing-Volltext —
+       fuer die Projekt-Wissen-Datei, die der Verweis-Satz der Kompaktfassung
+       nennt. Bis K1 war das der Rueckgabewert von projektInstruktionen(...,
+       'chatgpt', ...) selbst; die Renderform (Trenn-Ueberschriften, 100-Zeichen-
+       Umbruch) ist unveraendert dieselbe. */
+    projektInstruktionenLang: function (i, kurs, briefing, ordnerName, d) {
+      var teile = inhalt.projektInstruktionenTeile(i, kurs, briefing, ordnerName, d);
+      var ka = kopfUndArbeitsweise(kurs);
+      return renderChatgpt(teile, ka.kopf, ka.arbeitsweise);
     },
 
     /* --- Netz --- */

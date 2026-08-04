@@ -3557,3 +3557,109 @@ xlsx/mbz-Nachzug · F4 zeitachse vertikal mit tspan-Umbruch). **740 Tests gruen*
 Layout-Feinschliff -> Etappe 4. Protokoll:
 `../IT_Architektur_bbz/output/2026-08-04-etappe-3b-ausfuehrungsprotokoll.md` · geparkte
 Punkte: `.superpowers/sdd/2026-08-03-etappe-3b-plan/progress.md`.
+
+## Etappe 4 / Task K1: ChatGPT-Kompaktfassung + Projekt-Wissen-Langfassung
+
+**Live-Befund:** die von Schritt 1 erzeugten ChatGPT-Projekt-Instruktionen betten das
+freigegebene Kursbriefing wortwoertlich ein (s. „Projekt-Instruktionen (Schritt 1)" oben) —
+gemessen **>15'000 Zeichen**, weit ueber dem **8000-Zeichen-Instruktionsfeld** eines
+ChatGPT-Projekts. Die Fassung liess sich dort schlicht nicht mehr einfuegen.
+
+**Die Kompaktfassung ersetzt NUR den `kursbriefing`-Teil, sonst nichts.**
+`inhalt.projektInstruktionen(i, kurs, briefing, 'chatgpt', ordnerName, d)` liefert seither die
+Kompaktfassung: alle Teile aus `projektInstruktionenTeile` wie bisher, ausser dem Teil „Das
+freigegebene Kursbriefing" — an seiner Stelle ein Verweis-Teil („Das freigegebene Kursbriefing
+(Volltext) liegt in der Projekt-Wissen-Datei `{K}_projekt-instruktionen.md`. Lies sie zu Beginn
+jedes Chats; bei Widerspruch zwischen diesen Instruktionen und der Datei gilt die Datei."). Die
+Fachquellen-Positivliste bleibt unveraendert Teil der Kompaktfassung — nur der Briefing-Volltext
+wandert aus dem Instruktionsfeld in eine eigene Datei. Die private Hilfsfunktion `teileKompakt
+(teile, kurs)` ist die EINE Stelle, an der diese Ersetzung passiert; sowohl die Kompaktfassung
+als auch — indirekt, weil sie NICHT gerufen wird — die Langfassung laufen ueber dieselbe
+`projektInstruktionenTeile`-Quelle (Konvention 9).
+
+**`inhalt.projektWissenDateiname(kurs) -> string`** liefert `{K}_projekt-instruktionen.md` —
+die EINE Namensquelle. Der Verweis-Satz in der Kompaktfassung, der Zeichenzaehler-Block in der
+Ansicht und der Download-Dateiname im Klick-Handler rufen alle drei dieselbe Funktion; keiner
+baut den Namen selbst.
+
+**`inhalt.projektInstruktionenLang(i, kurs, briefing, ordnerName, d) -> string`** ist die
+bisherige, vollstaendige ChatGPT-Fassung MIT eingebettetem Briefing-Volltext — unveraendert im
+Rendering (Trenn-Ueberschriften, 100-Zeichen-Umbruch fuers ChatGPT-Eingabefeld). Sie ist der
+Inhalt der Projekt-Wissen-Datei, die der Verweis-Satz der Kompaktfassung nennt — der Mensch laedt
+sie herunter und laedt sie als Projekt-Wissen in ChatGPT hoch.
+
+**Die Claude-Fassung bleibt unangetastet — kein Feldlimit dort, kein Grund, sie zu kuerzen.**
+Refactoring statt Verhaltensaenderung: `kopfUndArbeitsweise(kurs)` (Kopfzeile + Vorrangregel,
+fuer alle drei Renderformen identisch), `renderClaude(teile, kopf, arbeitsweise)` und
+`renderChatgpt(teile, kopf, arbeitsweise)` sind aus dem bisherigen `projektInstruktionen`
+herausgezogen und werden jetzt von drei Stellen gerufen (`projektInstruktionen` fuer beide
+Fassungen, `projektInstruktionenLang` zusaetzlich fuer die Langfassung) — der Claude-Zweig
+`renderClaude(teile, ...)` bekommt dabei weiterhin die UNVERAENDERTEN `teile` aus
+`projektInstruktionenTeile`, nie die gekuerzten. Ein Test pinnt die Claude-Ausgabe fuer
+INHALT/AFL/BRIEFING/`'AFL-001_x'` byte-genau als Fixture (`CLAUDE_FIXTURE` in
+`test/instruktionen.test.js`) — belegt, dass der K1-Umbau den Claude-Zweig nicht veraendert hat.
+
+**Ansicht (`ansichten.instruktionenBlock`):** unter den beiden `.prompt`-Boxen (Claude/ChatGPT)
+steht seither IMMER (unabhaengig davon, welche Fassung gerade sichtbar ist — die Werte betreffen
+nur die ChatGPT-Kompaktfassung, ihre Anzeige an eine Tab-Umschaltung zu haengen haette die
+bestehende, ueber mehrere `.wtool`-Bloecke geteilte `data-action="fassung"`-Logik zusaetzlich um
+einen neuen `data-box`-Elementtyp erweitert — bewusst vermieden) ein Zeilenpaar: die Zeichenzahl
+der Kompaktfassung („ChatGPT-Kompaktfassung: N Zeichen") und der Knopf
+`data-action="instruktionen-herunterladen"` („Projekt-Wissen-Datei herunterladen"). Ab **8000
+Zeichen** (der ChatGPT-Feldgrenze) erscheint zusaetzlich ein `box achtung`-Kasten („Zu lang fuer
+ChatGPT … zu lang fuer das ChatGPT-Feld …") mit dem Dateinamen der Projekt-Wissen-Datei. Da die
+Kompaktfassung den Briefing-Volltext gar nicht mehr traegt, wird diese Grenze im Alltag selten
+erreicht — realistisch bei einer sehr grossen Fachquellen-Positivliste; der Kasten ist ein
+generischer Laengenwaechter, kein Sonderfall fuers Briefing.
+
+**`app.js` — der Download-Handler baut die Langfassung neu, ohne Graph-Zugriff.**
+`data-action="instruktionen-herunterladen"` liest Kurs/Briefing/Dossier/Ordnername aus **denselben**
+`state.data`-Feldern, aus denen `controller.render()` den Schritt-1-Block ohnehin baut
+(`state.data.briefing[kursId]`, `state.data.dossier[kursId]`, `state.data.ordner[kursId]`) — kein
+zweiter Rechenweg. Der neue Helfer `herunterladenDatei(name, text)` (Muster: Blob →
+`URL.createObjectURL` → unsichtbares `<a download>` → Klick → `URL.revokeObjectURL`) ist reiner
+Client-Code; er schreibt nichts nach SharePoint und tut in Node/ohne DOM schlicht nichts (derselbe
+Rueckfall wie `diagrammZeichnen.png()` fuer Nicht-Browser-Umgebungen — kein dediziertes App.js-
+Testfile dafuer, Muster T13/A3: der Handler ist nur ueber die `inhalt.js`-Funktionen getestet,
+nicht ueber einen simulierten DOM-Klick).
+
+**Tests (`test/instruktionen.test.js`):** fuenf neue K1-Faelle — (a) Kompaktfassung ohne
+Briefing-Volltext, mit dem GENAUEN Verweis-Dateinamen; (b) ein 20'000-Zeichen-Briefing aendert
+die Kompaktfassungslaenge NICHT (der Beweis, dass sie nicht mehr am Volltext haengt); (c)
+`projektInstruktionenLang` traegt den Volltext weiterhin, im ChatGPT-Trennschema; (d) die
+Claude-Fassung ist byte-identisch zum Fixture von vor dem Umbau; (e) die Ansicht zeigt Zaehler,
+Achtung-Kasten erst ab 8000 Zeichen (Testvoraussetzung ueber ein Dossier mit 150 Quellen — NICHT
+ueber ein langes Briefing, weil das seit (b) die Kompaktfassungslaenge gar nicht mehr beeinflusst)
+und den Download-Knopf. Zwei bestehende Tests waren mit der alten Annahme „beide Fassungen tragen
+denselben Inhalt / das Briefing woertlich" nicht mehr wahr und wurden umgeschrieben: „beide
+Fassungen tragen denselben Inhalt" nimmt den `kursbriefing`-Teil jetzt fuer den ChatGPT-Vergleich
+ausdruecklich aus (jeder andere Teil bleibt wortgleich in beiden); „das Briefing wird woertlich
+aufgenommen" ist zu „die Claude-Fassung traegt das Briefing woertlich, die ChatGPT-Kompaktfassung
+verweist nur noch darauf" geworden. **745 Tests gruen** (Baseline 740 + 5 neue).
+
+**Mutationsprobe (tatsaechlich ausgefuehrt):** in `teileKompakt` den Verweis-Teil auskommentiert,
+der `kursbriefing`-Teil unveraendert durchgereicht (`return t;` statt des Verweis-Objekts),
+`node --test test/instruktionen.test.js`:
+```
+ℹ tests 55
+ℹ pass 52
+ℹ fail 3
+
+✖ die Claude-Fassung traegt das Briefing woertlich, die ChatGPT-Kompaktfassung verweist nur noch darauf (K1)
+  AssertionError [ERR_ASSERTION]: ChatGPT-Kompaktfassung traegt den Briefing-Volltext trotzdem
+✖ K1 (a): die Kompaktfassung traegt das Briefing NICHT, wohl aber den Verweis mit dem Dateinamen
+  AssertionError [ERR_ASSERTION]: Briefing-Volltext steht trotzdem in der Kompaktfassung
+✖ K1 (b): ein sehr langes Briefing aendert die Laenge der Kompaktfassung nicht
+  AssertionError [ERR_ASSERTION]: Kompaktfassung waechst mit dem Briefing — haengt noch am Volltext, statt nur zu verweisen
+  22865 !== 2922
+```
+Drei Tests fielen rot statt nur des einen im Brief skizzierten — sinnvoll, weil sie dieselbe
+Regel aus drei unabhaengigen Blickwinkeln pruefen (die Gegenprobe „traegt das Briefing woertlich",
+Test (a) direkt, und (b) ueber die Laengeninvarianz); alle anderen 52 blieben gruen. Danach
+wiederhergestellt, komplette Suite erneut geprueft: `node --test` → **745/745 gruen**.
+
+**Offen / bewusst nicht Teil von K1:** `werkzeuge.json`/SharePoint (`guide-1`) nennt die neue
+Projekt-Wissen-Datei noch nicht in der Anleitung fuer das Anlegen der beiden KI-Projekte — wie
+bei Task Z6/Z8 ein separater, freigabepflichtiger Redaktionsschritt. Keine Live-Probe an einem
+echten ChatGPT-Projekt (Upload der heruntergeladenen Datei als Projekt-Wissen) — dokumentierte
+Grenze wie bei jedem reinen Client-Download in diesem Projekt.
