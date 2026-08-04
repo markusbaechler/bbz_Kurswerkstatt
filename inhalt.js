@@ -1276,7 +1276,6 @@
       if (typeof extras.version === 'number') {
         z.push('');
         z.push('Version des Lieferobjekts: ' + extras.version + '.');
-        z.push('Setze im YAML-Feld \'version\' des _steckbrief GENAU diese Zahl, keine andere.');
       }
 
       z.push('');
@@ -1719,19 +1718,60 @@
         }
       });
 
-      /* Regel 2: Leseliste vollstaendig — fehlende Dossier-Q-IDs sind HIER
-         ein Fehler (in Schritt 3/blocksPruefe nur ein Hinweis, s. dort). */
+      /* Regel 2: Leseliste vollstaendig UND ohne unbekannte Q-IDs (I-1,
+         Fixwave nach dem Etappe-4-Gesamt-Review) — dieselbe Unbekannt-Regel
+         wie blocksPruefe (Schritt 3), hier ZUSAETZLICH zur
+         Vollstaendigkeitspflicht (die Fehler bleibt: Schritt 4 ist der
+         letzte Halt vor der fachlichen Freigabe). M-1: Modus quellenfrei
+         uebernimmt dieselbe Regel wie blocksPruefe — keine Quellen-Angaben
+         zulaessig, weder als Leseliste noch als Q-Verweis darin. qIds()
+         statt einer inline-Kopie des Wortgrenzen-Regex (Huckepack a,
+         Konsistenz mit blocksPruefe/quellenSpiegel, Konvention 9). */
       var gefunden = {};
       gelesenListe.forEach(function (z) {
-        var m = String(z).match(/\bQ-\d{3}\b/g) || [];
-        m.forEach(function (id) { gefunden[id] = true; });
+        Object.keys(qIds(z)).forEach(function (id) { gefunden[id] = true; });
       });
-      var dossierIds = (d.quellen || []).map(function (q) { return q && q.id; }).filter(Boolean);
-      var fehlendeIds = dossierIds.filter(function (id) { return !gefunden[id]; });
-      if (fehlendeIds.length) {
-        fehler.push('Leseliste unvollständig — Dossier-Quelle(n) ' + fehlendeIds.join(', ') +
-                     ' fehlen in der Leseliste.');
+      var gefundenListe = Object.keys(gefunden);
+
+      if (d.content_modus === 'quellenfrei') {
+        if (gelesenListe.length || gefundenListe.length) {
+          fehler.push('Modus quellenfrei, aber eine Leseliste mit Quellen-Angaben ist gesetzt ' +
+                       '— im Modus quellenfrei sind keine Quellen zulässig.');
+        }
+      } else {
+        var dossierIds = (d.quellen || []).map(function (q) { return q && q.id; }).filter(Boolean);
+        var dossierSet = {};
+        dossierIds.forEach(function (id) { dossierSet[id] = true; });
+
+        gefundenListe
+          .filter(function (id) { return !dossierSet[id]; })
+          .forEach(function (id) {
+            fehler.push('Unbekannte Quellen-ID in der Leseliste: ' + id + ' — keine ' +
+                         'Dossier-Quelle.');
+          });
+
+        var fehlendeIds = dossierIds.filter(function (id) { return !gefunden[id]; });
+        if (fehlendeIds.length) {
+          fehler.push('Leseliste unvollständig — Dossier-Quelle(n) ' + fehlendeIds.join(', ') +
+                       ' fehlen in der Leseliste.');
+        }
       }
+
+      /* M-2 (Fixwave nach dem Etappe-4-Gesamt-Review): derselbe
+         katalog-only-Hinweis wie blocksPruefe (I1, Fixwave 3b) — auch in
+         Schritt 4 bleibt ein reiner katalog:-Verweis eine stille Sackgasse
+         ohne diesen Hinweis (kein Katalog, keine App-Aufloesung, s.
+         blocksPruefe oben). */
+      kapitel.forEach(function (k) {
+        var illuRoh = k.teile && k.teile.ILLUSTRATION;
+        if (!illuRoh) return;
+        var hatDatei = /^datei:[ \t]*\S/m.test(String(illuRoh));
+        var hatKatalog = /^katalog:[ \t]*\S/m.test(String(illuRoh));
+        if (hatKatalog && !hatDatei) {
+          hinweise.push('Kapitel ' + (k.ek || '?') + ': Katalog-Verweis wird in dieser Fassung ' +
+                         'noch nicht gesetzt — Bild fehlt im Dokument.');
+        }
+      });
 
       /* Regel 3: jede divergenz: offen braucht einen Eintrag in ###OFFEN —
          Abgleich ueber die EK-ID als Substring im Offen-Text (kein starres
@@ -1751,8 +1791,11 @@
       if (!varianten.claude) fehlendeVarianten.push('claude');
       if (!varianten.chatgpt) fehlendeVarianten.push('chatgpt');
       if (fehlendeVarianten.length) {
+        /* Huckepack b (Fixwave Etappe 4): Plural-Fix — fehlen BEIDE
+           Varianten, ist "claude und chatgpt fehlt" grammatikalisch falsch. */
+        var fehltVerb = fehlendeVarianten.length > 1 ? 'fehlen' : 'fehlt';
         fehler.push('Variantenvergleich braucht beide Skript-Varianten — ' +
-                     fehlendeVarianten.join(' und ') + ' fehlt in 03_content');
+                     fehlendeVarianten.join(' und ') + ' ' + fehltVerb + ' in 03_content');
       } else {
         kapitel.forEach(function (k) {
           var kA = kapitelZuEk(varianten.claude, k.ek);

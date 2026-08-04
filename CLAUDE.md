@@ -4953,3 +4953,117 @@ Kontraktfeld (nur an `inhalt.gateAdressat(n) === 'sign-off'`) und greift, sobald
 der Rückfall-Pfad (die dokumentweite Leseliste) — kein reales Fixture/kein realer Prompt-Text
 befüllt `###ZUORDNUNG` bisher mit Q-IDs statt einem freien „wie Contract"-Text; `qIdsFuerEk` ist
 darauf vorbereitet, sobald sich das ändert, ohne dass register.js selbst angepasst werden müsste.
+
+## Fixwave nach dem Etappe-4-Gesamt-Review (2026-08-04): I-1, I-2, I-3, M-1, M-2
+
+Ein unabhängiger Review der ganzen Etappe 4 (beide Bäume) fand drei Important-Findings plus zwei
+Huckepack-Minors dazu — alle fünf in einer Welle geschlossen, App und Werkzeuge gemeinsam.
+
+**I-1 (Important) — Schritt-4-Gate liess unbekannte (halluzinierte) Q-IDs durch.**
+`inhalt.validierungPruefe` Regel 2 (App) und wortwörtlich `content-abnahme.cjs` (Werkzeuge)
+prüften bisher nur FEHLENDE Dossier-Q-IDs in der Leseliste, nicht UNBEKANNTE — `blocksPruefe`
+(Schritt 3) hatte diese Regel bereits seit B5. Ein Schritt-4-Entwurf, dessen Leseliste eine
+erfundene Q-ID nennt, wäre unbemerkt durchgegangen. **Fix:** Regel 2 prüft jetzt beides, in
+derselben Struktur wie `blocksPruefe` — erst die unbekannten IDs (Fehler je ID, Wortlaut
+„Unbekannte Quellen-ID in der Leseliste: {id} — keine Dossier-Quelle."), dann die
+Vollständigkeitsprüfung (unverändert ein Fehler, nicht nur ein Hinweis wie in Schritt 3 — Schritt
+4 bleibt der letzte Halt vor der fachlichen Freigabe). Huckepack (a): die neue Prüfung nutzt den
+bestehenden privaten `qIds()`-Helfer statt einer inline-Kopie des Wortgrenzen-Regex
+(`\bQ-\d{3}\b`) — an genau der Stelle, die ohnehin neu geschrieben wurde, in beiden Bäumen
+konsistent (`content-abnahme.cjs` hatte `qIds()` bereits definiert, aber Regel 2 nutzte bislang
+eine eigene inline-Kopie). `blocksPruefe`s eigene, ältere inline-Kopie bleibt unangetastet — nicht
+Teil dieses Fixes.
+
+**M-1 (Huckepack zu I-1) — Modus quellenfrei.** `blocksPruefe` wies eine gesetzte Leseliste im
+Modus `quellenfrei` bereits ab; `validierungPruefe` schwieg dazu (die Vollständigkeitsprüfung
+griff im quellenfreien Modus nur zufällig nicht, weil `d.quellen` dort leer ist — eine gesetzte,
+aber im Modus unzulässige Leseliste blieb unbemerkt). Regel 2 trägt jetzt denselben
+`if (d.content_modus === 'quellenfrei')`-Zweig wie `blocksPruefe`: eine nichtleere Leseliste ODER
+ein gefundener Q-Verweis ist ein Fehler („Modus quellenfrei, aber eine Leseliste mit
+Quellen-Angaben ist gesetzt — im Modus quellenfrei sind keine Quellen zulässig.").
+
+**M-2 (Huckepack) — katalog-only-ILLUSTRATION.** Der Hinweis „Katalog-Verweis wird in dieser
+Fassung noch nicht gesetzt — Bild fehlt im Dokument." (`blocksPruefe`, Fixwave 3b I1) fehlte in
+`validierungPruefe` — ein Schritt-4-Kapitel mit `katalog:` ohne `datei:` blieb ohne jeden Hinweis,
+obwohl dieselbe stille Sackgasse (kein Katalog, keine App-Auflösung, s. Fixwave 3b) auch dort
+gilt. Dieselbe Prüf-Schleife (unverändert aus `blocksPruefe` übernommen) ist jetzt Teil von
+`validierungPruefe`, direkt nach Regel 2/M-1.
+
+**Huckepack b (Plural-Fix) — Regel 4, beide Varianten fehlen.** `fehlendeVarianten.join(' und ')
++ ' fehlt in 03_content'` war bei zwei fehlenden Varianten grammatikalisch falsch („claude und
+chatgpt fehlt"). Fix in beiden Bäumen: `fehltVerb = fehlendeVarianten.length > 1 ? 'fehlen' :
+'fehlt'`. Kein bestehender Test pinnte den alten, falschen Wortlaut (die „beide fehlen"-Tests
+prüften bisher nur, dass beide Namen in der Meldung vorkommen, nicht das Verb) — beide
+betroffenen Tests (App `test/skriptpruefe.test.js`, Werkzeuge `test/content-abnahme.test.js`)
+sind um eine Wortlaut-Assertion ergänzt, nicht neu geschrieben.
+
+**I-2 (Important) — `skript-abnahme.cjs` (CC-Weg Schritt 3, Werkzeuge) akzeptierte
+`###VALIDIERUNG` seit V1 stillschweigend.** Das App-Pendant `blocksPruefe` verbietet den Block in
+einem Schritt-3-Entwurf bereits seit V2 („###VALIDIERUNG gehört nicht in einen Entwurf —
+Validierung ist Schritt 4.") — `skript-abnahme.cjs`, das eigenständige CLI-Abnahmewerkzeug für
+den Claude-Code-Weg von Schritt 3, kannte diese Regel nie. Fix: derselbe Fehler, wortlautnah, in
+der Kapitel-Schleife von `pruefe()` (`skript-abnahme.cjs`), direkt vor der bestehenden
+Beispiel-Zahlen-Prüfung. **Kein Parity-Wächter für diesen Fix** — `skript-abnahme.cjs` ist ein
+eigenständiges CLI-Werkzeug ohne App-Zwilling im Waechter (`test/app-parity.test.js` hält nur
+`skript-schema`/`skript-lesen`/`diagramm-zeichnen`/`content-abnahme` gegen ihre App-Fassungen im
+Gleichlauf — für den Schritt-3-CLI-Weg gibt es kein App-Äquivalent, das dieselbe Funktion mit
+identischer Signatur exportiert; der App-seitige Weg für Schritt 3 ist `controller.hochladen`,
+browser-/DOM-gebunden, kein CLI). Ein regulärer Test (`test/skript-abnahme.test.js`, zwei Fälle:
+positiv + Gegenprobe) belegt die Regel stattdessen direkt.
+
+**I-3 (Important) — `contentPromptKopf` verlangte ein YAML-Steckbrief-Feld, das es in der
+Blockwelt nicht gibt.** Der Satz „Setze im YAML-Feld 'version' des _steckbrief GENAU diese Zahl,
+keine andere." stand in `inhalt.contentPromptKopf` (Schritt 4) — ein wörtlicher Copy-Paste-Rest
+aus dem xlsx-Kopf von Schritt 2 (`lernzielePromptKopf`, wo `_steckbrief` ein echtes Excel-Blatt
+ist, s. T11). Schritt 4 liefert seit B5/V4 ein ZIP-Paket (Blockdatei + PNGs), keine xlsx — es gibt
+dort kein `_steckbrief`-Blatt und kein YAML-Frontmatter dieser Art, das Modell hätte den Satz
+nicht befolgen können. **Fix:** Satz ersatzlos gestrichen; die Zeile „Version des Lieferobjekts:
+N." bleibt unverändert stehen. `test/contentkopf.test.js` pinnte den alten Satz
+(`assert.match(kopf, /YAML-Feld 'version'/)`) — ersetzt durch zwei Negativ-Assertions
+(`!/_steckbrief/`, `!/Setze im YAML-Feld 'version'/`), bewusst NICHT `!/YAML-Feld/` allein: die
+FACHQUELLEN-Zeilen (`fachquellenZeilen(d)`, auch von `contentPromptKopf` aufgerufen) erwähnen
+„YAML-Feld 'quellen'" legitim — ein pauschales Verbot hätte einen falschen Fehlalarm erzeugt.
+**Bewusst nicht Teil dieser Welle:** dieselbe Satz-Kopie steht wortgleich auch in
+`skriptPromptKopf` (Schritt 3, ebenfalls Blockwelt seit B5 — kein `_steckbrief`-Blatt dort
+ebenso), ausserhalb des im Auftrag genannten Fundorts (`inhalt.js ~1280`, `contentPromptKopf`) —
+nicht angefasst, um den Scope dieser Welle nicht eigenmächtig zu erweitern; ein möglicher
+Folgefund für eine spätere Runde.
+
+**Tests:** App `test/skriptpruefe.test.js` (6 neue: I-1 positiv + Q-0158-Wortgrenze, M-1 positiv +
+Gegenprobe, M-2 positiv + Gegenprobe) und `test/contentkopf.test.js` (bestehende Assertion
+ersetzt, kein neuer Testfall). Werkzeuge `test/content-abnahme.test.js` (6 neue, identisches
+Muster zur App), `test/skript-abnahme.test.js` (2 neue, I-2), `test/app-parity.test.js` (4 neue:
+1 I-1-Fixture in `V2_FIXTURES`, 2 dedizierte M-1-Tests mit eigenem `V2_DOSSIER_QUELLENFREI`
+ausserhalb der Schleife — Muster der bestehenden Regel-4-Tests, die ebenfalls einen eigenen
+Dossier-/Fixture-Zuschnitt brauchen —, 1 dediziertes M-2-Fixture mit eigenem
+ILLUSTRATION-Kapitelaufbau). **App: 863/863 grün** (Baseline 857 + 6). **Werkzeuge: 375/375
+grün** (Baseline 363 + 12: 6 in `content-abnahme.test.js`, 2 in `skript-abnahme.test.js`, 4 in
+`app-parity.test.js`).
+
+**Mutationsprobe (I-1, tatsächlich ausgeführt, wie im Auftrag verlangt):** die
+Unbekannt-Regel NUR in der App (`inhalt.js`, `validierungPruefe` Regel 2) stillgelegt
+(`.filter(function (id) { return !dossierSet[id]; })` → `.filter(function (id) { return false &&
+!dossierSet[id]; })`), Parity-Test im TOOLS-Baum laufen lassen (`node --test
+test/app-parity.test.js`):
+```
+ℹ tests 45
+ℹ pass 44
+ℹ fail 1
+
+✖ Parity V2: Fixture "I-1: unbekannte (halluzinierte) Q-ID in der Leseliste" ergibt in beiden Fassungen dieselbe fehler[]/hinweise[]-Liste
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+    {
+      fehler: [
+        'Kapitel VL-002-EK-003: Wortbudget 79 Wörter unter dem Minimum von 500.',
+  +     'Unbekannte Quellen-ID in der Leseliste: Q-009 — keine Dossier-Quelle.'
+      ],
+      hinweise: []
+    }
+```
+Genau die eine I-1-Fixture fiel rot — die Tools-Fassung meldete die unbekannte Q-ID weiterhin, die
+(mutierte) App-Fassung nicht mehr, die Listen liefen auseinander. Alle anderen 44 Tests
+(inklusive der drei übrigen neuen M-1/M-2-Tests, die von dieser Regel unabhängig sind) blieben
+grün. Danach die Zeile in `inhalt.js` wiederhergestellt, beide Suiten erneut komplett geprüft:
+App `node --test` → **863/863 grün**, Werkzeuge `node --test test/*.test.js` → **375/375 grün**.

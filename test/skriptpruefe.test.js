@@ -360,6 +360,74 @@ test('Regel 2 Gegenprobe: vollstaendige Leseliste ist kein Fehler', () => {
   assert.ok(!r.fehler.some((f) => /unvollständig/.test(f)));
 });
 
+/* I-1 (Fixwave nach dem Etappe-4-Gesamt-Review): eine unbekannte
+   (halluzinierte) Q-ID in der Leseliste ist ein Fehler — dieselbe Regel wie
+   blocksPruefe (Schritt 3), vorher fehlte sie in Schritt 4 ganz. */
+
+test('Regel 2 (I-1): unbekannte Q-ID in der Leseliste ist ein Fehler', () => {
+  const draft = kapitelObj();
+  const g = gelesenObj([draft], { gelesenListe: ['Q-001', 'Q-002', 'Q-009'] });
+  const varGleich = gelesenObj([kapitelObj()]);
+  const r = inhalt.validierungPruefe(g, D(), 'VL-002', { claude: varGleich, chatgpt: varGleich });
+  assert.ok(r.fehler.some((f) => /Q-009/.test(f) && /Unbekannte/.test(f)), JSON.stringify(r.fehler));
+});
+
+test('Regel 2 (I-1) Q-0158 ist nicht Q-015 — Wortgrenze wie blocksPruefe/quellenSpiegel', () => {
+  const d = { regulatorik: {}, content_modus: 'quellengestuetzt', quellen: [{ id: 'Q-015' }] };
+  const draft = kapitelObj();
+  const g = gelesenObj([draft], { gelesenListe: ['Q-0158 und Q-015'] });
+  const varGleich = gelesenObj([kapitelObj()]);
+  const r = inhalt.validierungPruefe(g, d, 'VL-002', { claude: varGleich, chatgpt: varGleich });
+  assert.ok(!r.fehler.some((f) => /Q-0158/.test(f)));
+  assert.ok(!r.fehler.some((f) => /Unbekannte.*Q-015\b/.test(f)));
+});
+
+/* M-1 (Huckepack zu I-1): Modus quellenfrei uebernimmt dieselbe Regel wie
+   blocksPruefe — im Modus quellenfrei sind keine Quellen-Angaben zulaessig. */
+
+test('Regel 2 (M-1): Modus quellenfrei mit gesetzter Leseliste ist ein Fehler', () => {
+  const d = D(); d.content_modus = 'quellenfrei'; d.quellen = [];
+  const draft = kapitelObj();
+  const g = gelesenObj([draft], { gelesenListe: ['Q-001 irgendwas'] });
+  const varGleich = gelesenObj([kapitelObj()]);
+  const r = inhalt.validierungPruefe(g, d, 'VL-002', { claude: varGleich, chatgpt: varGleich });
+  assert.ok(r.fehler.some((f) => /quellenfrei/.test(f)), JSON.stringify(r.fehler));
+});
+
+test('Regel 2 (M-1) Gegenprobe: Modus quellenfrei ohne Leseliste bleibt sauber', () => {
+  const d = D(); d.content_modus = 'quellenfrei'; d.quellen = [];
+  const draft = kapitelObj();
+  const g = gelesenObj([draft], { gelesenListe: [] });
+  const varGleich = gelesenObj([kapitelObj()]);
+  const r = inhalt.validierungPruefe(g, d, 'VL-002', { claude: varGleich, chatgpt: varGleich });
+  assert.ok(!r.fehler.some((f) => /quellenfrei/.test(f)), JSON.stringify(r.fehler));
+});
+
+/* M-2 (Huckepack): derselbe katalog-only-ILLUSTRATION-Hinweis wie
+   blocksPruefe — auch in Schritt 4 bleibt ein reiner katalog:-Verweis eine
+   stille Sackgasse ohne diesen Hinweis. */
+
+test('validierungPruefe (M-2): ###ILLUSTRATION mit katalog: ohne datei: erzeugt einen Hinweis, keinen Fehler', () => {
+  const draft = kapitelObj();
+  draft.teile.ILLUSTRATION = 'katalog: sparen-und-anlegen';
+  const g = gelesenObj([draft]);
+  const varGleich = gelesenObj([kapitelObj()]);
+  const r = inhalt.validierungPruefe(g, D(), 'VL-002', { claude: varGleich, chatgpt: varGleich });
+  assert.deepStrictEqual(r.fehler, []);
+  assert.ok(r.hinweise.some((h) => /Katalog-Verweis wird in dieser Fassung noch nicht gesetzt/.test(h)),
+    'der Katalog-Hinweis fehlt: ' + JSON.stringify(r.hinweise));
+  assert.ok(r.hinweise.some((h) => /VL-002-EK-001/.test(h)), 'der Hinweis sollte das Kapitel nennen');
+});
+
+test('validierungPruefe (M-2) Gegenprobe: ###ILLUSTRATION mit datei: loest KEINEN Katalog-Hinweis aus', () => {
+  const draft = kapitelObj();
+  draft.teile.ILLUSTRATION = 'katalog: sparen-und-anlegen\ndatei: szene.png';
+  const g = gelesenObj([draft]);
+  const varGleich = gelesenObj([kapitelObj()]);
+  const r = inhalt.validierungPruefe(g, D(), 'VL-002', { claude: varGleich, chatgpt: varGleich });
+  assert.ok(!r.hinweise.some((h) => /Katalog-Verweis/.test(h)));
+});
+
 /* Regel 3: jede divergenz: offen braucht einen Eintrag in ###OFFEN — Abgleich
    ueber die EK-ID als Substring im Offen-Text. */
 
@@ -418,13 +486,14 @@ test('Regel 4: fehlt eine Variante ganz, gibt es GENAU EINEN Abbruch-Fehler, kei
   assert.ok(!r.fehler.some((f) => /Untergrenze/.test(f)));
 });
 
-test('Regel 4: fehlen BEIDE Varianten, nennt der eine Abbruch-Fehler beide', () => {
+test('Regel 4: fehlen BEIDE Varianten, nennt der eine Abbruch-Fehler beide, im Plural ("fehlen") — Huckepack b, Fixwave Etappe 4', () => {
   const draft = kapitelObj();
   const g = gelesenObj([draft]);
   const r = inhalt.validierungPruefe(g, D(), 'VL-002', {});
   const treffer = r.fehler.filter((f) => /Variantenvergleich/.test(f));
   assert.strictEqual(treffer.length, 1, JSON.stringify(r.fehler));
   assert.ok(/claude/.test(treffer[0]) && /chatgpt/.test(treffer[0]));
+  assert.ok(/claude und chatgpt fehlen in 03_content/.test(treffer[0]), treffer[0]);
 });
 
 /* Wortbudget-Ausschluss (V2-Review-Minor), Schritt-4-Beleg: ###VALIDIERUNG ist

@@ -39,7 +39,16 @@ test('voller Kopf mit allen extras traegt Kurs/Kompetenzfeld/Rechtsstand, ' +
   assert.ok(kopf.includes('Variante B (chatgpt): AFL-001_skript-chatgpt_v1.blocks'), 'Variante B fehlt');
   assert.ok(kopf.includes('Contract: AFL-001_lernziele-drehbuch_final.xlsx'), 'Contract fehlt');
   assert.ok(kopf.includes('Version des Lieferobjekts: 1'), 'Version fehlt');
-  assert.match(kopf, /YAML-Feld 'version'/);
+  /* I-3 (Fixwave nach dem Etappe-4-Gesamt-Review): der Satz forderte ein
+     YAML-Steckbrief-Feld, das es in der Blockwelt (ZIP-Lieferung,
+     Schritt 4) nicht gibt — ein woertlicher Copy-Paste-Rest aus dem
+     xlsx-Kopf von Schritt 2 (lernzielePromptKopf). Ersatzlos gestrichen;
+     die Version-Zeile selbst bleibt (oben geprueft). Auf "_steckbrief"
+     geprueft statt auf "YAML-Feld" allein — Letzteres kommt ueber
+     fachquellenZeilen() legitim vor (das Briefing-Frontmatter-Feld
+     'quellen', ein anderer Sachverhalt). */
+  assert.ok(!/_steckbrief/.test(kopf), 'der _steckbrief-Verweis haette entfernt werden sollen');
+  assert.ok(!/Setze im YAML-Feld 'version'/.test(kopf), 'der YAML-Steckbrief-Satz haette entfernt werden sollen');
 
   /* Drei feste Regeln (Brief V3) — unconditional sobald d vorliegt, kein
      extras-Wert dahinter. Die Altmaterial-Zeile wird NUR hier geprueft
