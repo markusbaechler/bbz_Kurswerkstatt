@@ -3600,11 +3600,8 @@ INHALT/AFL/BRIEFING/`'AFL-001_x'` byte-genau als Fixture (`CLAUDE_FIXTURE` in
 `test/instruktionen.test.js`) — belegt, dass der K1-Umbau den Claude-Zweig nicht veraendert hat.
 
 **Ansicht (`ansichten.instruktionenBlock`):** unter den beiden `.prompt`-Boxen (Claude/ChatGPT)
-steht seither IMMER (unabhaengig davon, welche Fassung gerade sichtbar ist — die Werte betreffen
-nur die ChatGPT-Kompaktfassung, ihre Anzeige an eine Tab-Umschaltung zu haengen haette die
-bestehende, ueber mehrere `.wtool`-Bloecke geteilte `data-action="fassung"`-Logik zusaetzlich um
-einen neuen `data-box`-Elementtyp erweitert — bewusst vermieden) ein Zeilenpaar: die Zeichenzahl
-der Kompaktfassung („ChatGPT-Kompaktfassung: N Zeichen") und der Knopf
+steht — **nur wenn die ChatGPT-Fassung aktiv ist** (Stand nach Fix-Runde 1, s. u.) — ein
+Zeilenpaar: die Zeichenzahl der Kompaktfassung („ChatGPT-Kompaktfassung: N Zeichen") und der Knopf
 `data-action="instruktionen-herunterladen"` („Projekt-Wissen-Datei herunterladen"). Ab **8000
 Zeichen** (der ChatGPT-Feldgrenze) erscheint zusaetzlich ein `box achtung`-Kasten („Zu lang fuer
 ChatGPT … zu lang fuer das ChatGPT-Feld …") mit dem Dateinamen der Projekt-Wissen-Datei. Da die
@@ -3663,3 +3660,52 @@ Projekt-Wissen-Datei noch nicht in der Anleitung fuer das Anlegen der beiden KI-
 bei Task Z6/Z8 ein separater, freigabepflichtiger Redaktionsschritt. Keine Live-Probe an einem
 echten ChatGPT-Projekt (Upload der heruntergeladenen Datei als Projekt-Wissen) — dokumentierte
 Grenze wie bei jedem reinen Client-Download in diesem Projekt.
+
+### Fix-Runde 1 (unabhaengiger Review, 1 Important-Finding)
+
+**Finding: die urspruengliche Fassung von K1 zeigte den Zeichenzaehler/Achtung-Kasten/
+Download-Knopf IMMER — auch wenn der Claude-Tab aktiv war.** Der Task-Brief und Testfall (e)
+verlangten ausdruecklich „Download-Knopf nur in der ChatGPT-Fassung"; die erste Umsetzung
+begruendete das Gegenteil explizit als Design-Entscheidung (s. Report), mit dem Argument, eine
+Kopplung haette die geteilte `data-action="fassung"`-Logik erweitern muessen. Genau diese
+Erweiterung war aber trivial und bereits am bestehenden Mechanismus vorgesehen — der UI-Massstab
+des Projekts (so wenig sichtbar wie moeglich) wiegt hier schwerer als das befuerchtete
+Blastradius-Risiko.
+
+**Fix: der Meta-Block haengt jetzt am selben Umschalter wie die `.prompt`-Boxen selbst, kein
+neues Muster.** `ansichten.js` (`instruktionenBlock`) wickelt Zeichenzaehler, Achtung-Kasten und
+Download-Knopf in einen eigenen Container `<div class="fassbox" data-box="chatgpt">…</div>` —
+ohne `on`-Klasse beim Initial-Render, weil Claude (`fass[0]`) der Default-Tab ist und der Block
+deshalb verdeckt starten muss, genau wie die ChatGPT-`.prompt`-Box selbst. `app.js`
+(`data-action="fassung"`-Handler) erweitert seinen bestehenden Selektor von `.prompt` auf
+`.prompt, .fassbox` — EINE Zeile, keine zweite Toggle-Logik: dasselbe `x.dataset.box ===
+t.dataset.fassung`-Muster schaltet jetzt beide Elementarten mit. `index.html` bekommt die
+dazugehoerige CSS-Regel `.fassbox{display:none} .fassbox.on{display:block}` direkt neben
+`pre.prompt`/`pre.prompt.on` (das bestehende Muster fuer denselben Zweck laesst sich nicht
+wortgleich uebernehmen, weil jene Regel tag-gebunden auf `pre` sitzt und der neue Container ein
+`div` ist).
+
+**Test (e) verschaerft, statt nur behauptet:** die bestehende Kernpruefung (Zaehler/Kasten/Knopf
+vorhanden, Kasten erst ab 8000 Zeichen) bleibt, ergaenzt um die Tab-Bindung selbst — ohne
+DOM/Klick-Simulation (kein Browser-Test-Setup in diesem Projekt) rein strukturell auf dem
+gerenderten HTML-String: der `fassbox`-Container traegt beim Initial-Render KEINE `on`-Klasse
+(startet verdeckt), Zaehler/Knopf/Achtung-Kasten liegen alle INNERHALB dieses Containers (Index-
+Vergleich gegen die Container-Oeffnung), und `data-box="chatgpt"` kommt im gerenderten HTML genau
+zweimal vor — einmal an der bestehenden `.prompt`-Box, einmal am neuen Container, derselbe Wert,
+derselbe Umschalter, kein zweiter Mechanismus.
+
+**Mutationsprobe (tatsaechlich ausgefuehrt):** die `fassbox`-Kopplung in `ansichten.js`
+entfernt (Container-Wrapper auskommentiert, Meta-Block wieder direkt an das `wbody` angehaengt
+wie in der urspruenglichen K1-Fassung), `node --test test/instruktionen.test.js`:
+```
+ℹ tests 55
+ℹ pass 54
+ℹ fail 1
+
+✖ K1 (e): die Ansicht zeigt die Zeichenzahl, den Achtung-Kasten erst ab 8000 Zeichen und den Download-Knopf — alle drei nur in der ChatGPT-Fassung (Fix-Runde 1)
+  AssertionError [ERR_ASSERTION]: Meta-Block traegt keinen data-box="chatgpt"-Container ohne "on" — waere immer sichtbar, auch im Claude-Tab
+```
+Genau der eine, verschaerfte Test (e) fiel rot, alle anderen 54 blieben gruen; danach
+wiederhergestellt, komplette Suite erneut geprueft: `node --test` → **745/745 gruen**
+(unveraendert gegenueber dem ersten K1-Durchlauf — Fix-Runde 1 aendert nur bestehende Assertions
+in Test (e), keine neuen Testfaelle).

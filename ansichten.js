@@ -1131,17 +1131,25 @@
           : '<span class="klemmt-inline">Kein freigegebenes Briefing in <code>01_briefing/</code> ' +
             '&mdash; die Instruktionen tragen an dieser Stelle einen Platzhalter.</span>');
 
-    /* K1 (Etappe 4): die ChatGPT-Kompaktfassung (fass[1]) bleibt trotz der
+    /* K1 (Etappe 4), Fix-Runde 1: die ChatGPT-Kompaktfassung (fass[1]) bleibt trotz der
        Verweis-Kuerzung fuer den Rest des Dossiers/Kontrakts weiterhin
        laengenoffen (z. B. eine sehr lange Quellenliste) — die Zeichenzahl
        bleibt deshalb sichtbar, mit einer Warnung ab der 8000-Zeichen-Grenze
        des ChatGPT-Instruktionsfelds. Der Download-Knopf baut die Langfassung
        (mit Briefing-Volltext) erst im Klick-Handler (app.js) — hier steht nur
-       der Name der Datei, den der Verweis-Satz oben bereits nennt. */
+       der Name der Datei, den der Verweis-Satz oben bereits nennt.
+       Der ganze Meta-Block traegt data-box="chatgpt" — denselben Umschalt-
+       Mechanismus wie die .prompt-Boxen selbst (data-action="fassung" in
+       app.js toggelt jedes Element mit passendem data-box). Ohne diese
+       Kopplung war der Block IMMER sichtbar, auch wenn der Claude-Tab aktiv
+       war (Fix-Runde 1, Review-Finding). Keine "on"-Klasse hier: die
+       ChatGPT-Fassung ist nicht der Default-Tab (fass[0] = Claude ist es),
+       der Block startet also verdeckt wie die ChatGPT-.prompt-Box selbst. */
     var chatgptTxt = fass.filter(function (f) { return f.k === 'chatgpt'; })[0].txt;
     var chatgptLaenge = chatgptTxt.length;
     var wissenName = I().projektWissenDateiname(kurs);
-    var chatgptMeta = '<div class="arow"><span class="dim">ChatGPT-Kompaktfassung: ' +
+    var chatgptMeta = '<div class="fassbox" data-box="chatgpt">' +
+      '<div class="arow"><span class="dim">ChatGPT-Kompaktfassung: ' +
         chatgptLaenge + ' Zeichen</span>' +
         '<button class="knopf" data-action="instruktionen-herunterladen">' +
         'Projekt-Wissen-Datei herunterladen</button></div>' +
@@ -1151,7 +1159,8 @@
           'ChatGPT-Feld (Grenze 8000 Zeichen). Das vollständige Kursbriefing liegt in der ' +
           'Projekt-Wissen-Datei <code>' + esc(wissenName) + '</code> — herunterladen und dort ' +
           'als Projekt-Wissen hochladen.</div>'
-        : '');
+        : '') +
+      '</div>';
 
     return '<h2 class="tun">Projekt-Instruktionen' +
         '<span class="tun-sub">in Claude und ChatGPT als Projekt-Anweisung einf&uuml;gen</span></h2>' +

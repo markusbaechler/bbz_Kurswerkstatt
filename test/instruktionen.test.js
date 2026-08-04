@@ -577,7 +577,7 @@ test('K1 (d): die Claude-Fassung ist byte-identisch zu vor dem Umbau (Fixture-Ve
   assert.strictEqual(t, CLAUDE_FIXTURE);
 });
 
-test('K1 (e): die Ansicht zeigt die Zeichenzahl, den Achtung-Kasten erst ab 8000 Zeichen und den Download-Knopf', () => {
+test('K1 (e): die Ansicht zeigt die Zeichenzahl, den Achtung-Kasten erst ab 8000 Zeichen und den Download-Knopf — alle drei nur in der ChatGPT-Fassung (Fix-Runde 1)', () => {
   const hKurz = ansichten.einSchritt(INHALT, AFL, 1, null,
     { ordnerFehlt: false, briefing: BRIEFING, ordnerName: 'AFL-001_x' });
   /* Praeziser als ein generisches /\d+ Zeichen/ — der Block zeigt auch die
@@ -588,6 +588,34 @@ test('K1 (e): die Ansicht zeigt die Zeichenzahl, den Achtung-Kasten erst ab 8000
     'Achtung-Kasten zeigt sich, obwohl die Kompaktfassung kurz ist');
   assert.ok(/data-action="instruktionen-herunterladen"/.test(hKurz), 'Download-Knopf fehlt');
   assert.ok(hKurz.indexOf('Projekt-Wissen-Datei herunterladen') >= 0, 'Knopfbeschriftung fehlt/weicht ab');
+
+  /* Fix-Runde 1 (Review-Finding): Zaehler/Knopf duerfen nicht IMMER sichtbar
+     sein, sondern nur, wenn die ChatGPT-Fassung aktiv ist — derselbe
+     data-box="chatgpt"-Umschalter wie bei der ChatGPT-.prompt-Box selbst
+     (app.js, data-action="fassung" schaltet jedes Element mit passendem
+     data-box mit). Ein Container ohne "on"-Klasse beim Initial-Render (Claude
+     ist Default-Tab, fass[0]) belegt, dass der Block anfangs verdeckt ist. */
+  const fassboxIdx = hKurz.indexOf('<div class="fassbox" data-box="chatgpt">');
+  assert.ok(fassboxIdx >= 0,
+    'Meta-Block traegt keinen data-box="chatgpt"-Container ohne "on" — waere immer sichtbar, auch im Claude-Tab');
+  assert.ok(hKurz.indexOf('<div class="fassbox on" data-box="chatgpt">') < 0,
+    'fassbox traegt beim Initial-Render die "on"-Klasse — Claude ist der Default-Tab, der Block muesste verdeckt starten');
+
+  const zaehlerIdx = hKurz.indexOf('ChatGPT-Kompaktfassung: ', fassboxIdx);
+  const knopfIdx = hKurz.indexOf('data-action="instruktionen-herunterladen"', fassboxIdx);
+  assert.ok(zaehlerIdx > fassboxIdx && zaehlerIdx - fassboxIdx < 200,
+    'Zeichenzahl steht nicht (mehr) innerhalb des fassbox-Containers — der immer-sichtbare Teil traegt sie faelschlich');
+  assert.ok(knopfIdx > fassboxIdx && knopfIdx - fassboxIdx < 300,
+    'Download-Knopf steht nicht (mehr) innerhalb des fassbox-Containers — der immer-sichtbare Teil traegt ihn faelschlich');
+
+  /* Derselbe data-box="chatgpt"-Wert traegt bereits die ChatGPT-.prompt-Box
+     (fass.map in instruktionenBlock) — der neue Container dockt an GENAU
+     diesem Attribut an (ein zweites Element mit demselben Wert), statt einen
+     eigenen, zweiten Umschalt-Mechanismus zu erfinden. */
+  const ersterTreffer = hKurz.indexOf('data-box="chatgpt"');
+  const zweiterTreffer = hKurz.indexOf('data-box="chatgpt"', ersterTreffer + 1);
+  assert.ok(ersterTreffer >= 0 && zweiterTreffer > ersterTreffer,
+    'Es gibt nur EIN data-box="chatgpt"-Element — die Kopplung an die bestehende .prompt-Box fehlt');
 
   /* Ein Dossier mit sehr vielen Quellen blaeht die Kompaktfassung ueber 8000
      Zeichen auf, OHNE dass der Briefing-Volltext je hineinginge (b) — der
@@ -607,4 +635,11 @@ test('K1 (e): die Ansicht zeigt die Zeichenzahl, den Achtung-Kasten erst ab 8000
     { ordnerFehlt: false, briefing: BRIEFING, ordnerName: 'AFL-001_x', dossier: dGross });
   assert.ok(hLang.indexOf('zu lang für das ChatGPT-Feld') >= 0,
     'Achtung-Kasten fehlt trotz einer Kompaktfassung ueber 8000 Zeichen');
+  /* Der Achtung-Kasten muss ebenfalls im selben, an ChatGPT gekoppelten
+     Container stehen — sonst waere GENAU der Kasten, den Fix-Runde 1
+     bemaengelte, wieder ausserhalb des Umschalters gelandet. */
+  const fassboxIdxLang = hLang.indexOf('<div class="fassbox" data-box="chatgpt">');
+  const kastenIdx = hLang.indexOf('Zu lang für ChatGPT', fassboxIdxLang);
+  assert.ok(fassboxIdxLang >= 0 && kastenIdx > fassboxIdxLang,
+    'Achtung-Kasten steht nicht innerhalb des fassbox-Containers');
 });

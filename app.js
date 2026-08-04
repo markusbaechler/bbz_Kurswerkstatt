@@ -2909,7 +2909,11 @@
         Array.prototype.forEach.call(box.querySelectorAll('.ptab'), function (x) {
           x.classList.toggle('on', x === t);
         });
-        Array.prototype.forEach.call(box.querySelectorAll('.prompt'), function (x) {
+        /* .prompt (der Text selbst) UND .fassbox (K1-Meta-Block: Zeichenzahl,
+           Achtung-Kasten, Download-Knopf) haengen am selben data-box-Attribut
+           und werden vom selben Umschalter mitgeschaltet — Fix-Runde 1,
+           Review-Finding: der Meta-Block war vorher immer sichtbar. */
+        Array.prototype.forEach.call(box.querySelectorAll('.prompt, .fassbox'), function (x) {
           x.classList.toggle('on', x.dataset.box === t.dataset.fassung);
         });
       }
