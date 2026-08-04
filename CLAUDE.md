@@ -3244,3 +3244,73 @@ erneut geprüft: `node --test` → **722/722 grün**.
 angefordert bzw. selbst übernommen (die Testdateien `_tmp-test.blocks`/`_tmp-illu.png` lagen im
 Repo-Root bereit, wurden für diese Task nicht committet). Der Beweis für den reproduzierten
 Befund ist Test (2) — exakt der gemeldete Fall.
+
+## Fix-Task B9-F2: Bild-Extents auf den Satzspiegel der Vorlage gedeckelt
+
+**Live-Befund aus der Abnahme (am echten, App-gebauten Word verifiziert):** eine hochgeladene
+Illustration wurde mit Extent 17145000×8191500 EMU eingebettet = 18,9 Zoll breit — Word zeigte sie
+riesig und beschnitten. **Ursache-Kette:** hochgeladene PNGs kommen ohne mitgelieferte logische
+Masse in den `bilder`-Kontrakt → `bildAbsatzAusEintrag()` fällt auf den IHDR-Rückfall
+(`pngMasse()`) zurück → das PNG war mit Canvas-Faktor 2 gerendert (1800×860 statt 900×430 logisch)
+→ 1800 px × 9525 = die gemeldeten 17145000 EMU. **Zusätzlich:** selbst ein korrekt bemessenes
+Diagramm (900 px logisch = 9,4 Zoll) war breiter als jeder übliche Satzspiegel — es gab bis dahin
+gar keine Obergrenze, unabhängig von der Faktor-2-Frage.
+
+**Fix, an einer Stelle (`extentEmuGedeckelt()`, neu):** die Textbreite der Vorlage wird aus
+demselben `sectPr` gelesen, das `baue()` ohnehin unverändert aus der Vorlage übernimmt (kein
+zweiter Lesevorgang, keine zweite Quelle für dieselbe Seiteneinrichtung) —
+`textbreiteEmuVon(sectPr)` liest `w:pgSz w:w` minus `w:pgMar w:left`/`w:right` (Twips), rechnet
+`EMU = Twips × 635` (1 Twip = 1/20 Punkt). **Fallback, falls einzelne Attribute fehlen:** die
+echten Word-Defaults für ein A4-Dokument — Seitenbreite 11906 Twips, je 1417 Twips (2,5 cm)
+Rand links/rechts (dasselbe Mass, das die Test-Vorlagen seit B4 ohnehin tragen) — kein geratener
+Wert, sondern das reale metrische Word-„Normal"-Layout. `extentEmuGedeckelt(breitePx, hoehePx,
+textbreiteEmu)` berechnet die rohe Extent-EMU wie bisher (`px × 9525`) und skaliert, **falls** die
+Breite die Textbreite überschreitet, BEIDE Achsen mit demselben Faktor herunter
+(Seitenverhältnis bleibt erhalten) — **nie hoch**: ein kleineres Bild bleibt unangetastet. `cx`
+trifft im gedeckelten Fall exakt `textbreiteEmu` (keine Rundungsdifferenz durch eine
+Rücktransformation), `cy` wird mit demselben Faktor gerundet.
+
+**Eine Code-Stelle für alle Bildtypen, kein Sonderfall je Typ:** sowohl `abbildungAbsatz()`
+(Diagramme) als auch `illustrationAbsatz()` (B6-Illustrationen) laufen durch dieselbe
+`bildAbsatzAusEintrag()`, die den Deckel jetzt IMMER nach der Massbestimmung anwendet — unabhängig
+davon, ob die Masse aus dem `bilder`-Kontrakt (logisch, Finding 1 der B4-Review) oder aus dem
+IHDR-Rückfall kamen. `drawingAbsatz()` selbst kennt die Herkunft der `cx`/`cy`-Werte nicht mehr —
+sie kommen fertig gedeckelt herein. Der `bilder`-Kontrakt (`{ bytes, breite, hoehe }`) bleibt
+unverändert; der Deckel sitzt bewusst NACH der Massbestimmung, nicht als Änderung an dieser
+Schnittstelle.
+
+**Tests (`test/docxbauen.test.js`, drei neue Fälle):** (1) ein Bild breiter als die Textbreite
+(US-Letter-Vorlage, 12240/1440 Twips → Textbreite 9360 Twips = 5943600 EMU, bewusst ein ANDERES
+sectPr als das A4-Standardfixture, um zu belegen, dass die Textbreite tatsächlich aus DIESEM
+sectPr gelesen wird) — ein 900×300-Bild (Verhältnis 3:1) landet exakt bei `cx="5943600"
+cy="1981200"`, die ungedeckelte Breite (`cx="8572500"`) steht nicht mehr im Dokument; (2) ein
+kleines Bild (300×200 logisch, Standardvorlage) bleibt bei `cx="2857500" cy="1905000"` —
+unverändert, kein Hochskalieren; (3) der F2-Kernfall: ein IHDR-Rückfall-Bild mit exakt den im
+Live-Befund gemessenen Massen (1800×860 px, Faktor-2-Illustration ohne mitgelieferte logische
+Grösse) landet gedeckelt bei `cx="5760720" cy="2752344"` (Standardvorlage), die gemeldeten
+`cx="17145000"` stehen explizit NICHT mehr im Dokument. **725 Tests grün** (Baseline 722 + 3
+neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** in `extentEmuGedeckelt()` die Deckel-Bedingung
+stillgelegt (`if (textbreiteEmu && cx > textbreiteEmu)` → `if (false && …)`), `node --test
+test/docxbauen.test.js`:
+```
+ℹ tests 27
+ℹ pass 25
+ℹ fail 2
+
+✖ baue(): ein Bild breiter als die Textbreite wird proportional auf die Textbreite heruntergedeckelt
+  AssertionError [ERR_ASSERTION]: cx muss exakt die Textbreite treffen, cy proportional (900:300 = 3:1 -> 5943600:1981200)
+✖ baue(): der Deckel greift auch im IHDR-Rueckfall (F2-Kernfall — Faktor-2-Illustration ohne logische Masse)
+  AssertionError [ERR_ASSERTION]: der Live-Befund (18.9 Zoll) darf nicht mehr auftreten
+  3519 !== -1
+```
+Genau die zwei Deckel-Tests fielen rot; der dritte neue Test („ein kleines Bild bleibt
+unverändert") blieb korrekt grün — er hängt gar nicht am Deckel, ein ungedeckeltes kleines Bild
+verhält sich identisch. Alle 25 übrigen Tests blieben grün; danach wiederhergestellt, komplette
+Suite erneut geprüft: `node --test` → **725/725 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** eine echte Live-Probe am App-gebauten Word (wie sie
+den Befund selbst hervorgebracht hat) ist Sache des Koordinators/B9, nicht Teil dieses Fix-Tasks —
+diese Task belegt ausschliesslich die berechneten EMU-Werte über `zip-lesen.js`, kein erneutes
+Word-Öffnen.

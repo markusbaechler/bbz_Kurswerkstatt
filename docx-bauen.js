@@ -37,7 +37,19 @@
    also DOPPELT so grosse Pixelmasse wie die logische Groesse; ohne die
    logischen Masse waere jedes B3-Diagramm im Word doppelt so gross wie
    beabsichtigt. Der Fallback bleibt fuer Bilder ohne bekannte logische
-   Groesse (z. B. eine hochgeladene Illustration ohne mitgelieferte Masse). */
+   Groesse (z. B. eine hochgeladene Illustration ohne mitgelieferte Masse).
+
+   Deckel auf den Satzspiegel (Live-Befund B9-F2, 2026-08-04): eine
+   hochgeladene Illustration ohne logische Masse fiel ueber den IHDR-
+   Rueckfall auf ihre (Faktor-2-)Pixelgroesse zurueck und landete bei 18.9
+   Zoll Breite im echten Word — riesig und beschnitten. Zusaetzlich war
+   selbst ein korrekt bemessenes Diagramm (900 px logisch = 9.4 Zoll) breiter
+   als jeder uebliche Satzspiegel. `extentEmuGedeckelt()` (s. u.) skaliert
+   JEDES Bild (Diagramm UND Illustration, EIN gemeinsamer Aufrufpfad ueber
+   bildAbsatzAusEintrag) proportional auf die Textbreite der Vorlage herunter,
+   NIE hoch — kleinere Bilder bleiben unveraendert. Die Textbreite kommt aus
+   demselben sectPr, das ohnehin aus der Vorlage uebernommen wird
+   (`textbreiteEmuVon()`), mit dokumentiertem Fallback. */
 (function (root) {
   'use strict';
 
@@ -178,6 +190,38 @@
     return alle[alle.length - 1];
   }
 
+  /* ---------- Textbreite der Vorlage (Satzspiegel) — B9-F2 ---------- */
+
+  /* A4-Standard (11906 Twips Seitenbreite) mit dem metrischen Word-„Normal"-
+     Rand (2.5 cm = 1417 Twips je Seite) — die echten Word-Defaults fuer ein
+     A4-Dokument, nicht geraten: dasselbe Mass, das auch die Test-Vorlagen in
+     test/docxbauen.test.js seit B4 tragen. Greift NUR, wenn das jeweilige
+     Attribut im sectPr der Vorlage fehlt — eine reale Vorlage traegt pgSz/
+     pgMar immer, das ist ein Randfall-Fallback, kein Regelfall. */
+  var FALLBACK_PGSZ_TWIPS = 11906;
+  var FALLBACK_MARGIN_TWIPS = 1417;
+  var TWIPS_ALS_EMU = 635; /* 1 Twip = 1/20 Punkt = 635 EMU */
+
+  /* Liest Seitenbreite minus linken/rechten Rand aus dem sectPr der Vorlage
+     und liefert die Textbreite in EMU — dieselbe sectPr-Zeichenkette, die
+     baue() ohnehin schon unveraendert an das neue document.xml haengt (kein
+     zweiter Lesevorgang, keine zweite Quelle fuer dieselbe Seiteneinrichtung). */
+  function textbreiteEmuVon(sectPrXml) {
+    var pgSzM = String(sectPrXml || '').match(/<w:pgSz\b[^>]*\bw:w="(\d+)"/);
+    var pgMarM = String(sectPrXml || '').match(/<w:pgMar\b[^>]*\/>/);
+    var pgBreite = pgSzM ? parseInt(pgSzM[1], 10) : FALLBACK_PGSZ_TWIPS;
+    var links = FALLBACK_MARGIN_TWIPS, rechts = FALLBACK_MARGIN_TWIPS;
+    if (pgMarM) {
+      var linksM = pgMarM[0].match(/\bw:left="(\d+)"/);
+      var rechtsM = pgMarM[0].match(/\bw:right="(\d+)"/);
+      if (linksM) links = parseInt(linksM[1], 10);
+      if (rechtsM) rechts = parseInt(rechtsM[1], 10);
+    }
+    var twips = pgBreite - links - rechts;
+    if (!(twips > 0)) twips = FALLBACK_PGSZ_TWIPS - 2 * FALLBACK_MARGIN_TWIPS;
+    return twips * TWIPS_ALS_EMU;
+  }
+
   /* ---------- Bild-Groesse aus dem PNG-Header (IHDR) ---------- */
 
   var PNG_SIGNATUR = [137, 80, 78, 71, 13, 10, 26, 10];
@@ -204,22 +248,43 @@
     return { breite: FALLBACK_BREITE, hoehe: FALLBACK_HOEHE };
   }
 
-  /* Extent (EMU) = Pixel * 9525 (96 dpi) — Koordinator-Vorgabe (Task-Brief).
-     breitePx/hoehePx sind hier bereits die LOGISCHEN Masse (aufgeloest von
+  /* Extent (EMU) = Pixel * 9525 (96 dpi) — Koordinator-Vorgabe (Task-Brief),
+     GEDECKELT auf die Textbreite der Vorlage (B9-F2, s. Kommentarkopf):
+     ueberschreitet die rohe Breite die Textbreite, wird BEIDE Achsen mit
+     demselben Faktor herunterskaliert (Seitenverhaeltnis bleibt erhalten) —
+     NIE hochskaliert, ein kleineres Bild bleibt unangetastet. `cx` trifft im
+     gedeckelten Fall exakt `textbreiteEmu` (kein Rundungsrest durch die
+     Ruecktransformation), `cy` wird mit demselben Faktor gerundet. Fehlt
+     `textbreiteEmu` (z. B. `0`/`undefined`), greift kein Deckel — bewusst
+     kein zweiter Fallback-Wert hier, `textbreiteEmuVon()` liefert immer eine
+     Zahl > 0. EIN gemeinsamer Aufrufpfad fuer Diagramme UND Illustrationen
+     (s. bildAbsatzAusEintrag) — kein Sonderfall je Bildtyp. */
+  function extentEmuGedeckelt(breitePx, hoehePx, textbreiteEmu) {
+    var cx = breitePx * 9525, cy = hoehePx * 9525;
+    if (textbreiteEmu && cx > textbreiteEmu) {
+      var faktor = textbreiteEmu / cx;
+      cx = textbreiteEmu;
+      cy = Math.round(cy * faktor);
+    }
+    return { cx: cx, cy: cy };
+  }
+
+  /* breitePx/hoehePx sind hier bereits die LOGISCHEN Masse (aufgeloest von
      bildAbsatzAusEintrag() — bevorzugt aus dem bilder-Kontrakt, sonst der
-     IHDR-Rueckfall), diese Funktion selbst kennt die Herkunft nicht mehr. */
-  function drawingAbsatz(rid, dateiname, breitePx, hoehePx, docPrId) {
-    var emuB = breitePx * 9525, emuH = hoehePx * 9525;
+     IHDR-Rueckfall), cx/cy die daraus GEDECKELTEN EMU-Werte
+     (extentEmuGedeckelt) — diese Funktion selbst kennt beide Herkuenfte
+     nicht mehr, sie setzt nur noch das XML. */
+  function drawingAbsatz(rid, dateiname, cx, cy, docPrId) {
     return '<w:p><w:r><w:drawing>' +
       '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
-      '<wp:extent cx="' + emuB + '" cy="' + emuH + '"/>' +
+      '<wp:extent cx="' + cx + '" cy="' + cy + '"/>' +
       '<wp:docPr id="' + docPrId + '" name="' + esc(dateiname) + '"/>' +
       '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>' +
       '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture">' +
       '<pic:pic>' +
       '<pic:nvPicPr><pic:cNvPr id="' + docPrId + '" name="' + esc(dateiname) + '"/><pic:cNvPicPr/></pic:nvPicPr>' +
       '<pic:blipFill><a:blip r:embed="' + rid + '"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
-      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + emuB + '" cy="' + emuH + '"/></a:xfrm>' +
+      '<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>' +
       '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>' +
       '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>';
   }
@@ -233,7 +298,9 @@
      Finding 1 der Review). Die logischen Masse aus dem Kontrakt haben IMMER
      Vorrang vor dem PNG-IHDR — nur wenn beide fehlen, liest pngMasse() das
      IHDR (das bei einem diagrammZeichnen.png()-Bild den Canvas-Faktor 2
-     traegt, s. o.). */
+     traegt, s. o.). ctx.textbreiteEmu deckelt danach BEIDE Quellen gleich
+     (extentEmuGedeckelt, B9-F2) — der Deckel sitzt NACH der Massbestimmung,
+     unabhaengig davon, woher breite/hoehe kamen. */
   function bildAbsatzAusEintrag(dateiname, eintrag, ctx) {
     var rid = ctx.relIds[dateiname];
     if (!rid) {
@@ -246,7 +313,8 @@
     var masse = (eintrag.breite && eintrag.hoehe)
       ? { breite: eintrag.breite, hoehe: eintrag.hoehe }
       : pngMasse(eintrag.bytes);
-    return drawingAbsatz(rid, dateiname, masse.breite, masse.hoehe, ctx.docPrZaehler);
+    var extent = extentEmuGedeckelt(masse.breite, masse.hoehe, ctx.textbreiteEmu);
+    return drawingAbsatz(rid, dateiname, extent.cx, extent.cy, ctx.docPrZaehler);
   }
 
   /* Dateiname-Konvention der gerenderten Diagramm-PNGs — oeffentlich
@@ -461,7 +529,8 @@
     var ctx = {
       kurs: gelesen.skript.kurs, variante: gelesen.skript.variante, bilder: bilder,
       relIds: {}, naechsteRid: naechsteRidAus(relsXml),
-      bildNr: 0, docPrZaehler: 0, neueBilder: []
+      bildNr: 0, docPrZaehler: 0, neueBilder: [],
+      textbreiteEmu: textbreiteEmuVon(sectPr) /* B9-F2: Deckel auf den Satzspiegel */
     };
 
     var body = bodyAbsaetze(gelesen, ctx);

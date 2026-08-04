@@ -59,12 +59,17 @@ function fakePng(breite, hoehe) {
 const STYLES_XML = '<w:styles><w:style w:styleId="Titel"><w:name w:val="Title"/></w:style>' +
   '<w:style w:styleId="berschrift1"><w:name w:val="heading 1"/></w:style></w:styles>';
 
+/* Default-sectPr: A4 (11906 Twips) mit 1417-Twips-Raendern (2.5 cm) —
+   Textbreite 11906 - 2*1417 = 9072 Twips = 5760720 EMU. opts.sectPr
+   ueberschreibt das komplett (B9-F2: eigene pgSz/pgMar je Test moeglich). */
 function vorlageBauen(opts) {
   opts = opts || {};
+  const sectPr = opts.ohneSectPr ? '' : (opts.sectPr ||
+    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+    '<w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417"/></w:sectPr>');
   const docXml = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
     '<w:body><w:p><w:r><w:t>Alter Inhalt, wird ersetzt</w:t></w:r></w:p>' +
-    (opts.ohneSectPr ? '' : '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
-      '<w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417"/></w:sectPr>') +
+    sectPr +
     '</w:body></w:document>';
   const relsXml = '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
     '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
@@ -264,6 +269,50 @@ test('baue(): ohne logische Masse im bilder-Kontrakt faellt der Extent auf das P
   const out = await docxBauen.baue(buffer, gelesen, bilder);
   const xml = await docXmlAus(out);
   assert.ok(xml.indexOf('<wp:extent cx="2857500" cy="1428750"/>') >= 0); // 300*9525, 150*9525
+});
+
+/* ---------- B9-F2: Deckel auf den Satzspiegel der Vorlage ---------- */
+
+test('baue(): ein Bild breiter als die Textbreite wird proportional auf die Textbreite heruntergedeckelt', async () => {
+  // US-Letter-Vorlage (12240 Twips) mit 1440-Twips-Raendern (1 Zoll) — bewusst ein
+  // ANDERES sectPr als das A4-Standard-Fixture, um zu belegen, dass die Textbreite
+  // tatsaechlich aus DIESEM sectPr gelesen wird: Textbreite = 12240-2*1440 = 9360
+  // Twips = 5943600 EMU.
+  const { buffer } = vorlageBauen({
+    sectPr: '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/>' +
+      '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr>'
+  });
+  const gelesen = gelesenFixture();
+  // 900x300 logisch (Standardbreite der SVG-Zeichner) -> roh 8572500x2857500 EMU,
+  // klar ueber der Textbreite von 5943600 EMU. Seitenverhaeltnis 3:1 bleibt erhalten.
+  const bilder = { [docxBauen.bildDateiname('BX-001', 'claude', 1)]: { breite: 900, hoehe: 300, bytes: fakePng(900, 300) } };
+  const out = await docxBauen.baue(buffer, gelesen, bilder);
+  const xml = await docXmlAus(out);
+  assert.ok(xml.indexOf('<wp:extent cx="5943600" cy="1981200"/>') >= 0,
+    'cx muss exakt die Textbreite treffen, cy proportional (900:300 = 3:1 -> 5943600:1981200)');
+  assert.strictEqual(xml.indexOf('cx="8572500"'), -1, 'die ungedeckelte, zu grosse Breite darf nicht stehen');
+});
+
+test('baue(): ein kleines Bild bleibt unveraendert — kein Hochskalieren auf die Textbreite', async () => {
+  const { buffer } = vorlageBauen(); // Default-sectPr, Textbreite 5760720 EMU
+  const gelesen = gelesenFixture();
+  const bilder = { [docxBauen.bildDateiname('BX-001', 'claude', 1)]: { breite: 300, hoehe: 200, bytes: fakePng(300, 200) } };
+  const out = await docxBauen.baue(buffer, gelesen, bilder);
+  const xml = await docXmlAus(out);
+  assert.ok(xml.indexOf('<wp:extent cx="2857500" cy="1905000"/>') >= 0); // 300*9525, 200*9525, unveraendert
+});
+
+test('baue(): der Deckel greift auch im IHDR-Rueckfall (F2-Kernfall — Faktor-2-Illustration ohne logische Masse)', async () => {
+  const { buffer } = vorlageBauen(); // Default-sectPr, Textbreite 5760720 EMU
+  const gelesen = gelesenFixture();
+  // Exakt die im Live-Befund gemessenen IHDR-Masse einer Faktor-2-gerenderten
+  // Illustration (1800x860 px) OHNE mitgelieferte logische Groesse — vorher
+  // landete das ungedeckelt bei genau den im Befund gemeldeten 17145000x8191500 EMU.
+  const bilder = { [docxBauen.bildDateiname('BX-001', 'claude', 1)]: { bytes: fakePng(1800, 860) } };
+  const out = await docxBauen.baue(buffer, gelesen, bilder);
+  const xml = await docXmlAus(out);
+  assert.strictEqual(xml.indexOf('cx="17145000"'), -1, 'der Live-Befund (18.9 Zoll) darf nicht mehr auftreten');
+  assert.ok(xml.indexOf('<wp:extent cx="5760720" cy="2752344"/>') >= 0);
 });
 
 test('baue(): vergleichstabelle wird eine w:tbl, keine Abbildung', async () => {
