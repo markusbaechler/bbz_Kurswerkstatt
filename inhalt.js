@@ -48,6 +48,16 @@
      (V1-Review-Minor, hier geschlossen, s. CLAUDE.md "Task V2"). */
   var STEUER_BAUSTEINE = { VALIDIERUNG: true, ILLUSTRATION: true };
 
+  /* V4 Fix-Nachtrag (Coordinator-Review, 2026-08-04): welche pruefung-Werte
+     einen Blockstrecken-Upload markieren (Blockdatei + optional PNGs,
+     K2-ZIP als Alternative) — Schritt 3 (B5, pruefung:'skript') UND Schritt 4
+     (V4, pruefung:'validierung'). EINE Liste (Konvention 9): ansichten.js
+     liest sie ueber istBlockstreckenPruefung() fuer den Datei-Input
+     (multiple/accept/Hinweistext), statt pruefung nur gegen 'skript' zu
+     pruefen — Schritt 2/6 (kein pruefung-Feld) bleiben unberuehrt, weiterhin
+     Einzeldatei. */
+  var BLOCKSTRECKEN_PRUEFUNGEN = ['skript', 'validierung'];
+
   /* Woerter eines Kapitels ueber alle NICHT-Steuer-Bausteine — eine Stelle
      fuer blocksPruefe (Schritt 3) UND validierungPruefe (Schritt 4). */
   function kapitelWortzahl(k) {
@@ -583,6 +593,15 @@
     darfHochladen: function (i, schrittId) {
       var e = ((i['ablage-kontrakt'] || {}).schritte || {})[String(schrittId)];
       return !!(e && Array.isArray(e.wege) && e.wege.indexOf('hochladen') >= 0);
+    },
+
+    /* V4 Fix-Nachtrag: ist dieser pruefung-Wert eine Blockstrecke (Blockdatei
+       + optional PNGs/ZIP statt Einzeldatei)? EINE Stelle fuer die Frage
+       (Konvention 9) — ansichten.js entscheidet darueber, ob der Datei-Input
+       `multiple`/`.zip`-accept/den Blockstrecken-Hinweistext traegt, statt
+       eine zweite Kopie der Liste zu fuehren. */
+    istBlockstreckenPruefung: function (pruefung) {
+      return BLOCKSTRECKEN_PRUEFUNGEN.indexOf(pruefung) >= 0;
     },
 
     /* --- Varianten ---

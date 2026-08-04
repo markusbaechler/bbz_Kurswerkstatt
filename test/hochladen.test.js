@@ -165,6 +165,25 @@ test('Schritt 2 (kein Blockdatei-Gate) traegt weiterhin KEIN multiple', () => {
   assert.ok(!/id="datei"[^>]*\bmultiple\b/.test(h), 'Schritt 2 haette kein multiple tragen sollen');
 });
 
+/* V4 Fix-Nachtrag (Coordinator-Review): Schritt 4 (pruefung:'validierung')
+   baut wie Schritt 3 auf einer Blockdatei auf — istBlockUpload in ansichten.js
+   muss deshalb auch fuer 'validierung' greifen, nicht nur fuer 'skript'.
+   Gegenprobe direkt daneben: Schritt 2 (kein pruefung-Feld) bleibt unveraendert
+   bei der Einzeldatei. */
+test('V4 Fix-Nachtrag: Schritt 4 (Blockstrecke) traegt ebenfalls multiple + .zip-accept + den Blockstrecken-Hinweistext', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 4, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(/id="datei"[^>]*\bmultiple\b/.test(h), 'kein multiple am Datei-Input (Schritt 4)');
+  assert.ok(/accept="\.blocks,\.txt,\.png,\.zip"/.test(h), 'accept nennt nicht .blocks/.txt/.png/.zip (Schritt 4)');
+  assert.ok(/\.zip/.test(h), 'kein Hinweis auf das ZIP-Paket (Schritt 4)');
+  assert.ok(/Blockdatei/.test(h), 'kein Blockstrecken-Hinweistext (Schritt 4)');
+});
+
+test('V4 Fix-Nachtrag Gegenprobe: Schritt 2 bleibt unveraendert Einzeldatei, kein Blockstrecken-Hinweis', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 2, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(!/id="datei"[^>]*\bmultiple\b/.test(h), 'Schritt 2 haette weiterhin kein multiple tragen sollen');
+  assert.ok(!/accept="\.blocks,\.txt,\.png,\.zip"/.test(h), 'Schritt 2 haette weiterhin kein Blockstrecken-accept tragen sollen');
+});
+
 /* ---------- controller.hochladen: Upload-Strukturpruefung (T11) ----------
    Das Drift-Netz fuer chat-generierte Contract-Excels: eine erfundene Spalte
    ging bei AFL-001 unbemerkt durch Gate 1. Nur wenn der Kontrakt fuer den

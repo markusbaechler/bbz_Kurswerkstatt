@@ -4422,16 +4422,42 @@ rohe Feldsyntax an Position 979 statt der erwarteten Abwesenheit (`-1`), exakt d
 vorhergesagte Befund. Alle anderen 27 Tests blieben grün; danach die Zeile wiederhergestellt,
 komplette Suite erneut geprüft: `node --test` → **801/801 grün**.
 
-**Offen / bewusst nicht Teil dieser Task:** `ansichten.js` ist nicht Teil des Brief-Dateiumfangs —
-der Hochladen-Block von Schritt 4 zeigt deshalb weiterhin den einfachen Einzeldatei-Input (kein
-`multiple`, kein `.zip`/`.blocks`-`accept`), obwohl der Kontrakt für Schritt 4 (wie für Schritt 3
-seit B5/K2) eine Blockdatei plus optionale neue PNGs bzw. ein ZIP-Paket erwartet — `istBlockUpload`
-in `ansichten.js` bleibt an `ablage.pruefung === 'skript'` gebunden, `'validierung'` müsste dort
-ergänzt werden. Kein Regressionsrisiko (rein additive Erweiterung einer bestehenden Bedingung,
-kontrakt-getrieben), aber noch kein Live-Nutzen über die Kurswerkstatt-UI, bis das nachgezogen ist
-— vermutlich Teil einer der nächsten Etappe-4-Tasks (V5 Review-Ansicht/Register). Das reale
-`ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 4 weiterhin nicht
-`pruefung: 'validierung'`/`quelle: 'blocks'`/`ext: 'docx'` (Weg B, unverändert seit V2) — ohne das
-Feld greift das gesamte V4-Gate nirgends live, kein Regressionsrisiko. Registerschreiben (das
-Kursdossier-Register je Lerneinheit, Meta-Architektur) ist V7, bewusst nicht Teil dieser Task —
-V4 schreibt ausschliesslich `status.content`.
+**Offen / bewusst nicht Teil dieser Task:** das reale `ablage-kontrakt.json`/`schritte.json` in
+SharePoint führen für Schritt 4 weiterhin nicht `pruefung: 'validierung'`/`quelle: 'blocks'`/
+`ext: 'docx'` (Weg B, unverändert seit V2) — ohne das Feld greift das gesamte V4-Gate nirgends
+live, kein Regressionsrisiko. Registerschreiben (das Kursdossier-Register je Lerneinheit, Meta-
+Architektur) ist V7, bewusst nicht Teil dieser Task — V4 schreibt ausschliesslich `status.content`.
+
+### Fix-Nachtrag (Coordinator-Review, 2026-08-04): `ansichten.js` erkennt beide Blockstrecken
+
+**Finding:** der erste V4-Durchlauf liess `ansichten.js` unangetastet (nicht im Brief-Dateiumfang)
+— der Hochladen-Block von Schritt 4 zeigte deshalb weiterhin den einfachen Einzeldatei-Input
+(kein `multiple`, kein `.zip`/`.blocks`-`accept`, kein Blockstrecken-Hinweistext), obwohl der
+Kontrakt für Schritt 4 (wie für Schritt 3 seit B5/K2) eine Blockdatei plus optionale neue PNGs
+bzw. ein ZIP-Paket erwartet: `var istBlockUpload = ablage && ablage.pruefung === 'skript';` prüfte
+nur den Schritt-3-Wert. Eine echte, nicht nur kosmetische Scope-Lücke — ohne Fix wäre der neue
+Schritt-4-Upload-Weg über die UI unbedienbar geblieben (kein `multiple`, also keine Illustrations-
+PNGs neben der Blockdatei wählbar; kein `.zip`-`accept`, also der K2-Weg optisch nicht nahegelegt).
+
+**Fix, eine Stelle statt einer zweiten Liste (Konvention 9):** `inhalt.js` bekommt die kanonische
+Liste `BLOCKSTRECKEN_PRUEFUNGEN = ['skript', 'validierung']` (modulweiter `var`, Muster
+`STEUER_BAUSTEINE`) plus die reine Funktion `inhalt.istBlockstreckenPruefung(pruefung)` —
+`BLOCKSTRECKEN_PRUEFUNGEN.indexOf(pruefung) >= 0`. `ansichten.js` liest sie über den bestehenden
+Lazy-Accessor `I()`: `var istBlockUpload = !!(ablage && I().istBlockstreckenPruefung(ablage.pruefung));`
+— ersetzt den harten `=== 'skript'`-Vergleich 1:1, alle drei Verwendungsstellen (`multiple`/
+`accept`, der Blockstrecken-Hinweistext) hängen unverändert an derselben `istBlockUpload`-Variable,
+keine zweite Ableitung nötig. **Kein paralleler `istBlockUpload` in `app.js` gefunden** — dort gibt
+es stattdessen zwei EIGENSTÄNDIGE Booleans (`geprueftPflichtSkript`/`geprueftPflichtValidierung`),
+die für unterschiedliche Zwecke (welches Gate scharf ist) verschiedene UND-Bedingungen brauchen
+(zusätzlich `erwarteteEndung === 'docx'`) — sie in denselben Helfer zu zwingen hätte dort eine
+künstliche Vereinigung erzwungen, wo keine gebraucht wird; `istBlockstreckenPruefung` bleibt
+deshalb bewusst `ansichten.js`-exklusiv genutzt, als die eine Quelle für „ist dieser `pruefung`-Wert
+überhaupt eine Blockstrecke" — eine andere, engere Frage als „ist GENAU dieses Gate scharf".
+Schritt 2/6 (kein `pruefung`-Feld am Schritt, `ablage.pruefung` ist `null`) bleiben unverändert bei
+der Einzeldatei — `BLOCKSTRECKEN_PRUEFUNGEN.indexOf(null)` ist `-1`.
+
+**Tests (`test/hochladen.test.js`, zwei neue Fälle):** Schritt 4 trägt `multiple`, das volle
+`.blocks,.txt,.png,.zip`-`accept` und den Blockstrecken-Hinweistext (Muster der bestehenden
+Schritt-3-Tests, jetzt auch für Schritt 4 belegt); die Gegenprobe direkt daneben hält fest, dass
+Schritt 2 unverändert kein `multiple` und kein Blockstrecken-`accept` trägt. **803 Tests grün**
+(801 + 2 neue).

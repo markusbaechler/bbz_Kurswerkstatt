@@ -948,15 +948,18 @@
            Schritt 3 (B5, Etappe 3b): seit der E5-Revision liefert der Chat
            die BLOCKDATEI statt der .docx — der Input braucht dafuer
            `multiple` (Blockdatei PLUS beliebig viele Illustrations-PNGs in
-           EINER Auswahl), nur dort, wo der Kontrakt pruefung:'skript'
-           fuehrt (ablage.pruefung, s. inhalt.ablageVon). */
+           EINER Auswahl). V4 Fix-Nachtrag: Schritt 4 baut ebenso auf einer
+           Blockdatei auf (pruefung:'validierung') — istBlockstreckenPruefung()
+           entscheidet ueber BEIDE Werte (eine Stelle, Konvention 9), statt
+           pruefung nur gegen 'skript' zu vergleichen. Schritt 2/6 (kein
+           pruefung-Feld) bleiben unberuehrt, weiterhin Einzeldatei. */
     if (kurs && I().darfHochladen(inh, schrittId) && !ablageDaten.ordnerFehlt) {
       /* Die Variante steht oben schon fest — hier wird sie nur noch benutzt. */
       var hziel = Array.isArray(ablageDaten.dateien)
         ? I().hochladeZiel(inh, schrittId, kurs.kursId, ablageDaten.dateien, variante)
         : null;
       var endung = I().erwarteteEndung(inh, schrittId);
-      var istBlockUpload = ablage && ablage.pruefung === 'skript';
+      var istBlockUpload = !!(ablage && I().istBlockstreckenPruefung(ablage.pruefung));
 
       h += '<h2 class="tun">Datei hochladen' +
            '<span class="tun-sub">die Kurswerkstatt vergibt Ordner und Namen</span></h2>';
