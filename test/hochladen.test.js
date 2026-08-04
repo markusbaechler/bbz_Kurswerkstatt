@@ -15,7 +15,12 @@ test('nur wo der Kontrakt den Weg nennt', () => {
   assert.strictEqual(inhalt.darfHochladen(INHALT, 2), true, 'Excel');
   assert.strictEqual(inhalt.darfHochladen(INHALT, 6), true, 'Moodle-Export');
   assert.strictEqual(inhalt.darfHochladen(INHALT, 3), true, 'Content — zwei Varianten, oft aus dem Chat');
-  [1, 4, 5, 7, 8].forEach(function (n) {
+  /* V2 (Etappe 4): Schritt 4 fuehrt seit der Fixture-Umstellung auf die
+     Blockdatei (ext: 'docx', quelle: 'blocks', pruefung: 'validierung')
+     ebenfalls 'hochladen' in wege — dokumentierte Fixture-Drift, wie schon
+     bei Z10 fuer Schritt 2. */
+  assert.strictEqual(inhalt.darfHochladen(INHALT, 4), true, 'Validierung — Blockdatei wie Schritt 3');
+  [1, 5, 7, 8].forEach(function (n) {
     assert.strictEqual(inhalt.darfHochladen(INHALT, n), false, 'Schritt ' + n);
   });
 });

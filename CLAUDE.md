@@ -4072,3 +4072,118 @@ Kontraktfeld ein, das bräuchte erst V2/V9). Kein eigener Absatz für VALIDIERUN
 (s. o.) und keine `skript-abnahme.cjs`-Prüfung dafür — beides ausserhalb des V1-Scopes. Die
 Review-Ansicht (V5) und die schrittspezifische Pflicht/Verbots-Prüfung (V2, „darf/muss der Block
 in Schritt 3 vs. Schritt 4 stehen") lesen `kapitel.validierung` in einer späteren Task.
+
+## Etappe 4 / Task V2: `inhalt.validierungPruefe` + Regressionsbremse + Schritt-3-Verbot
+
+Auf der V1-Grammatik (`###VALIDIERUNG`, `kapitel.validierung = {herkunft, beleg, divergenz,
+begruendung}` oder `null`) baut V2 die reinen Schritt-4-Prüfregeln — Gegenstück zu `blocksPruefe`
+(Schritt 3, B5), mit umgekehrter VALIDIERUNG-Pflicht: verboten in Schritt 3, Pflicht in Schritt 4.
+Reine Funktionen, kein DOM, kein Netz (Muster A2/B5/T11).
+
+**`blocksPruefe` (Schritt 3) weist ###VALIDIERUNG jetzt zurück** — „Kapitel {ek}: ###VALIDIERUNG
+gehört nicht in einen Entwurf — Validierung ist Schritt 4." Der Parser (`skript-lesen.js`) lässt
+den Block syntaktisch zu (er ist schrittneutral, V1) — nur `blocksPruefe()` kennt den Unterschied
+zwischen Schritt 3 und 4.
+
+**`inhalt.validierungPruefe(gelesen, d, kursId, varianten) -> { fehler: [], hinweise: [] } | null`**
+— `null` ohne (geladenes) Dossier, ungeprüft ist nie grün (Muster `blocksPruefe`). Baut auf den
+`blocksPruefe`-Grundregeln auf (Marker-Verbot, Wortbudget) — **gemeinsame private Helfer**
+(`markerVerbotPruefe`, `wortbudgetPruefe`, `kapitelWortzahl`), nicht dupliziert (Konvention 9):
+beide Prüfer rufen dieselben Funktionen, ein Fix an einer Regel gilt automatisch für beide
+Schritte. Vier zusätzliche Regeln:
+
+1. **`###VALIDIERUNG` ist je Kapitel PFLICHT** (umgekehrt zu Schritt 3) — fehlt `kapitel.validierung`
+   (`null`), ein Fehler je Kapitel: „Kapitel {ek}: ###VALIDIERUNG fehlt — Validierung ist in
+   Schritt 4 Pflicht."
+2. **Leseliste vollständig** — dieselbe Q-ID-Wortgrenzen-Regel (`\bQ-\d{3}\b`) wie `blocksPruefe`,
+   aber eine fehlende Dossier-Q-ID ist hier ein **Fehler**, kein Hinweis mehr: „Leseliste
+   unvollständig — Dossier-Quelle(n) {IDs} fehlen in der Leseliste." Schritt 4 ist der letzte Halt
+   vor der fachlichen Freigabe — eine Teil-Lieferung, die in Schritt 3 noch legitim war, ist hier
+   nicht mehr akzeptabel.
+3. **`divergenz: offen` braucht einen Eintrag in `###OFFEN`** — Abgleich über die EK-ID als
+   Substring im Offen-Text (kein starres Format vorausgesetzt, wie bei `###ZUORDNUNG`/`###OFFEN`
+   sonst üblich). Fehlt er: „offene Divergenz {ek} fehlt in ###OFFEN" (Brief-Wortlaut).
+4. **Regressionsbremse.** Fehlt `varianten.claude` oder `varianten.chatgpt` ganz (`null`), bricht
+   die Regel mit GENAU EINEM Fehler ab — „Variantenvergleich braucht beide Skript-Varianten —
+   {fehlende} fehlt in 03_content" —, **keine** Marken-Fehler zusätzlich: ohne beide
+   Vergleichsgrössen wäre jede Marke geraten, nicht gemessen. Sonst gilt je Kapitel/EK (Kapitel
+   über `ek` gematcht; fehlt ein Kapitel in einer Variante, zählt sie mit 0) eine Untergrenze je
+   Marke, unabhängig von den anderen Marken — der HÖHERE Wert der beiden Varianten:
+   - **(a) Zahl der nicht-leeren Inhalts-Bausteine** — `Object.keys(teile)` ohne
+     VALIDIERUNG/ILLUSTRATION (Steuerdaten), nicht-leerer Text.
+   - **(b) Ziffern-Zahlen im BEISPIEL-Baustein** — neuer öffentlicher Helfer
+     `inhalt.zahlenImText(text)`, Regex `/\d+(?:[.']\d+)*/g`: ein Tausendertrennzeichen (Punkt
+     ODER Apostroph, z. B. `34'128` oder `3.5`) hält eine Zahl zusammen und zählt als EINE Zahl.
+   - **(c) Zahl der `###ABBILDUNG`en** (`abbildungen.length`, `vergleichstabelle` zählt mit — sie
+     liegt in `abbildungen`, wird nur nicht als Bild gezeichnet).
+   Ein Verstoss erzeugt einen Fehler je Kapitel+Marke mit Ist/Soll, z. B. „Kapitel VL-002-EK-003:
+   Bausteine 4 < 6 (Untergrenze aus Variante claude)". **Bewusst KEINE Wortzahl-Marke** (Entscheid
+   2026-07-24, Brief) — das Wortbudget oben deckt die Mindestmenge bereits ab.
+
+**Wortbudget-Ausschluss (V1-Review-Minor, hier geschlossen):** `kapitelWortzahl(k)` — der jetzt
+gemeinsame Zähler beider Prüfer — zählt `VALIDIERUNG`- und `ILLUSTRATION`-Text (rohe Feldsyntax,
+`herkunft: …`/`datei: …` usw.) NICHT mit. Vorher zählte das Wortbudget in `blocksPruefe` diesen
+Steuertext versehentlich mit (seit B6) — ein langer `beleg:`-Text oder eine ausführliche
+Bild-Regie konnte das Budget künstlich über `hartMin` heben, ohne dass ein Mensch mehr Fliesstext
+geschrieben hätte. Eine Ausschlussliste (`STEUER_BAUSTEINE = {VALIDIERUNG:true, ILLUSTRATION:true}`)
+an einer Stelle (Konvention 9) — `kapitelWortzahl` UND `nichtLeereBausteine` (Regel 4a) nutzen sie
+gleichermassen.
+
+**Aufrufer-Vertrag (V4, noch nicht Teil dieser Task):** `validierungPruefe` liest `varianten` als
+bereits geparste `.blocks`-Ergebnisse (`skriptLesen.lies()`) — kein Netz, kein Datei-Lesen hier.
+`kursId` wird von keiner Regel ausgewertet; Teil der Signatur, weil der Aufrufer ihn wie bei
+`blocksPruefe`/Schritt-3-Hochladen ohnehin zur Hand hat (Platz für einen späteren
+Kurs-ID-Sicherheitsnetz-Guard, Muster B5 Fix-Runde 1 Finding 3, ohne die Signatur nachträglich zu
+ändern).
+
+**`test/fixture.js` — Schritt 4 (dokumentierte Fixture-Drift, Muster Z10):** `ext: 'docx'`
+(vorher `html`), `quelle: 'blocks'` (neu, kein Aufrufer liest es in dieser Task — Vorbereitung für
+V4), `pruefung: 'validierung'` (der Haken für `validierungPruefe`, analog `pruefung: 'skript'` bei
+Schritt 3), `wege: ['chat','claude-code','hochladen']` (`hochladen` neu — Schritt 4 baut wie
+Schritt 3 auf der Blockdatei auf). **Kein eigenes `varianten`-Feld an Schritt 4** — Schritt 4
+validiert GEGEN die beiden Schritt-3-Varianten, führt selbst keine. `format` bleibt unverändert
+`'html'` (nicht Teil des Briefs, keine Stelle im Code liest `.format === …` konditional — kein
+Regressionsrisiko). Die Fixture-Änderung zieht `inhalt.darfHochladen(INHALT, 4)` von `false` auf
+`true` — genau ein bestehender Test (`test/hochladen.test.js`, „nur wo der Kontrakt den Weg
+nennt") war darauf gepinnt und wurde wie bei Z10 nachgezogen, kein Verhaltensfehler.
+
+**Tests:** `test/skriptpruefe.test.js`, 22 neue Fälle — Schritt-3-Verbot (positiv/Gegenprobe),
+Wortbudget-Ausschluss je einmal für Schritt 3 (ILLUSTRATION) und Schritt 4 (VALIDIERUNG-`beleg`,
+über die ECHTE `skriptLesen.lies()`-Kette, weil die direkt konstruierten Regel-4-Fixtures
+`teile.VALIDIERUNG` gar nicht befüllen), `zahlenImText` (5 Fälle: einfache Zahlen,
+Tausendertrennzeichen, Satzpunkt ohne folgende Ziffer trennt, keine Ziffern, leer/undefined/null),
+je Regel 1–3 positiv+Gegenprobe, Regel 4 mit vier Fällen (unabhängige Maxima je Marke — A stärker
+in Bausteinen, B stärker in Zahlen, `beide Maxima gelten` —, Ist==Soll ist kein Fehler, eine
+fehlende Variante löst genau einen Abbruch-Fehler ohne Marken-Fehler aus, beide fehlenden
+Varianten nennt der eine Fehler beide), `null` ohne Dossier, ein Vollzufriedenheits-Test (alle
+vier Regeln erfüllt → `fehler: []`). `test/hochladen.test.js` — 1 Test nachgezogen (Fixture-Drift
+s. o.). **787 Tests grün** (Baseline 766 + 21 netto).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** die Maxima-Bildung
+`Math.max(m.a, m.b)` in der Regel-4-Schleife auf `Math.min(m.a, m.b)` gedreht, `node --test
+test/skriptpruefe.test.js`:
+```
+ℹ tests 38
+ℹ suites 0
+ℹ pass 37
+ℹ fail 1
+
+✖ Regel 4: unabhaengige Maxima je Marke — A staerker in Bausteinen, B staerker in Zahlen, beide Maxima gelten (0.4758ms)
+  AssertionError [ERR_ASSERTION]: ["Kapitel VL-002-EK-003: Wortbudget 274 Wörter unter dem Minimum von 500."]
+```
+Genau der eine dezidierte Regressionsbremse-Test (der die unabhängige Maxima-Wahl je Marke direkt
+beweist) fiel rot — mit `Math.min` sinkt jede Untergrenze, das Fixture-Kapitel unterschreitet sie
+dadurch nicht mehr, und der Test verfehlt seine erwarteten `Bausteine …`/`Zahlen im Beispiel
+…`-Meldungen. Alle anderen 37 Tests (inklusive der Gegenprobe „Ist == Soll" und der
+Fehlende-Variante-Fälle, die den Marken-Zweig gar nicht erreichen) blieben grün; danach die Zeile
+wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **787/787 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** `d.hinweise` bleibt in `validierungPruefe` immer `[]`
+— keine der vier V2-Regeln erzeugt einen Hinweis (alle sind Fehler-Regeln); die Signatur trägt
+das Feld trotzdem, für Konsistenz mit `blocksPruefe` und für einen möglichen späteren Aufrufer.
+`kursId` wird (noch) nicht ausgewertet, s. o. Das reale `ablage-kontrakt.json`/`schritte.json` in
+SharePoint führen für Schritt 4 weiterhin nicht `pruefung: 'validierung'`/`quelle: 'blocks'`/
+`ext: 'docx'` (Weg B) — ohne das Feld greift die Prüfung nirgends live, kein Regressionsrisiko.
+Die Verdrahtung in `controller.hochladen` (Datei-Klassifikation, Laden+Parsen der beiden
+Schritt-3-Varianten, Aufruf von `validierungPruefe`, Ablage) ist V4, nicht Teil von V2 — diese
+Task liefert ausschliesslich die reinen Prüffunktionen.

@@ -72,8 +72,16 @@
                ext: 'docx', format: 'word', wege: ['chat','claude-code','hochladen'], gate: null,
                qualitaet: '_zentral/prompt-bibliothek/skript-inhaltskontrakt.txt',
                pruefung: 'skript' },
-        '4': { ordner: '04_validierung', lieferobjekt: 'content', ext: 'html', format: 'html', wege: ['chat','claude-code'], gate: 'Sign-off',
-               qualitaet: '_zentral/prompt-bibliothek/content-inhaltskontrakt.txt' },
+        /* V2 (Etappe 4): Schritt 4 baut wie Schritt 3 auf der Blockdatei auf —
+           ext/quelle/pruefung spiegeln das (quelle: 'blocks' ist neu, kein
+           bestehender Aufrufer liest es in dieser Task; pruefung:
+           'validierung' ist der Haken fuer inhalt.validierungPruefe, analog
+           zu pruefung: 'skript' bei Schritt 3). KEIN eigenes varianten-Feld
+           — Schritt 4 validiert GEGEN die beiden Schritt-3-Varianten, fuehrt
+           selbst keine. */
+        '4': { ordner: '04_validierung', lieferobjekt: 'content', ext: 'docx', quelle: 'blocks', format: 'html', wege: ['chat','claude-code','hochladen'], gate: 'Sign-off',
+               qualitaet: '_zentral/prompt-bibliothek/content-inhaltskontrakt.txt',
+               pruefung: 'validierung' },
         '5': { ordner: '05_didaktik', lieferobjekt: 'umsetzung', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
         '6': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['claude-code','hochladen'], gate: null },
         '7': { ordner: '07_abnahme', lieferobjekt: 'abnahme', ext: 'md', format: 'text', wege: ['kurswerkstatt'], gate: 'Gate 2 · Schluss' },

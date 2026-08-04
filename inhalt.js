@@ -39,6 +39,85 @@
     throw new Error('skript-schema.js nicht geladen');
   }
 
+  /* V2 (Etappe 4): Baustein-Namen, die reine Steuerdaten tragen — VALIDIERUNG
+     (Herkunft/Beleg/Divergenz-Feldsyntax) und ILLUSTRATION (Bild-Regie-
+     Feldsyntax), kein Fliesstext, den ein Mensch liest. Eine Stelle
+     (Konvention 9): das Wortbudget (kapitelWortzahl) UND die Baustein-
+     Zaehlung der Regressionsbremse (nichtLeereBausteine, validierungPruefe
+     Regel 4a) nutzen dieselbe Ausschlussliste — Steuerdaten sind kein Content
+     (V1-Review-Minor, hier geschlossen, s. CLAUDE.md "Task V2"). */
+  var STEUER_BAUSTEINE = { VALIDIERUNG: true, ILLUSTRATION: true };
+
+  /* Woerter eines Kapitels ueber alle NICHT-Steuer-Bausteine — eine Stelle
+     fuer blocksPruefe (Schritt 3) UND validierungPruefe (Schritt 4). */
+  function kapitelWortzahl(k) {
+    var teile = (k && k.teile) || {};
+    return Object.keys(teile).reduce(function (n, name) {
+      if (STEUER_BAUSTEINE[name]) return n;
+      var t = String(teile[name] || '').trim();
+      return n + (t ? t.split(/\s+/).length : 0);
+    }, 0);
+  }
+
+  /* Marker-Verbot (E6) — eine Stelle fuer blocksPruefe UND validierungPruefe:
+     [ZU PRÜFEN darf in keinem Baustein-Text stehen — offene Punkte gehoeren
+     gesammelt in ###OFFEN, nicht verstreut ueber die Kapitel. */
+  function markerVerbotPruefe(kapitel, fehler) {
+    kapitel.forEach(function (k) {
+      var teile = k.teile || {};
+      Object.keys(teile).forEach(function (name) {
+        if (/\[ZU PR(Ü|UE)FEN/i.test(String(teile[name]))) {
+          fehler.push('Kapitel ' + (k.ek || '?') + ': Marker "[ZU PRÜFEN" in ###' + name +
+                       ' gefunden — offene Punkte gehören gesammelt in ###OFFEN.');
+        }
+      });
+    });
+  }
+
+  /* Wortbudget je Kapitel (SCHEMA.budget.hartMin) — eine Stelle fuer
+     blocksPruefe UND validierungPruefe. */
+  function wortbudgetPruefe(kapitel, fehler, hartMin) {
+    kapitel.forEach(function (k) {
+      var worte = kapitelWortzahl(k);
+      if (worte < hartMin) {
+        fehler.push('Kapitel ' + (k.ek || '?') + ': Wortbudget ' + worte + ' Wörter unter ' +
+                     'dem Minimum von ' + hartMin + '.');
+      }
+    });
+  }
+
+  /* Zahl der nicht-leeren INHALTS-Bausteine eines Kapitels (validierungPruefe
+     Regel 4a) — dieselbe Steuerdaten-Ausschlussliste wie kapitelWortzahl. */
+  function nichtLeereBausteine(k) {
+    var teile = (k && k.teile) || {};
+    return Object.keys(teile).filter(function (name) {
+      if (STEUER_BAUSTEINE[name]) return false;
+      return String(teile[name] || '').trim() !== '';
+    }).length;
+  }
+
+  /* Ziffern-Zahlen in einem Text zaehlen (validierungPruefe Regel 4b) — eine
+     Zahl darf ein Tausendertrennzeichen tragen (Punkt ODER Apostroph, z. B.
+     34'128 oder 3.5) und zaehlt dabei als EINE Zahl, nicht mehrere.
+     Oeffentlich (inhalt.zahlenImText) — validierungPruefe und ein eigener
+     Test brauchen denselben Zaehler (Konvention 9). */
+  function zahlenImText(text) {
+    var t = String(text == null ? '' : text);
+    var m = t.match(/\d+(?:[.']\d+)*/g);
+    return m ? m.length : 0;
+  }
+
+  /* Ein Kapitel einer Variante ueber die EK-ID finden (validierungPruefe
+     Regel 4) — fehlt es, zaehlt die Variante mit 0 (Brief: "hat eine
+     Variante kein Kapitel zu dieser EK, zaehlt ihr Wert 0"). */
+  function kapitelZuEk(gelesenVariante, ek) {
+    var liste = (gelesenVariante && Array.isArray(gelesenVariante.kapitel)) ? gelesenVariante.kapitel : [];
+    for (var i = 0; i < liste.length; i++) {
+      if (liste[i].ek === ek) return liste[i];
+    }
+    return null;
+  }
+
   var DATEIEN = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz', 'hf'];
   var PFLICHT = ['ablage-kontrakt', 'schritte', 'werkzeuge', 'referenz'];  /* hf darf fehlen */
 
@@ -1338,36 +1417,25 @@
       var kapitel = (gelesen && Array.isArray(gelesen.kapitel)) ? gelesen.kapitel : [];
       var gelesenListe = (gelesen && gelesen.quellen && gelesen.quellen.gelesen) || [];
 
-      /* Marker-Verbot (E6, unveraendert aus A2 uebernommen): [ZU PRÜFEN darf
-         in keinem Baustein-Text stehen — offene Punkte gehoeren gesammelt in
-         ###OFFEN, nicht verstreut ueber die Kapitel. */
+      /* V2 (Etappe 4): ###VALIDIERUNG gehoert erst in Schritt 4 (dort
+         PFLICHT, s. validierungPruefe Regel 1) — in einem Schritt-3-Entwurf
+         ist der Block ein Fehler, kein optionaler Baustein: Validierung ist
+         noch nicht dran. */
       kapitel.forEach(function (k) {
-        var teile = k.teile || {};
-        Object.keys(teile).forEach(function (name) {
-          if (/\[ZU PR(Ü|UE)FEN/i.test(String(teile[name]))) {
-            fehler.push('Kapitel ' + (k.ek || '?') + ': Marker "[ZU PRÜFEN" in ###' + name +
-                         ' gefunden — offene Punkte gehören gesammelt in ###OFFEN.');
-          }
-        });
-      });
-
-      /* Wortbudget je Kapitel (SCHEMA.budget.hartMin, s. skript-schema.js):
-         Summe der Woerter ueber alle Bausteintexte des Kapitels. Das Mass
-         ergaenzt die Substanzmarken (Pflichtbausteine), es ersetzt sie
-         nicht: die Marken pruefen, DASS gerechnet und gezeigt wird, das
-         Budget prueft, dass ueberhaupt genug ausgefuehrt wird. */
-      var hartMin = (S().SCHEMA.budget || {}).hartMin || 500;
-      kapitel.forEach(function (k) {
-        var teile = k.teile || {};
-        var worte = Object.keys(teile).reduce(function (n, name) {
-          var t = String(teile[name] || '').trim();
-          return n + (t ? t.split(/\s+/).length : 0);
-        }, 0);
-        if (worte < hartMin) {
-          fehler.push('Kapitel ' + (k.ek || '?') + ': Wortbudget ' + worte + ' Wörter unter ' +
-                       'dem Minimum von ' + hartMin + '.');
+        if (k.teile && k.teile.VALIDIERUNG) {
+          fehler.push('Kapitel ' + (k.ek || '?') + ': ###VALIDIERUNG gehört nicht in einen ' +
+                       'Entwurf — Validierung ist Schritt 4.');
         }
       });
+
+      /* Marker-Verbot (E6) und Wortbudget (SCHEMA.budget.hartMin) —
+         gemeinsame Helfer mit validierungPruefe (Konvention 9, s. oben). Das
+         Wortbudget ergaenzt die Substanzmarken (Pflichtbausteine), es
+         ersetzt sie nicht: die Marken pruefen, DASS gerechnet und gezeigt
+         wird, das Budget prueft, dass ueberhaupt genug ausgefuehrt wird. */
+      markerVerbotPruefe(kapitel, fehler);
+      var hartMin = (S().SCHEMA.budget || {}).hartMin || 500;
+      wortbudgetPruefe(kapitel, fehler, hartMin);
 
       /* Q-ID-Abgleich Leseliste gegen Dossier — Modus aus d.content_modus,
          wie A2. */
@@ -1465,6 +1533,126 @@
         if (name && !vorhanden[name]) fehlt.push(name);
       });
       return fehlt;
+    },
+
+    /* Ziffern-Zahlen in einem Text zaehlen — s. Kommentar bei der privaten
+       Funktion zahlenImText() oben (Regel 4b der Regressionsbremse). Hier
+       oeffentlich gemacht fuer einen eigenen Test und fuer V4/spaetere
+       Aufrufer (Konvention 9: eine Zaehlregel, ein Ort). */
+    zahlenImText: zahlenImText,
+
+    /* --- Der Validierungs-Pruefer (V2, Etappe 4) ---
+       Schritt 4 (Validierung) baut auf den Grundregeln von blocksPruefe auf
+       (Marker-Verbot, Wortbudget — dieselben Helfer, Konvention 9) und
+       prueft zusaetzlich vier V1/V2-spezifische Regeln: ###VALIDIERUNG ist
+       hier PFLICHT (umgekehrt zu Schritt 3, wo er verboten ist, s.
+       blocksPruefe oben), die Leseliste muss VOLLSTAENDIG sein (kein
+       Hinweis mehr wie in Schritt 3, sondern ein Fehler — Schritt 4 ist der
+       letzte Halt vor der fachlichen Freigabe), jede offene Divergenz
+       braucht einen ###OFFEN-Eintrag, und die Regressionsbremse verlangt,
+       dass das validierte Kapitel mindestens so viel Substanz traegt wie
+       das STAERKERE der beiden Schritt-3-Rohentwuerfe — je Marke einzeln,
+       nicht insgesamt (ein Kapitel darf in Bausteinen von Variante A und in
+       Zahlen von Variante B "lernen"). Bewusst KEINE Wortzahl-Marke
+       (Entscheid 2026-07-24, s. Brief) — das Wortbudget oben deckt die
+       Mindestmenge bereits ab, eine zweite Wortzahl-Schwelle waere
+       redundant.
+
+       validierungPruefe(gelesen, d, kursId, varianten) -> { fehler: [],
+       hinweise: [] } | null. null ohne (geladenes) Dossier — ungeprueft ist
+       nie gruen (Muster blocksPruefe/T11/A2). kursId wird heute von keiner
+       Regel ausgewertet — Teil der Signatur, weil der Aufrufer (V4) ihn wie
+       bei blocksPruefe/Schritt-3-Hochladen ohnehin zur Hand hat.
+
+       varianten = { claude: gelesenA|null, chatgpt: gelesenB|null } — die
+       BEREITS GEPARSTEN .blocks beider Schritt-3-Varianten; V4 laedt und
+       parst sie (kein Netz, kein DOM hier). Fehlt eine Variante ganz, ist
+       jeder Markenvergleich sinnlos (0 waere geraten, nicht gemessen) —
+       Regel 4 bricht dann mit GENAU EINEM Fehler ab, ohne Marken-Fehler
+       zusaetzlich. */
+    validierungPruefe: function (gelesen, d, kursId, varianten) {
+      if (!d || typeof d !== 'object') return null;
+      var fehler = [];
+      var hinweise = [];
+      var kapitel = (gelesen && Array.isArray(gelesen.kapitel)) ? gelesen.kapitel : [];
+      var gelesenListe = (gelesen && gelesen.quellen && gelesen.quellen.gelesen) || [];
+      var offenListe = (gelesen && Array.isArray(gelesen.offen)) ? gelesen.offen : [];
+
+      /* Grundregeln wie blocksPruefe (Konvention 9: gemeinsame Helfer, s.
+         oben) — nicht dupliziert, dieselben Funktionen. */
+      markerVerbotPruefe(kapitel, fehler);
+      var hartMin = (S().SCHEMA.budget || {}).hartMin || 500;
+      wortbudgetPruefe(kapitel, fehler, hartMin);
+
+      /* Regel 1: ###VALIDIERUNG ist je Kapitel PFLICHT — umgekehrt zu
+         Schritt 3 (blocksPruefe verbietet ihn dort). */
+      kapitel.forEach(function (k) {
+        if (!k.validierung) {
+          fehler.push('Kapitel ' + (k.ek || '?') + ': ###VALIDIERUNG fehlt — Validierung ist ' +
+                       'in Schritt 4 Pflicht.');
+        }
+      });
+
+      /* Regel 2: Leseliste vollstaendig — fehlende Dossier-Q-IDs sind HIER
+         ein Fehler (in Schritt 3/blocksPruefe nur ein Hinweis, s. dort). */
+      var gefunden = {};
+      gelesenListe.forEach(function (z) {
+        var m = String(z).match(/\bQ-\d{3}\b/g) || [];
+        m.forEach(function (id) { gefunden[id] = true; });
+      });
+      var dossierIds = (d.quellen || []).map(function (q) { return q && q.id; }).filter(Boolean);
+      var fehlendeIds = dossierIds.filter(function (id) { return !gefunden[id]; });
+      if (fehlendeIds.length) {
+        fehler.push('Leseliste unvollständig — Dossier-Quelle(n) ' + fehlendeIds.join(', ') +
+                     ' fehlen in der Leseliste.');
+      }
+
+      /* Regel 3: jede divergenz: offen braucht einen Eintrag in ###OFFEN —
+         Abgleich ueber die EK-ID als Substring im Offen-Text (kein starres
+         Format vorausgesetzt). */
+      kapitel.forEach(function (k) {
+        if (k.validierung && k.validierung.divergenz === 'offen') {
+          var imOffen = offenListe.some(function (z) { return String(z).indexOf(k.ek) >= 0; });
+          if (!imOffen) {
+            fehler.push('offene Divergenz ' + k.ek + ' fehlt in ###OFFEN');
+          }
+        }
+      });
+
+      /* Regel 4: Regressionsbremse. */
+      varianten = varianten || {};
+      var fehlendeVarianten = [];
+      if (!varianten.claude) fehlendeVarianten.push('claude');
+      if (!varianten.chatgpt) fehlendeVarianten.push('chatgpt');
+      if (fehlendeVarianten.length) {
+        fehler.push('Variantenvergleich braucht beide Skript-Varianten — ' +
+                     fehlendeVarianten.join(' und ') + ' fehlt in 03_content');
+      } else {
+        kapitel.forEach(function (k) {
+          var kA = kapitelZuEk(varianten.claude, k.ek);
+          var kB = kapitelZuEk(varianten.chatgpt, k.ek);
+          var beispielIst = (k.teile && k.teile.BEISPIEL) || '';
+          var beispielA = (kA && kA.teile && kA.teile.BEISPIEL) || '';
+          var beispielB = (kB && kB.teile && kB.teile.BEISPIEL) || '';
+          var marken = [
+            { name: 'Bausteine', ist: nichtLeereBausteine(k), a: nichtLeereBausteine(kA), b: nichtLeereBausteine(kB) },
+            { name: 'Zahlen im Beispiel', ist: zahlenImText(beispielIst), a: zahlenImText(beispielA), b: zahlenImText(beispielB) },
+            { name: 'Abbildungen', ist: (k.abbildungen || []).length,
+              a: (kA && kA.abbildungen) ? kA.abbildungen.length : 0,
+              b: (kB && kB.abbildungen) ? kB.abbildungen.length : 0 }
+          ];
+          marken.forEach(function (m) {
+            var untergrenze = Math.max(m.a, m.b);
+            if (m.ist < untergrenze) {
+              var quelle = m.a >= m.b ? 'claude' : 'chatgpt';
+              fehler.push('Kapitel ' + k.ek + ': ' + m.name + ' ' + m.ist + ' < ' + untergrenze +
+                           ' (Untergrenze aus Variante ' + quelle + ')');
+            }
+          });
+        });
+      }
+
+      return { fehler: fehler, hinweise: hinweise };
     },
 
     /* --- Projekt-Instruktionen fuer die beiden KI-Projekte (Schritt 1) ---
