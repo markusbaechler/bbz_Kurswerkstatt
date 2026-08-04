@@ -595,6 +595,27 @@
         .catch(function () { return null; });
     },
 
+    /* Eine Roh-Datei (kein Text) aus dem KURSORDNER lesen — Muster
+       zentralDateiRoh, aber im Kursordner statt in _zentral (V4, Etappe 4):
+       die Bild-Wiederverwendung von Schritt 4 (referenzierte Illustrationen,
+       die nicht im eigenen Upload liegen, werden aus 03_content/abbildungen
+       geholt) braucht ArrayBuffer statt Text — dateiLesen liefert nur Text.
+       null bei jedem Fehler (nicht gefunden, kein Kursordner, Netz) — kein
+       Wurf, der Aufrufer (controller.hochladen) entscheidet, ob das ein
+       Abbruch ist. */
+    kursDateiRoh: function (kursId, ordner, datei) {
+      return Promise.all([graph.driveId(), graph.kursOrdner(kursId), auth.token()])
+        .then(function (r) {
+          var did = r[0], ord = r[1], t = r[2];
+          if (!ord) return null;
+          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                '/items/' + ord.id + ':/' + encodeURI(graph.pfadImKursordner(ordner, datei)) + ':/content',
+                { headers: { Authorization: 'Bearer ' + t } })
+            .then(function (x) { return x.ok ? x.arrayBuffer() : null; });
+        })
+        .catch(function () { return null; });
+    },
+
     /* Wie dateiLesen, aber ohne die Fehlerkonflation: dateiLesen liefert null bei
        404 UND bei jedem anderen Fehler (Token, 5xx, Netz) — fuer Aufrufer, die still
        ersetzen duerfen, wenn eine Datei fehlt (Briefing). Fuer das Dossier ist das
@@ -2373,13 +2394,115 @@
          fuer alle drei Ablage-Schritte; die unvollstaendige Fassung bleibt
          liegen und gehoert von Hand in den SharePoint-Papierkorb, s. der
          Meldetext unten). */
-      function weiterMitSkriptBau(gelesen, hinweise, blockText, pngKandidaten) {
+      /* V4 (Etappe 4): der Schritt-4-Zweig des Blockdatei-Gates. Laedt und
+         parst die BEIDEN geltenden Schritt-3-Basisvarianten (kein Netz/DOM in
+         inhalt.js, deshalb hier) und ruft inhalt.validierungPruefe (V2)
+         gegen sie auf. Anders als Schritt 3 (illustrationenFehlend bricht
+         sofort ab) versucht Schritt 4 eine referenzierte, aber nicht im
+         eigenen Upload mitgelieferte Illustration zuerst aus
+         03_content/abbildungen WIEDERZUVERWENDEN — erst wenn sie auch dort
+         fehlt, ist es ein Abbruch (Task-Brief: "Bild-Wiederverwendung"). */
+      function weiterMitValidierungPruefe(gelesen, blockText, pngKandidaten, dSkript) {
+        var ab3 = root.inhalt.ablageVon(inh, '3', k.kursId);
+        /* Frisch lesen, nicht nur Cache — die Basis-Fassungen duerfen nicht
+           aus einem veralteten Stand kommen (Task-Brief). */
+        delete state.data.dateien[k.kursId + '/' + ab3.ordner];
+        graph.ordnerInhalt(k.kursId, ab3.ordner)
+          .then(function (dateien03) {
+            var liefClaude = root.inhalt.lieferobjektVon(inh, '3', 'claude');
+            var liefChatgpt = root.inhalt.lieferobjektVon(inh, '3', 'chatgpt');
+            /* Eine Basis-Variante laden + parsen. Kein Datei-Fund (weder
+               .docx noch die dazugehoerige .blocks) liefert still null —
+               validierungPruefe meldet das selbst ("… fehlt in
+               03_content"), kein doppelter Abbruch hier. Ein Parse-Fehler
+               (die .blocks-Datei liegt, ist aber kein gueltiges Skript) IST
+               dagegen ein sofortiger, eigener Abbruch — er nennt, WELCHE
+               Basis betroffen ist, etwas, das validierungPruefe nicht wissen
+               kann. */
+            function ladeVariante(label, liefObjekt) {
+              if (!liefObjekt) return Promise.resolve(null);
+              var basisName = root.inhalt.geltendeDatei(dateien03, k.kursId, liefObjekt);
+              if (!basisName) return Promise.resolve(null);
+              var blocksName = basisName.replace(/\.[a-z0-9]+$/i, '.blocks');
+              return graph.dateiLesen(k.kursId, ab3.ordner, blocksName).then(function (text) {
+                if (text == null) return null;
+                try {
+                  return root.skriptLesen.lies(text);
+                } catch (e) {
+                  throw new Error('Basis-Variante "' + label + '" (' + blocksName + ') nicht ' +
+                    'lesbar — ' + (e.message || e));
+                }
+              });
+            }
+            return Promise.all([ladeVariante('claude', liefClaude), ladeVariante('chatgpt', liefChatgpt)]);
+          })
+          .then(function (r) {
+            var varianten = { claude: r[0], chatgpt: r[1] };
+            var befund = root.inhalt.validierungPruefe(gelesen, dSkript, k.kursId, varianten);
+            if (!befund) {
+              klemmtSichtbar('Nicht hochgeladen: Prüfung braucht das Dossier.');
+              return;
+            }
+            if (befund.fehler.length) {
+              klemmtSichtbar('Blockdatei weicht vom Kontrakt ab — nicht hochgeladen: ' +
+                befund.fehler.join(' · '));
+              return;
+            }
+            var pngNamen = pngKandidaten.map(function (p) { return p.name; });
+            var fehlendeNamen = root.inhalt.illustrationenFehlend(gelesen, pngNamen);
+            if (!fehlendeNamen.length) {
+              weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten, { istValidierung: true });
+              return;
+            }
+            /* Bild-Wiederverwendung (Task-Brief): eine referenzierte, aber
+               nicht mitgelieferte Illustration muss nicht neu entstehen —
+               sie darf unveraendert aus dem Schritt-3-Ordner stammen. Ordner
+               aus dem Kontrakt (ab3.ordner) + '/abbildungen', nichts
+               hartkodiert (Muster inhalt.quellenOrdner). Nicht gefunden ->
+               Abbruch mit dem Dateinamen. */
+            var quellOrdner = ab3.ordner + '/abbildungen';
+            Promise.all(fehlendeNamen.map(function (name) {
+              return graph.kursDateiRoh(k.kursId, quellOrdner, name).then(function (buf) {
+                return { name: name, buf: buf };
+              });
+            })).then(function (ergebnisse) {
+              var nichtGefunden = ergebnisse.filter(function (e) { return !e.buf; })
+                .map(function (e) { return e.name; });
+              if (nichtGefunden.length) {
+                klemmtSichtbar('Nicht hochgeladen: Illustration(en) weder im Upload noch in ' +
+                  quellOrdner + ' gefunden — ' + nichtGefunden.join(', ') + '.');
+                return;
+              }
+              var wiederverwendet = {};
+              ergebnisse.forEach(function (e) { wiederverwendet[e.name] = new Uint8Array(e.buf); });
+              weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten,
+                { istValidierung: true, wiederverwendeteBilder: wiederverwendet });
+            }).catch(function (e) { klemmtSichtbar(e.message || String(e)); });
+          })
+          .catch(function (e) { klemmtSichtbar(e.message || String(e)); });
+      }
+
+      function weiterMitSkriptBau(gelesen, hinweise, blockText, pngKandidaten, opts) {
         if (meld) meld.hidden = true;
         knopf.disabled = true; knopf.textContent = 'wird gebaut …';
+
+        opts = opts || {};
+        /* V4: istValidierungBau steuert den Dossier-Status-Write im
+           Erfolgspfad; wiederverwendeteBilder sind bereits aus
+           03_content/abbildungen geholte Bytes (weiterMitValidierungPruefe)
+           — sie kommen ohne logische Masse in den bilder-Kontrakt (derselbe
+           IHDR-Rueckfall wie bei einer neu hochgeladenen Illustration, s.
+           docx-bauen.js) und werden NICHT nach 04_validierung/abbildungen
+           dupliziert (Task-Brief: "sie bleiben in 03_content"). */
+        var istValidierungBau = !!opts.istValidierung;
+        var wiederverwendeteBilder = opts.wiederverwendeteBilder || {};
 
         var variante = (gelesen.skript && gelesen.skript.variante) || gewaehlt;
         var kursSkript = (gelesen.skript && gelesen.skript.kurs) || k.kursId;
         var bilder = {};
+        Object.keys(wiederverwendeteBilder).forEach(function (name) {
+          bilder[name] = { bytes: wiederverwendeteBilder[name] };
+        });
         var geschafft = [];
         /* I3: fuer die Teilfehler-Meldung im abschliessenden .catch braucht es
            die Versionsnummer des Ziels — die lebt nur innerhalb des naechsten
@@ -2469,7 +2592,14 @@
               }
               zielInfo = ziel;
               var blocksName = ziel.datei.replace(/\.[a-z0-9]+$/i, '.blocks');
-              var bildNamen = Object.keys(bilder);
+              /* V4: nur NEUE Bilder werden hochgeladen — ein wiederverwendetes
+                 Bild bleibt unveraendert in 03_content/abbildungen liegen
+                 (Task-Brief: "wiederverwendete werden NICHT dupliziert"). Fuer
+                 Schritt 3 ist wiederverwendeteBilder immer leer, der Filter
+                 also ein No-op — dieselbe Zeile fuer beide Schritte. */
+              var bildNamen = Object.keys(bilder).filter(function (name) {
+                return !wiederverwendeteBilder[name];
+              });
 
               /* Erst zurueckstufen, dann hochladen — sonst gaebe es kurz zwei _final. */
               var vorher = ziel.zurueckstufen
@@ -2511,7 +2641,22 @@
           .then(function (ergebnis) {
             var neu = graph.standNachAblage(k, +n);
             var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
-            return weiter.then(function () { return ergebnis; });
+            return weiter.then(function () {
+              /* V4: Dossier-Status auf 'validiert' NACH erfolgreicher Ablage
+                 — ueber die Warteschlange (controller.dossierSchreiben, wie
+                 gateKlick/der Schritt-1-Zweig von ablegen), kein eigener
+                 graph.ablegen-Pfad. KWKurse (Schritt/Status) ist bereits
+                 gesetzt (standSetzenRoh oben) — das Dossier traegt den
+                 Lieferobjekt-eigenen Stand zusaetzlich. Scheitert dieser
+                 Schreibvorgang, faengt ihn der aeussere .catch unten auf:
+                 docx/blocks/Bilder sind dann schon abgelegt (geschafft),
+                 dieselbe Teilfehler-Meldung wie sonst (I3). */
+              if (!istValidierungBau) return ergebnis;
+              return controller.dossierSchreiben(k.kursId, function (kopie) {
+                root.dossier.statusSetzen(kopie, ab.lieferobjekt, 'validiert');
+                return kopie;
+              }).then(function () { return ergebnis; });
+            });
           })
           .then(function (ergebnis) {
             return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
@@ -2602,7 +2747,17 @@
       var geprueftPflichtSkript = !!(ab && ab.pruefung === 'skript') &&
         root.inhalt.erwarteteEndung(inh, n) === 'docx';
 
-      if (geprueftPflichtSkript) {
+      /* V4 (Etappe 4): Schritt 4 (Validierung) baut wie Schritt 3 auf einer
+         hochgeladenen Blockdatei auf — dasselbe Gate-Muster (Kontrakt-Feld
+         PLUS Kontrakt-Endung docx), nur das Feld unterscheidet sich
+         (pruefung:'validierung' statt 'skript'). Die ZIP-/Mehrfachauswahl-
+         Klassifikation (K2) und der Dossier-/Kurs-ID-Guard sind fuer beide
+         Schritte IDENTISCH — pruefeUndBaueBlock() traegt die Verzweigung
+         intern (ab.pruefung), keine zweite Pruefstrecke hier. */
+      var geprueftPflichtValidierung = !!(ab && ab.pruefung === 'validierung') &&
+        root.inhalt.erwarteteEndung(inh, n) === 'docx';
+
+      if (geprueftPflichtSkript || geprueftPflichtValidierung) {
         /* K2 (Etappe 4): EIN ZIP-Paket statt der fummeligen Mehrfachauswahl —
            additiv, keine zweite Pruefstrecke. Ist die Auswahl genau EINE
            .zip-Datei, wird sie browserseitig entpackt (zipLesen.oeffne); die
@@ -2713,6 +2868,11 @@
           return;
         }
         var blockDatei = blockKandidaten[0];
+        /* V4 (Etappe 4): welcher Zweig gilt — dasselbe Kontrakt-Feld, das
+           schon das Gate oben scharf geschaltet hat (ab ist die outer-scope
+           ablageVon() dieses Schritts, hier per Closure erneut gelesen statt
+           ein zweites Mal berechnet). */
+        var istValidierung = !!(ab && ab.pruefung === 'validierung');
 
         /* Ohne geladenes Dossier kein Urteil moeglich (blocksPruefe liefert
            dann null) — Abbruch VOR jedem Netzzugriff, kein Datei-Lesen, kein
@@ -2782,6 +2942,24 @@
                 '", ausgewählt ist "' + gewaehlt + '" — Variante zuerst angleichen.');
               return;
             }
+            /* V4: Schritt 4 fuehrt keine Varianten — der Widerspruchs-Check
+               oben ist dort ohnehin ein automatisches No-op, weil
+               gewaehlteVariante() ohne varianten-Feld im Kontrakt bereits
+               undefined liefert (inhalt.js). Er prueft stattdessen gegen die
+               beiden Schritt-3-Basisvarianten (validierungPruefe), nicht
+               gegen den eigenen Textinhalt (blocksPruefe verbietet
+               ###VALIDIERUNG dort — genau umgekehrt zu Schritt 4). */
+            if (istValidierung) {
+              /* dSkript explizit durchgereicht (nicht per Closure): dieser
+                 Zweig sitzt zwar innerhalb von pruefeUndBaueBlock, die
+                 aufgerufene Funktion selbst ist aber ein GESCHWISTER von
+                 pruefeUndBaueBlock in hochladen(), nicht darin verschachtelt
+                 (Muster weiterMitSkriptBau) — ohne den Parameter waere
+                 dSkript dort unsichtbar. */
+              weiterMitValidierungPruefe(gelesen, blockText, pngKandidaten, dSkript);
+              return;
+            }
+
             var befund = root.inhalt.blocksPruefe(gelesen, dSkript);
             if (!befund) {
               klemmtSichtbar('Nicht hochgeladen: Prüfung braucht das Dossier.');

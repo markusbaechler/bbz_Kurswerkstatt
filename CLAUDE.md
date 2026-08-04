@@ -4278,3 +4278,160 @@ ausschliesslich den Prompt-Kopf, den Kaltstart-Kasten und den kopieren-Handler-Z
 `ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 4 weiterhin nicht
 `pruefung: 'validierung'`/`quelle: 'blocks'`/`ext: 'docx'` (Weg B, unverändert seit V2) — ohne das
 Feld greift nichts live, kein Regressionsrisiko.
+
+## Etappe 4 / Task V4: Upload-/Bau-Weg Schritt 4 (Baustrecke + Bild-Wiederverwendung)
+
+Verdrahtet, was V2/V3 vorbereitet haben: die validierte Blockdatei (oder ein ZIP-Paket, K2) wird
+für Schritt 4 hochgeladen, gegen **beide** geltenden Schritt-3-Basisvarianten geprüft
+(`inhalt.validierungPruefe`, V2) statt gegen den eigenen Textinhalt, eine referenzierte, aber nicht
+mitgelieferte Illustration wird — anders als in Schritt 3 — zuerst aus `03_content/abbildungen`
+wiederverwendet, dann Word bauen (`docxBauen.baue`, unverändert) und `docx`+`blocks` nach
+`04_validierung/` ablegen, Dossier-Status `content=validiert`.
+
+**Maximale Wiederverwendung, keine zweite Prüfstrecke.** `controller.hochladen` bekommt ein
+zweites Gate `geprueftPflichtValidierung = !!(ab && ab.pruefung === 'validierung') &&
+erwarteteEndung === 'docx'` — strukturgleich zu `geprueftPflichtSkript` (B5/A2-Muster, zwei
+Bedingungen). Beide Gates führen in **denselben** Codepfad
+(`if (geprueftPflichtSkript || geprueftPflichtValidierung) { … }`): die K2-ZIP-Entpackung, die
+Datei-Klassifikation (`pruefeUndBaueBlock`), der Dossier-Guard und der Kurs-ID-Guard sind für
+Schritt 3 und 4 identisch und bleiben ungeteilt. `pruefeUndBaueBlock` liest dafür intern
+`var istValidierung = !!(ab && ab.pruefung === 'validierung');` (`ab` ist die bereits berechnete
+`ablageVon()` dieses Schritts, per Closure erneut gelesen statt ein zweites Mal berechnet) und
+verzweigt erst dort, wo die beiden Schritte tatsächlich divergieren — direkt nach dem bestehenden
+Varianten-Widerspruchs-Check (der für Schritt 4 unverändert stehen bleibt, s. u.).
+
+**(a) Kein Varianten-Widerspruchs-Check gegen die UI, ohne eigenen Sonderfall.** Schritt 4 führt im
+Kontrakt kein `varianten`-Feld — `inhalt.gewaehlteVariante(inh, '4', …)` liefert deshalb bereits
+`undefined` (die Funktion selbst, unverändert), der bestehende Vergleich `if (gewaehlt &&
+blockVariante && blockVariante !== gewaehlt)` ist für Schritt 4 damit ein **automatisches No-op** —
+kein zusätzliches `if (!istValidierung)` nötig. `gelesen.skript.variante` ist bei der Schritt-4-
+Blockdatei die Basis-Variante des validierten Skripts (die Kette akzeptiert beide zulässigen
+Werte, `istVariante` prüft das bereits im Parser). Ein eigener Test (V4 (g)) belegt das explizit,
+nicht nur implizit: eine UI-Auswahl `claude` gegen eine Blockdatei mit `variante=chatgpt` läuft
+für Schritt 4 durch, ohne „Variante zuerst angleichen".
+
+**Statt `blocksPruefe` (verbietet `###VALIDIERUNG`) ruft der Schritt-4-Zweig
+`weiterMitValidierungPruefe(gelesen, blockText, pngKandidaten, dSkript)` — ein GESCHWISTER von
+`pruefeUndBaueBlock`, kein verschachtelter Aufruf.** `dSkript` (das geladene Dossier) lebt nur im
+Scope von `pruefeUndBaueBlock`; da die neue Funktion daneben steht statt darin verschachtelt zu
+sein (Muster `weiterMitSkriptBau`, die `dSkript` nie braucht), wird es explizit als vierter
+Parameter durchgereicht statt per Closure erwartet — sonst wäre es dort unsichtbar gewesen (im
+ersten TDD-Durchlauf tatsächlich als `ReferenceError: dSkript is not defined` aufgefallen, bevor
+der Parameter ergänzt wurde).
+
+**Die beiden Schritt-3-Basisvarianten werden HIER geladen und geparst, nicht in `inhalt.js`** (kein
+Netz/DOM dort, Konvention der App): `ablageVon(inh, '3', kursId)` liefert den Ordner, `graph.
+ordnerInhalt` liest ihn **frisch** (Cache vorher gelöscht — die Basis darf nicht aus einem
+veralteten Stand kommen, Task-Brief), `lieferobjektVon(inh, '3', 'claude'|'chatgpt')` löst je
+Variante das Lieferobjekt auf, `geltendeDatei(...)` findet die geltende Fassung (egal ob `.docx`
+oder `.blocks` zuerst im Ordner steht — die Endung wird ohnehin sofort auf `.blocks` getauscht,
+`geltendeDatei`s Regex ist endungsblind), `graph.dateiLesen` liest den `.blocks`-Text.
+**Zwei getrennte Fehlerklassen, zwei getrennte Behandlungen:**
+- **Kein Datei-Fund** (weder für die geltende Fassung noch die `.blocks`-Datei selbst) liefert
+  still `null` — kein eigener Abbruch hier. `varianten.claude`/`.chatgpt` bleibt `null`,
+  `validierungPruefe` meldet das selbst („Variantenvergleich braucht beide Skript-Varianten —
+  {fehlende} fehlt in 03_content", Regel 4) — ein zweiter Abbruch-Pfad für denselben Fall wäre
+  Drift-Risiko (zwei Wortlaute für dieselbe Aussage).
+- **Ein Parse-Fehler** (die `.blocks`-Datei liegt, `skriptLesen.lies()` wirft — z. B. fehlendes
+  `###SKRIPT`) ist dagegen ein **sofortiger, eigener** Abbruch: „Basis-Variante "{claude|chatgpt}"
+  ({Dateiname}) nicht lesbar — {Fehlertext}." `validierungPruefe` kann nicht wissen, WELCHE der
+  beiden Basen betroffen ist (sie bekommt nur `varianten.claude`/`.chatgpt`, keinen Dateinamen) —
+  genau das nennt dieser Abbruch zusätzlich.
+
+**Bild-Wiederverwendung — der einzige inhaltliche Unterschied zu `illustrationenFehlend` in
+Schritt 3.** Ist `inhalt.validierungPruefe` fehlerfrei, berechnet der Controller wie in B5 die
+fehlenden Illustrationen (`inhalt.illustrationenFehlend(gelesen, pngNamen)` — unverändert,
+derselbe Helfer). Sind alle referenzierten Illustrationen im Upload, geht es direkt weiter
+(`weiterMitSkriptBau(…, {istValidierung:true})`); fehlt mindestens eine, wird sie — statt sofort
+abzuweisen — aus `{Schritt-3-Ordner}/abbildungen` geholt (`graph.kursDateiRoh`, neuer, additiver
+Graph-Helfer, s. u.). Erst wenn sie auch dort nicht liegt, ist es ein Abbruch: „Illustration(en)
+weder im Upload noch in {Pfad} gefunden — {Namen}."
+
+**`graph.kursDateiRoh(kursId, ordner, datei)` — neuer, additiver Graph-Helfer, Muster
+`zentralDateiRoh`, aber im KURSORDNER statt in `_zentral`.** `dateiLesen` liest nur Text (`x.text()`
+statt `x.arrayBuffer()`), für ein PNG reicht das nicht — derselbe Grund, warum B5 für die
+Illustrations-PNGs im Upload direkt `File.arrayBuffer()` liest. `null` bei jedem Fehler (nicht
+gefunden, kein Kursordner, Netz) — kein Wurf, der Aufrufer entscheidet.
+
+**Der `bilder`-Kontrakt bekommt einen dritten Herkunfts-Fall.** `weiterMitSkriptBau(gelesen,
+hinweise, blockText, pngKandidaten, opts)` — `opts = { istValidierung, wiederverwendeteBilder }`,
+beide optional (Schritt 3 ruft ohne `opts`, unverändert). `wiederverwendeteBilder` (Name → bereits
+geholte Bytes) wird VOR den Diagrammen und den neu hochgeladenen PNGs in `bilder` eingetragen —
+**ohne** logische Masse (`{bytes: …}`, kein `breite`/`hoehe`): `docxBauen`s bestehender
+IHDR-Fallback greift dafür genau wie bei einer frisch hochgeladenen Illustration (B4). Beim
+tatsächlichen Ablegen zählt `bildNamen = Object.keys(bilder).filter(name =>
+!wiederverwendeteBilder[name])` — nur NEUE Bilder werden nach `{ab.ordner}/abbildungen` (hier
+`04_validierung/abbildungen`) hochgeladen; ein wiederverwendetes Bild bleibt unangetastet in
+`03_content/abbildungen` liegen, wird also nie dupliziert. Für Schritt 3 ist
+`wiederverwendeteBilder` immer `{}`, der Filter ein No-op — dieselbe Zeile bedient beide Schritte.
+
+**Dossier-Status `content=validiert` NACH erfolgreicher Ablage, über die Warteschlange.** Direkt
+nach `graph.standNachAblage`/`standSetzenRoh` (unverändert), vor der Erfolgsmeldung:
+`if (istValidierungBau) controller.dossierSchreiben(kursId, kopie => { dossier.statusSetzen(kopie,
+ab.lieferobjekt, 'validiert'); return kopie; })` — dieselbe Warteschlange wie `gateKlick`/der
+Schritt-1-Zweig von `ablegen`, kein eigener `graph.ablegen`-Pfad. `ab.lieferobjekt` ('content')
+kommt aus der bereits berechneten `ablageVon(inh, '4', kursId)` — nicht hartkodiert. Scheitert der
+Schreibvorgang, fängt ihn der äussere `.catch` von `weiterMitSkriptBau` auf: docx/blocks/Bilder
+sind dann schon abgelegt (`geschafft`), dieselbe I3-Teilfehler-Meldung wie bei jedem anderen
+Ablage-Teilfehler — kein zweiter Meldungsmechanismus.
+
+**`docx-bauen.js`: kein neuer Loop-Skip nötig — der VALIDIERUNG-Guard existiert bereits seit V1**
+(`if (b.block === 'VALIDIERUNG') return;` in `kapitelAbsaetze`, s. „Task V1" oben). Der im Brief
+verlangte Test „VALIDIERUNG-Felder erscheinen NIRGENDS im document.xml" existiert ebenfalls
+bereits (`test/docxbauen.test.js`, „baue(): VALIDIERUNG-Steuerdaten werden NICHT als Fliesstext
+gerendert (Loop-Skip, V1)" — läuft über die ECHTE `skriptLesen.lies()`-Kette gegen einen Text mit
+`###VALIDIERUNG`). Geprüft statt nur behauptet: dieser Test dient unverändert als Mutationsprobe
+für V4 (s. u.) — kein Duplikat angelegt, `test/docxbauen.test.js` bleibt in diesem Task unverändert.
+
+**Tests (`test/hochladen.test.js`, sieben neue Fälle „V4"):** (a) sauber — docx+blocks nach
+`04_validierung` abgelegt (kein Bild-Upload nötig, ein Diagramm wird trotzdem gerendert/
+hochgeladen — dasselbe Verhalten wie B5), `state.data.dossier`-Mutator setzt `status.content` auf
+`'validiert'` (Netzwerk-Ebene über `graph.ablegen`, Muster `test/ablegen.test.js` Schritt-1-Status-
+Write), Erfolgsmeldung nennt den docx-Namen; (b) Bild-Wiederverwendung — eine referenzierte, aber
+nicht mitgelieferte Illustration kommt über `graph.kursDateiRoh` aus `03_content/abbildungen`,
+`hochladenRufe` enthält sie NICHT (nur docx+blocks+Diagramm, kein viertes Bild); (c) dieselbe
+Illustration weder im Upload noch in `03_content/abbildungen` gefunden → Abbruch, `vorlageLaden`
+nie gerufen (kein Bau ohne aufgelöste Bilder); (d) beide Schritt-3-Basen fehlen ganz (leerer
+`03_content`) → Abbruch VOR jedem Bau, Meldung nennt beide Varianten; (e) Regressionsbremse-
+Verstoss (eine Basis führt zwei `###ABBILDUNG`, das Schritt-4-Kapitel nur eine) → Abbruch mit
+„Abbildungen 1 < 2 (Untergrenze aus Variante claude)"; (f) eine Basis ist keine gültige Blockdatei
+(kein `###SKRIPT`) → Abbruch, Meldung nennt explizit „claude" und den betroffenen Dateinamen; (g)
+kein Varianten-Widerspruchs-Check — eine UI-Auswahl `claude` gegen `variante=chatgpt` in der
+Blockdatei läuft für Schritt 4 durch. `hochladenLaufB5` (der geteilte B5/K2-Test-Harness) bekommt
+dafür vier neue, additive Mocks: `graph.ordnerInhalt` unterscheidet jetzt nach Ordner
+(`opts.dateienJeOrdner`, Rückfall auf das bisherige `opts.dateienImOrdner` für alle bestehenden
+Schritt-3-Tests — unverändertes Verhalten dort), `graph.dateiLesen` (`opts.blocksTexte`, Schlüssel
+Dateiname), `graph.kursDateiRoh` (`opts.wiederverwendungsBilder`, Schlüssel `Ordner/Datei`) und
+`graph.ablegen` (sammelt in `ablegenRufe`, Muster `test/ablegen.test.js`). **801 Tests grün**
+(Baseline 794 + 7 neue, kein neuer Test in `test/docxbauen.test.js` — s. o.).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** den VALIDIERUNG-Loop-Skip in
+`docx-bauen.js::kapitelAbsaetze` auskommentiert (`if (false && b.block === 'VALIDIERUNG') return;`),
+`node --test test/docxbauen.test.js`:
+```
+ℹ tests 28
+ℹ pass 27
+ℹ fail 1
+
+✖ baue(): VALIDIERUNG-Steuerdaten werden NICHT als Fliesstext gerendert (Loop-Skip, V1)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  979 !== -1
+```
+Genau der eine (bereits seit V1 bestehende) Test fiel rot — `xml.indexOf('herkunft:')` fand die
+rohe Feldsyntax an Position 979 statt der erwarteten Abwesenheit (`-1`), exakt der im Brief
+vorhergesagte Befund. Alle anderen 27 Tests blieben grün; danach die Zeile wiederhergestellt,
+komplette Suite erneut geprüft: `node --test` → **801/801 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** `ansichten.js` ist nicht Teil des Brief-Dateiumfangs —
+der Hochladen-Block von Schritt 4 zeigt deshalb weiterhin den einfachen Einzeldatei-Input (kein
+`multiple`, kein `.zip`/`.blocks`-`accept`), obwohl der Kontrakt für Schritt 4 (wie für Schritt 3
+seit B5/K2) eine Blockdatei plus optionale neue PNGs bzw. ein ZIP-Paket erwartet — `istBlockUpload`
+in `ansichten.js` bleibt an `ablage.pruefung === 'skript'` gebunden, `'validierung'` müsste dort
+ergänzt werden. Kein Regressionsrisiko (rein additive Erweiterung einer bestehenden Bedingung,
+kontrakt-getrieben), aber noch kein Live-Nutzen über die Kurswerkstatt-UI, bis das nachgezogen ist
+— vermutlich Teil einer der nächsten Etappe-4-Tasks (V5 Review-Ansicht/Register). Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 4 weiterhin nicht
+`pruefung: 'validierung'`/`quelle: 'blocks'`/`ext: 'docx'` (Weg B, unverändert seit V2) — ohne das
+Feld greift das gesamte V4-Gate nirgends live, kein Regressionsrisiko. Registerschreiben (das
+Kursdossier-Register je Lerneinheit, Meta-Architektur) ist V7, bewusst nicht Teil dieser Task —
+V4 schreibt ausschliesslich `status.content`.

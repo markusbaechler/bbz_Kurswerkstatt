@@ -175,6 +175,12 @@ test('Schritt 2 (kein Blockdatei-Gate) traegt weiterhin KEIN multiple', () => {
 
 const { controller, state, graph } = require('../app.js');
 const { xlsxLesen } = require('../xlsx-lesen.js');
+/* V4 (Etappe 4): der Dossier-Status-Write (status.content='validiert') laeuft
+   ueber root.dossier.statusSetzen — app.js require()t dossier.js nicht selbst
+   (Weg B: jede Datei setzt nur ihr eigenes Global), Node braucht deshalb ein
+   explizites require hier, sonst ist root.dossier beim ersten V4-Testlauf
+   undefined (Muster test/ablegen.test.js). */
+require('../dossier.js');
 
 /* B9-F3 (d integration): viele Tests in dieser Datei ueberschreiben
    controller.render mit einem No-op, um Netzaufrufe aus dem Hochladen-Fluss
@@ -488,7 +494,9 @@ async function hochladenLaufB5(n, dateiListe, opts) {
   opts = opts || {};
   const meldung = { textContent: '', hidden: true };
   const hochladenRufe = [];
-  const rufe = { ordnerInhalt: 0, vorlageLaden: 0, pngRender: 0, pngAufrufe: [] };
+  const ablegenRufe = [];
+  const rufe = { ordnerInhalt: 0, vorlageLaden: 0, pngRender: 0, pngAufrufe: [],
+                 dateiLesen: 0, kursDateiRoh: 0 };
 
   state.data.inhalt = opts.inhalt || JSON.parse(JSON.stringify(INHALT));
   state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
@@ -509,9 +517,49 @@ async function hochladenLaufB5(n, dateiListe, opts) {
     }
   };
 
-  graph.ordnerInhalt = function () {
+  /* V4 (Etappe 4): graph.ordnerInhalt liest im Schritt-4-Fluss ZWEI
+     verschiedene Ordner (04_validierung fuer das eigene Ziel, 03_content fuer
+     die beiden Basisvarianten) — opts.dateienJeOrdner (Schluessel: Ordnername)
+     hat Vorrang vor dem bisherigen, ordnerblinden opts.dateienImOrdner, der
+     als Ruckfall fuer alle bestehenden (Schritt-3-)Tests unveraendert bleibt. */
+  graph.ordnerInhalt = function (kursId, ordner) {
     rufe.ordnerInhalt++;
+    if (opts.dateienJeOrdner && Object.prototype.hasOwnProperty.call(opts.dateienJeOrdner, ordner)) {
+      return Promise.resolve(opts.dateienJeOrdner[ordner]);
+    }
     return Promise.resolve(opts.dateienImOrdner || []);
+  };
+  /* V4: die beiden Schritt-3-Basisvarianten (.blocks) — opts.blocksTexte,
+     Schluessel = Dateiname (nicht der Pfad, die Basen liegen alle in
+     03_content). Ein Wert kann ein Error sein (skriptLesen.lies() wirft dann
+     ueber den .text()-Aufruf hinweg keine Rolle, hier simuliert
+     graph.dateiLesen selbst KEINEN Wurf — dateiLesen liefert laut
+     app.js-Kommentar bei jedem Fehler still null); ein fehlender Schluessel
+     liefert ebenfalls null (Datei nicht gefunden). */
+  graph.dateiLesen = function (kursId, ordner, datei) {
+    rufe.dateiLesen++;
+    const texte = opts.blocksTexte || {};
+    return Promise.resolve(Object.prototype.hasOwnProperty.call(texte, datei) ? texte[datei] : null);
+  };
+  /* V4: Bild-Wiederverwendung aus 03_content/abbildungen — opts.wiederverwendungsBilder,
+     Schluessel = "ordner/datei" (derselbe Pfad, den controller.hochladen
+     tatsaechlich anfragt), Wert ein Uint8Array/ArrayBuffer oder fehlend (=
+     nicht gefunden, kursDateiRoh liefert dann null). */
+  graph.kursDateiRoh = function (kursId, ordner, datei) {
+    rufe.kursDateiRoh++;
+    const bilder = opts.wiederverwendungsBilder || {};
+    const schluessel = ordner + '/' + datei;
+    if (!Object.prototype.hasOwnProperty.call(bilder, schluessel)) return Promise.resolve(null);
+    const v = bilder[schluessel];
+    return Promise.resolve(v && v.buffer ? v.buffer : v);
+  };
+  /* V4: der Dossier-Status-Write (controller.dossierSchreiben -> _dossierVersuch)
+     laeuft ueber graph.ablegen, NICHT graph.hochladen — separat gemockt und
+     erfasst, Muster test/ablegen.test.js (Schritt-1-Status-Write). */
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    ablegenRufe.push({ kursId: kursId, ordner: ordner, datei: datei, text: text });
+    if (opts.ablegenWirft) return Promise.reject(opts.ablegenWirft);
+    return Promise.resolve({ eTag: 'test-etag' });
   };
   graph.hochladen = function (kursId, ordner, datei, blob) {
     /* Fix-Runde 1 (Review-Finding, Critical): das ECHTE graph.hochladen
@@ -568,8 +616,8 @@ async function hochladenLaufB5(n, dateiListe, opts) {
 
   const knopf = { disabled: false, textContent: 'Hochladen' };
   controller.hochladen(String(n), knopf);
-  await new Promise(function (r) { setTimeout(r, 80); });
-  return { hochladenRufe: hochladenRufe, meldung: meldung.textContent,
+  await new Promise(function (r) { setTimeout(r, 120); });
+  return { hochladenRufe: hochladenRufe, ablegenRufe: ablegenRufe, meldung: meldung.textContent,
            fehlerHinweis: state.fehlerHinweis, hinweis: state.hinweis,
            rufe: rufe, knopf: knopf };
 }
@@ -1436,4 +1484,199 @@ test('K3 (e): Nicht-https-Wert wird nicht als Link gerendert (Guard)', () => {
   assert.ok(/href="https:\/\/bbz\.sharepoint\.com\/x"/.test(okHtml), 'href fehlt oder ist falsch escaped');
   assert.ok(/target="_blank"/.test(okHtml), 'target="_blank" fehlt');
   assert.ok(/rel="noopener"/.test(okHtml), 'rel="noopener" fehlt');
+});
+
+/* ---------- V4 (Etappe 4): Upload-/Bau-Weg Schritt 4 (Baustrecke + Bild-Wiederverwendung) ----------
+   Schritt 4 baut wie Schritt 3 (B5) auf einer hochgeladenen Blockdatei/einem
+   ZIP-Paket auf — dasselbe Gate-Muster (Kontrakt-Feld PLUS Kontrakt-Endung
+   docx, hier pruefung:'validierung' statt 'skript'), dieselbe Klassifikation/
+   dieselben Dossier-/Kurs-ID-Guards. Anders als Schritt 3 prueft er NICHT
+   gegen den eigenen Textinhalt (blocksPruefe verbietet dort ###VALIDIERUNG),
+   sondern gegen die BEIDEN geltenden Schritt-3-Basisvarianten aus 03_content
+   (inhalt.validierungPruefe, V2) — geladen und geparst in
+   weiterMitValidierungPruefe (app.js). Eine referenzierte, aber nicht
+   mitgelieferte Illustration wird zuerst aus 03_content/abbildungen
+   WIEDERVERWENDET, statt sofort wie in Schritt 3 abzuweisen. */
+
+const { dossier } = require('../dossier.js');
+
+/* Ein geladenes Dossier MIT status-Objekt — DOSSIER_OK (oben, B5) hat keins;
+   dossier.statusSetzen(kopie, lieferobjekt, status) schreibt aber direkt in
+   d.status[lieferobjekt] und wuerde an einem fehlenden status-Objekt
+   crashen (Muster jedes echten dossier.neu()). */
+const DOSSIER_OK_STATUS = Object.assign({}, DOSSIER_OK, { status: {} });
+
+/* Ein vollstaendiger, validierter Block-Text fuer Schritt 4 — Muster
+   blockText() oben (dieselbe Grammatik-Kette), plus ein ###VALIDIERUNG je
+   Kapitel (in Schritt 4 PFLICHT, s. inhalt.validierungPruefe Regel 1) und
+   optional eine ###ILLUSTRATION. Die Leseliste nennt standardmaessig BEIDE
+   Dossier-Q-IDs (Q-001 UND Q-002, DOSSIER_OK/-_STATUS fuehrt genau diese) —
+   anders als beim Schritt-3-Default (nur Q-001) ist eine fehlende Dossier-
+   Q-ID hier ein FEHLER, nicht nur ein Hinweis (Regel 2, umgekehrt zu
+   blocksPruefe). */
+function blockText4(opts) {
+  opts = opts || {};
+  var basisOpts = Object.assign(
+    { gelesen: 'BSV Mitteilungen Nr. 168, 01.01.2026 Q-001 Q-002' }, opts);
+  var basis = blockText(basisOpts);
+  var validierung = opts.validierung === undefined
+    ? '###VALIDIERUNG\nherkunft: bestaetigt\n'
+    : opts.validierung;
+  var illustration = opts.illustration ? '###ILLUSTRATION\n' + opts.illustration + '\n' : '';
+  var text = basis.replace('###HERO', validierung + illustration + '###HERO');
+  if (opts.offen) text += '\n###OFFEN\n' + opts.offen;
+  return text;
+}
+
+/* Die geltende Schritt-3-Basis einer Variante — dieselbe Grammatik, dieselbe
+   EK ('AFL-001-EK-001', Default von blockText()). Identisch zum Schritt-4-
+   Kapitel macht Regel 4 (Regressionsbremse) automatisch Ist==Soll (Muster
+   test/skriptpruefe.test.js "Ist == Soll ist kein Fehler"). */
+function basisText(variante) {
+  return blockText({ variante: variante });
+}
+
+/* Eine Basis mit ZWEI ABBILDUNGen (statt einer) — fuer den Regel-4-Verstoss-
+   Test: das Schritt-4-Kapitel (blockText4(), eine ABBILDUNG) unterschreitet
+   damit die Untergrenze dieser Variante. */
+function basisTextMitZweiAbbildungen(variante) {
+  var t = blockText({ variante: variante });
+  return t.replace('###INTERAKTION',
+    '###ABBILDUNG typ=kompositions-leiste | titel=Zweite\nwerte: Teil drei 3 | Teil vier 4\n###INTERAKTION');
+}
+
+var DATEIEN_03_BEIDE_BASEN = [
+  { name: 'AFL-001_skript-claude_v1.blocks' },
+  { name: 'AFL-001_skript-chatgpt_v1.blocks' }
+];
+
+test('V4 (a) sauber: docx + blocks nach 04_validierung abgelegt, Dossier-Status content=validiert', async () => {
+  const l = await hochladenLaufB5(4, [blockDatei('egal.blocks', blockText4())], {
+    dossier: DOSSIER_OK_STATUS,
+    dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+    blocksTexte: {
+      'AFL-001_skript-claude_v1.blocks': basisText('claude'),
+      'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+    }
+  });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochladenRufe.length, 3, 'docx + blocks + ein Diagramm-Bild erwartet');
+  assert.deepStrictEqual(
+    l.hochladenRufe.map(function (r) { return r.ordner + '/' + r.datei; }),
+    [
+      '04_validierung/AFL-001_content_v1.docx',
+      '04_validierung/AFL-001_content_v1.blocks',
+      '04_validierung/abbildungen/AFL-001-claude-abb-001.png'
+    ]
+  );
+  assert.strictEqual(l.ablegenRufe.length, 1, 'genau ein Dossier-Status-Write erwartet');
+  const dossierRuf = l.ablegenRufe[0];
+  assert.strictEqual(dossierRuf.ordner, '', 'das Dossier liegt in der Kursordner-Wurzel');
+  assert.strictEqual(dossierRuf.datei, dossier.DATEI('AFL-001'));
+  assert.strictEqual(JSON.parse(dossierRuf.text).status.content, 'validiert',
+    'der gesicherte Dossier-Text traegt den neuen Status nicht');
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_content_v1\.docx/);
+});
+
+test('V4 (b) Bild-Wiederverwendung: referenzierte Illustration kommt aus 03_content/abbildungen, wird NICHT nach 04/abbildungen dupliziert', async () => {
+  const l = await hochladenLaufB5(4,
+    [blockDatei('egal.blocks',
+      blockText4({ illustration: 'datei: wiederverwendet.png\nszene: Eine Szene ohne Zahlen' }))],
+    {
+      dossier: DOSSIER_OK_STATUS,
+      dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+      blocksTexte: {
+        'AFL-001_skript-claude_v1.blocks': basisText('claude'),
+        'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+      },
+      wiederverwendungsBilder: { '03_content/abbildungen/wiederverwendet.png': new Uint8Array([1, 2, 3, 4]) }
+    });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.rufe.kursDateiRoh, 1, 'genau eine Wiederverwendungs-Anfrage erwartet');
+  assert.strictEqual(l.hochladenRufe.length, 3,
+    'docx + blocks + EIN Diagramm-Bild erwartet — die wiederverwendete Illustration wird NICHT hochgeladen');
+  assert.ok(!l.hochladenRufe.some(function (r) { return r.datei === 'wiederverwendet.png'; }),
+    'die wiederverwendete Illustration haette nicht dupliziert werden duerfen');
+  assert.strictEqual(JSON.parse(l.ablegenRufe[0].text).status.content, 'validiert');
+});
+
+test('V4 (c) referenzierte Illustration weder im Upload noch in 03_content/abbildungen: Abbruch, kein Bau', async () => {
+  const l = await hochladenLaufB5(4,
+    [blockDatei('egal.blocks', blockText4({ illustration: 'datei: fehlt.png\nszene: Eine Szene' }))],
+    {
+      dossier: DOSSIER_OK_STATUS,
+      dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+      blocksTexte: {
+        'AFL-001_skript-claude_v1.blocks': basisText('claude'),
+        'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+      }
+    });
+  assert.strictEqual(l.hochladenRufe.length, 0, 'trotz fehlender Wiederverwendung wurde etwas hochgeladen');
+  assert.strictEqual(l.rufe.vorlageLaden, 0, 'kein Bau ohne aufgeloeste Bilder');
+  assert.match(l.meldung, /weder im Upload noch in/);
+  assert.match(l.meldung, /03_content\/abbildungen/);
+  assert.match(l.meldung, /fehlt\.png/);
+});
+
+test('V4 (d) Variante fehlt (kein Datei-Fund in 03_content fuer beide Basen): Abbruch VOR jedem Bau', async () => {
+  const l = await hochladenLaufB5(4, [blockDatei('egal.blocks', blockText4())], {
+    dossier: DOSSIER_OK_STATUS,
+    dateienJeOrdner: { '04_validierung': [], '03_content': [] }
+  });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.strictEqual(l.rufe.vorlageLaden, 0, 'ohne beide Basisvarianten wird nie gebaut');
+  assert.match(l.meldung, /weicht vom Kontrakt ab/);
+  assert.match(l.meldung, /Variantenvergleich braucht beide Skript-Varianten/);
+  assert.match(l.meldung, /claude/);
+  assert.match(l.meldung, /chatgpt/);
+});
+
+test('V4 (e) Regel-Verstoss (Regressionsbremse): Abbruch mit Ist/Soll, kein Bau', async () => {
+  const l = await hochladenLaufB5(4, [blockDatei('egal.blocks', blockText4())], {
+    dossier: DOSSIER_OK_STATUS,
+    dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+    blocksTexte: {
+      /* claude fuehrt ZWEI Abbildungen, das Schritt-4-Kapitel nur eine —
+         die Untergrenze (Regel 4c) wird damit gezielt unterschritten. */
+      'AFL-001_skript-claude_v1.blocks': basisTextMitZweiAbbildungen('claude'),
+      'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+    }
+  });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.strictEqual(l.rufe.vorlageLaden, 0, 'kein Bau bei einem Regel-4-Verstoss');
+  assert.match(l.meldung, /weicht vom Kontrakt ab/);
+  assert.match(l.meldung, /Abbildungen 1 < 2/);
+  assert.match(l.meldung, /Untergrenze aus Variante claude/);
+});
+
+test('V4 (f) Parse-Fehler einer Basis-Variante: Abbruch mit Meldung, WELCHE Basis betroffen ist', async () => {
+  const l = await hochladenLaufB5(4, [blockDatei('egal.blocks', blockText4())], {
+    dossier: DOSSIER_OK_STATUS,
+    dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+    blocksTexte: {
+      /* kein ###SKRIPT — skriptLesen.lies() wirft. */
+      'AFL-001_skript-claude_v1.blocks': '###QUELLEN\ngelesen: x',
+      'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+    }
+  });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.strictEqual(l.rufe.vorlageLaden, 0);
+  assert.match(l.meldung, /Basis-Variante "claude"/);
+  assert.match(l.meldung, /AFL-001_skript-claude_v1\.blocks/);
+});
+
+test('V4 (g) kein Varianten-Widerspruchs-Check gegen die UI — Schritt 4 fuehrt keine Varianten', async () => {
+  const l = await hochladenLaufB5(4,
+    [blockDatei('egal.blocks', blockText4({ variante: 'chatgpt' }))],
+    {
+      dossier: DOSSIER_OK_STATUS,
+      variante: 'claude', /* UI-Variantenwahl — fuer Schritt 4 irrelevant */
+      dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+      blocksTexte: {
+        'AFL-001_skript-claude_v1.blocks': basisText('claude'),
+        'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+      }
+    });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.doesNotMatch(l.meldung, /Variante zuerst angleichen/);
 });
