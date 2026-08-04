@@ -43,6 +43,13 @@
        ArrayBuffer. Ein Abruf je Sitzung (graph.vorlageLaden), s. dort. */
     data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {}, dossier: {}, dossierETag: {},
                  vorlage: undefined,
+                 /* review (V5, Etappe 4): Schritt-4-Ansicht — die geltende validierte
+                    .blocks (04_validierung) und beide Schritt-3-Varianten-.blocks
+                    (03_content), je geparst ueber skriptLesen.lies(). { validiert,
+                    claude, chatgpt } (je gelesen-Objekt oder null) je Kurs; undefined =
+                    nie geladen, null = laedt gerade (Doppelabruf-Schutz, Muster
+                    dossier/briefing). s. controller.reviewNachladen. */
+                 review: {},
                  /* dateiAuswahl (B9-F1): die Auswahl am Datei-Input #datei ueberlebt
                     keinen Render (Live-Befund) — controller.render() baut die Ansicht
                     als HTML-String neu, der Input ist danach ein NEUES, leeres Element.
@@ -1077,7 +1084,10 @@
           /* V3, Etappe 4: nur auf Schritt 4 gefuellt (s. o.) — der Kaltstart-
              Kasten in ansichten.js prueft beide Caches. */
           dateien03: dateien03Fuer4,
-          dateien02: dateien02Fuer4
+          dateien02: dateien02Fuer4,
+          /* V5, Etappe 4: die geparsten .blocks fuer die Review-Ansicht (nur
+             Schritt 4 relevant, s. controller.reviewNachladen unten). */
+          review: k ? (state.data.review[k.kursId] || null) : null
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         /* A3, Etappe 3: Schritt 3 erbt den GESETZTEN Contract-Stand (Version,
@@ -1096,6 +1106,13 @@
         if (k && String(p.schrittId) === '4') {
           if (ab3Fuer4) controller.ordnerNachladen(k.kursId, ab3Fuer4.ordner);
           if (ab2Fuer4) controller.ordnerNachladen(k.kursId, ab2Fuer4.ordner);
+        }
+        /* V5, Etappe 4: Schritt 4 zeigt die Review-Ansicht — sie braucht die
+           geparsten .blocks aus 04_validierung UND 03_content (beide
+           Varianten), ohne Kursordner gibt es nichts zu lesen (Muster
+           dossierNachladen/briefingNachladen oben). */
+        if (k && String(p.schrittId) === '4' && state.data.ordner[k.kursId]) {
+          controller.reviewNachladen(k.kursId);
         }
         /* Auf Schritt 1 stehen die Projekt-Instruktionen, und die tragen das
            Briefing. Es wurde aber nur auf Schritt 2 geladen — deshalb stand dort
@@ -1268,6 +1285,67 @@
           controller.render();
           state.data.dossier[kursId] = undefined;
         });
+    },
+
+    /* Review (V5, Etappe 4, Schritt 4 — Sign-off): laedt und parst die geltende
+       validierte .blocks (04_validierung) sowie beide Schritt-3-Varianten-.blocks
+       (03_content, claude/chatgpt) — dieselbe geltende-Fassung-Logik wie ueberall
+       (inhalt.geltendeDatei) und derselbe Stamm-mit-getauschter-Endung wie beim
+       Prompt-Kopf (docx -> .blocks, B5-Invariante). Cache state.data.review[kursId]
+       = { validiert, claude, chatgpt } — je geparstes gelesen-Objekt (skriptLesen.
+       lies()) oder null (kein Lieferobjekt im Kontrakt, keine geltende Datei, kein
+       Text oder ein Parse-Fehler bei GENAU diesem Slot verhindern die anderen
+       beiden nicht). undefined = nie geladen, null = laedt gerade
+       (Doppelabruf-Schutz, Muster dossierNachladen/briefingNachladen).
+       Nicht-sticky-Fehlerpfad (Etappe 1e): nur ein echter Kettenfehler
+       (Promise-Reject — graph.ordnerInhalt/graph.dateiLesen selbst lehnen praktisch
+       nie ab, sie faengen ihre eigenen Fehler intern ab) setzt state.fehlerHinweis,
+       rendert, und faellt DANACH auf undefined zurueck, damit der naechste
+       Ansichtswechsel es erneut versucht — waehrend controller.render() laeuft,
+       blockiert der noch stehende null-Wert einen sofortigen Selbst-Retry aus
+       demselben Render-Aufruf. */
+    reviewNachladen: function (kursId) {
+      if (state.data.review[kursId] !== undefined) return;
+      state.data.review[kursId] = null;
+      var inh = state.data.inhalt;
+
+      /* Ordner/Lieferobjekt kommen ausschliesslich aus dem Ablage-Kontrakt
+         (inhalt.ablageVon) — nichts hartkodiert (Muster A3/T13). Fuer die
+         validierte Fassung selbst gibt es keine Variante (schrittId '4'), fuer
+         die Rohentwuerfe genau die des Schritt-3-Kontrakts. */
+      function ladeBlocks(schrittId, variante) {
+        var ablage = root.inhalt.ablageVon(inh, schrittId, kursId, variante);
+        if (!ablage || !ablage.lieferobjekt) return Promise.resolve(null);
+        return graph.ordnerInhalt(kursId, ablage.ordner).then(function (dateien) {
+          var docxName = root.inhalt.geltendeDatei(dateien, kursId, ablage.lieferobjekt);
+          if (!docxName) return null;
+          var blocksName = docxName.replace(/\.[a-z0-9]+$/i, '.blocks');
+          return graph.dateiLesen(kursId, ablage.ordner, blocksName);
+        }).then(function (text) {
+          if (!text) return null;
+          try { return root.skriptLesen.lies(text); }
+          catch (e) { return null; }
+        });
+      }
+
+      function renderWennSichtbar() {
+        if (state.position.kursId === kursId && String(state.position.schrittId) === '4') {
+          controller.render();
+        }
+      }
+
+      return Promise.all([
+        ladeBlocks('4', null),
+        ladeBlocks('3', 'claude'),
+        ladeBlocks('3', 'chatgpt')
+      ]).then(function (r) {
+        state.data.review[kursId] = { validiert: r[0], claude: r[1], chatgpt: r[2] };
+        renderWennSichtbar();
+      }).catch(function () {
+        state.fehlerHinweis = 'Review konnte nicht geladen werden — Seite neu laden.';
+        renderWennSichtbar();
+        state.data.review[kursId] = undefined;
+      });
     },
 
     /* Was gerade in den Feldern steht — aus dem Formular, nicht aus dem Zustand.
@@ -1966,6 +2044,12 @@
           sag('');
           return;
         }
+        /* V5: ein Gate-Durchlauf kann den Dossier-Status des Lieferobjekts und
+           (bei Schritt 4) die geltende Fassung in 04_validierung veraendern —
+           der Review-Cache muss danach neu laden, sonst zeigt er einen
+           veralteten Stand. Unconditional (nicht nur bei n === '4'): billig,
+           kein zweiter Bedingungspfad noetig. */
+        delete state.data.review[kursId];
         state.hinweis = 'Als final bestätigt: ' + nachName + '.';
         controller.render();
       }).catch(function (e) {
@@ -2663,6 +2747,10 @@
               var bz = ergebnis.bildzahl;
               /* B9-F1: dieselbe Leerung wie im xlsx-/mbz-Pfad oben. */
               state.data.dateiAuswahl = null;
+              /* V5: eine frische Ablage in 03_content ODER 04_validierung macht
+                 den Review-Cache veraltet (neue geltende .blocks-Fassung) —
+                 dasselbe Muster wie der dateien-Cache direkt darueber. */
+              delete state.data.review[k.kursId];
               var erfolgstext = 'Hochgeladen als ' + ergebnis.ziel.datei + ' (+ ' + ergebnis.blocksName +
                 ', ' + bz + ' Bild' + (bz === 1 ? '' : 'er') + ')' +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');

@@ -551,6 +551,201 @@
       'kopieren, Briefing neu erzeugen und ablegen.</div>';
   }
 
+  /* ---------- Die Review-Ansicht (V5, Etappe 4, Schritt 4 — Sign-off) ----------
+     Rein lesend — die App verwaltet nichts (Leitsatz aus der Meta-Architektur):
+     geaendert wird im Dokument, neu hochgeladen, die Ansicht rendert frisch. Baut
+     aus der validierten Blockdatei (04_validierung), beiden Schritt-3-Varianten
+     (03_content, s. app.js controller.reviewNachladen) und dem Dossier eine
+     Uebersicht: Herkunfts-Zaehlung, Quellen-Deckung, offene Punkte vorn, je
+     Kapitel eine aufklappbare Zeile mit Herkunft-Badge/Beleg/Divergenz und dem
+     Varianten-Nebeneinander. Alle Zaehl-/Gruppierhelfer sind bewusst privat
+     (nicht in inhalt.js — der Task-Brief nennt inhalt.js nicht als zu
+     aendernde Datei) und nur von reviewBlock aus erreichbar. */
+
+  var REVIEW_HERKUNFT_KLASSEN = ['bestaetigt', 'korrigiert', 'ergaenzt', 'offen'];
+
+  /* Kopf-Zaehlung: JE Kapitel genau ein Zaehler, aus ###VALIDIERUNG/herkunft —
+     nie daneben gefuehrt (Brief). Ein Kapitel ohne (oder mit unbekanntem)
+     herkunft-Wert zaehlt bei KEINEM der vier Zaehler, traegt aber zu gesamt bei. */
+  function reviewZaehlung(validiert) {
+    var kapitel = (validiert && Array.isArray(validiert.kapitel)) ? validiert.kapitel : [];
+    var z = { bestaetigt: 0, korrigiert: 0, ergaenzt: 0, offen: 0, gesamt: kapitel.length };
+    kapitel.forEach(function (k) {
+      var h = k.validierung && k.validierung.herkunft;
+      if (z[h] !== undefined) z[h] += 1;
+    });
+    return z;
+  }
+
+  /* Q-ID-Extraktion NUR fuer die Anzeige — dieselbe Wortgrenzen-Regel wie
+     inhalt.quellenSpiegel (Z7)/inhalt.blocksPruefe (\bQ-\d{3}\b), hier keine
+     zweite Pruefungsquelle: das Gate selbst bleibt inhalt.validierungPruefe
+     (V2, Regel 2). Eine eigene, kleine Kopie statt eines Imports aus
+     inhalt.js, weil der Task-Brief inhalt.js nicht als zu aendernde Datei
+     fuehrt (Files-Liste) — ansichten.js bleibt dadurch die eine Stelle fuer
+     diese rein darstellende Frage. */
+  function reviewQIds(zeilen) {
+    var re = /\bQ-\d{3}\b/g;
+    var gefunden = {};
+    (zeilen || []).forEach(function (z) {
+      var s = String(z == null ? '' : z);
+      var m;
+      while ((m = re.exec(s))) gefunden[m[0]] = true;
+    });
+    return gefunden;
+  }
+
+  /* Beide Richtungen (Brief): Dossier-Q-IDs, die in der Leseliste FEHLEN, UND
+     Q-IDs in der Leseliste, die im Dossier UNBEKANNT sind. */
+  function reviewQuellenDeckung(validiert, d) {
+    var gelesenListe = (validiert.quellen && validiert.quellen.gelesen) || [];
+    var gefunden = reviewQIds(gelesenListe);
+    var dossierIds = (d.quellen || []).map(function (q) { return q && q.id; }).filter(Boolean);
+    var dossierSet = {};
+    dossierIds.forEach(function (id) { dossierSet[id] = true; });
+    var fehlend = dossierIds.filter(function (id) { return !gefunden[id]; });
+    var unbekannt = Object.keys(gefunden).filter(function (id) { return !dossierSet[id]; });
+    return { gesamt: dossierIds.length, gedeckt: dossierIds.length - fehlend.length,
+             fehlend: fehlend, unbekannt: unbekannt };
+  }
+
+  /* Alle Bausteintexte eines Kapitels, zusammengefuegt (Brief: "teile-Werte
+     join"). */
+  function reviewKapitelText(k) {
+    var teile = (k && k.teile) || {};
+    return Object.keys(teile).map(function (n) { return teile[n]; }).join('\n');
+  }
+
+  function reviewNeuZahl(k) {
+    var m = reviewKapitelText(k).match(/\[NEU/g);
+    return m ? m.length : 0;
+  }
+
+  function reviewNeuGesamt(validiert) {
+    return (validiert.kapitel || []).reduce(function (n, k) { return n + reviewNeuZahl(k); }, 0);
+  }
+
+  /* Offene Punkte VORN (Brief): ###OFFEN der validierten Fassung UND beider
+     Varianten (Herkunft je Punkt ausgewiesen), plus jedes Kapitel mit
+     divergenz:offen als eigener Punkt. */
+  function reviewOffenePunkte(review) {
+    var punkte = [];
+    var validiert = (review && review.validiert) || {};
+    (validiert.offen || []).forEach(function (z) { punkte.push({ herkunft: 'validiert', text: z }); });
+    ['claude', 'chatgpt'].forEach(function (name) {
+      var g = review && review[name];
+      ((g && g.offen) || []).forEach(function (z) { punkte.push({ herkunft: name, text: z }); });
+    });
+    (validiert.kapitel || []).forEach(function (k) {
+      if (k.validierung && k.validierung.divergenz === 'offen') {
+        punkte.push({ herkunft: 'validiert', text: 'Divergenz offen: ' + (k.ek || '?') + ' · ' + (k.titel || '') });
+      }
+    });
+    return punkte;
+  }
+
+  /* Das Kapitel EINER Variante zur selben EK-ID — Muster kapitelZuEk in
+     inhalt.js (dort privat fuer validierungPruefe), hier eine eigene, kleine
+     Kopie: eine triviale Suche verdient keinen Export nur fuer eine zweite
+     Aufrufstelle. */
+  function reviewKapitelVon(gelesenVariante, ek) {
+    var liste = (gelesenVariante && Array.isArray(gelesenVariante.kapitel)) ? gelesenVariante.kapitel : [];
+    for (var i = 0; i < liste.length; i++) {
+      if (liste[i].ek === ek) return liste[i];
+    }
+    return null;
+  }
+
+  /* Bausteintexte EINES Kapitels untereinander (Brief), jeder Wert durch
+     esc() — die Variantentexte stammen aus einer hochgeladenen Blockdatei,
+     also ein Fremdwert wie jeder andere (Konvention 4). */
+  function reviewBausteinHtml(k) {
+    if (!k) return '<p class="hinweis-leise">Kein Kapitel in dieser Variante.</p>';
+    var teile = k.teile || {};
+    var namen = Object.keys(teile);
+    if (!namen.length) return '<p class="hinweis-leise">Keine Bausteine.</p>';
+    return namen.map(function (name) {
+      return '<p><b>' + esc(name) + ':</b> ' + esc(teile[name]) + '</p>';
+    }).join('');
+  }
+
+  /* Je Kapitel eine aufklappbare Zeile: EK, Titel, Herkunft-Badge, Beleg,
+     Divergenz, [NEU]-Zaehler — aufgeklappt beide Varianten nebeneinander
+     (Muster .dd/.ddc, dieselbe zweispaltige Grid-Klasse wie die Leitplanken
+     Do/Dont oben — Konvention 5: bestehende Klasse statt einer neuen) plus
+     die Begruendung des Entscheids. */
+  function reviewKapitelZeile(k, review) {
+    var v = k.validierung || {};
+    var herkunft = REVIEW_HERKUNFT_KLASSEN.indexOf(v.herkunft) >= 0 ? v.herkunft : 'offen';
+    var neu = reviewNeuZahl(k);
+    var kA = reviewKapitelVon(review && review.claude, k.ek);
+    var kB = reviewKapitelVon(review && review.chatgpt, k.ek);
+    var h = '<details class="review-kapitelzeile">';
+    h += '<summary><span class="badge badge-' + esc(herkunft) + '">' + esc(v.herkunft || 'fehlt') +
+         '</span> <b>' + esc(k.ek || '') + '</b> ' + esc(k.titel || '') +
+         (v.beleg ? ' <span class="dim">Beleg: ' + esc(v.beleg) + '</span>' : '') +
+         (v.divergenz ? ' <span class="dim">Divergenz: ' + esc(v.divergenz) + '</span>' : '') +
+         ' <span class="dim">' + neu + ' [NEU]</span></summary>';
+    h += '<div class="dd">' +
+      '<div class="ddc"><h5>Variante claude</h5>' + reviewBausteinHtml(kA) + '</div>' +
+      '<div class="ddc"><h5>Variante chatgpt</h5>' + reviewBausteinHtml(kB) + '</div>' +
+      '</div>';
+    if (v.begruendung) h += '<p class="dim">Begr&uuml;ndung: ' + esc(v.begruendung) + '</p>';
+    return h + '</details>';
+  }
+
+  /* Der Aufrufer (einSchritt) entscheidet ueber die bereits fuer den
+     AKTUELLEN Schritt aufgeloeste ablage.pruefung === 'validierung', ob
+     dieser Block ueberhaupt gerufen wird — kontrakt-getrieben, nie die
+     Schrittnummer hartkodiert (Global Constraint Etappe 4), und ohne eine
+     zweite ablageVon()-Aufloesung hier drin (die kaeme sonst immer fuer
+     Schritt 4 zurueck, unabhaengig vom tatsaechlich gerenderten Schritt).
+     Innerhalb: ohne Dossier ODER ohne geladene validierte Fassung nur der
+     Kurzhinweis (Brief) — die Gate-Box (gateBlock, unten in einSchritt)
+     bleibt davon unberuehrt. */
+  function reviewBlock(inh, kurs, ablageDaten) {
+    ablageDaten = ablageDaten || {};
+    if (!kurs) return '';
+
+    var h = '<div class="box review-block" id="review-block"><h3>Review</h3>';
+
+    var d = ablageDaten.dossier;
+    var review = ablageDaten.review;
+    var validiert = review && review.validiert;
+    if (!d || typeof d !== 'object' || !validiert) {
+      return h + '<p class="hinweis-leise">Review erscheint nach der ersten abgelegten ' +
+             'validierten Fassung.</p></div>';
+    }
+
+    var z = reviewZaehlung(validiert);
+    h += '<p>' + z.bestaetigt + ' best&auml;tigt &middot; ' + z.korrigiert + ' korrigiert &middot; ' +
+         z.ergaenzt + ' erg&auml;nzt &middot; ' + z.offen + ' offen von ' + z.gesamt +
+         ' Eingangskompetenzen</p>';
+
+    var deckung = reviewQuellenDeckung(validiert, d);
+    h += '<p>Quellen-Deckung: ' + deckung.gedeckt + ' von ' + deckung.gesamt +
+         ' Dossier-Quellen in der Leseliste' +
+         (deckung.fehlend.length ? ' &mdash; fehlend: ' + esc(deckung.fehlend.join(', ')) : '') +
+         (deckung.unbekannt.length ? ' &mdash; unbekannt im Text: ' + esc(deckung.unbekannt.join(', ')) : '') +
+         '</p>';
+
+    var neuGesamt = reviewNeuGesamt(validiert);
+    h += '<p>' + neuGesamt + ' [NEU]-Marke' + (neuGesamt === 1 ? '' : 'n') + ' im Text</p>';
+
+    var offenePunkte = reviewOffenePunkte(review);
+    h += '<h4>Offene Punkte</h4>';
+    h += offenePunkte.length
+      ? '<ul>' + offenePunkte.map(function (p) {
+          return '<li><span class="dim">[' + esc(p.herkunft) + ']</span> ' + esc(p.text) + '</li>';
+        }).join('') + '</ul>'
+      : '<p class="hinweis-leise">Keine offenen Punkte.</p>';
+
+    h += '<h4>Kapitel</h4>';
+    h += (validiert.kapitel || []).map(function (k) { return reviewKapitelZeile(k, review); }).join('');
+
+    return h + '</div>';
+  }
+
   /* ---------- Die Gate-Box (Schritt 2, 4, 7) ----------
      Z9 (Entscheid Markus, 2026-07-30, nach dem Live-Einsatz: "Ich erwarte:
      Drehbuch v(n) auswaehlen und als final bestaetigen, evtl. Freigabe erteilt
@@ -1055,6 +1250,15 @@
            Erst wenn der Ordner steht — vorher gehoert die Flaeche dem Anlegen. --- */
     if (kurs && +schrittId === 1 && !ablageDaten.ordnerFehlt) {
       h += instruktionenBlock(inh, kurs, ablageDaten.briefing, ablageDaten.ordnerName, ablageDaten.dossier);
+    }
+
+    /* V5: die Review-Ansicht steht VOR der Gate-Box (Brief) — sichtbar nur an
+       dem Schritt, den der Kontrakt als Blockstrecken-Validierung fuehrt
+       (ablage.pruefung === 'validierung', dieselbe schon oben aufgeloeste
+       ablage-Variable — kontrakt-getrieben, nie die Schrittnummer
+       hartkodiert). */
+    if (ablage && ablage.pruefung === 'validierung') {
+      h += reviewBlock(inh, kurs, ablageDaten);
     }
 
     h += gateBlock(inh, kurs, schrittId, ablageDaten);

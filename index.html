@@ -273,6 +273,19 @@
   .marke.mensch{border-color:var(--u);color:var(--u);background:transparent}
   .marke.pruefstelle{border-color:var(--accent);color:#fff;background:var(--accent)}
 
+  /* V5, Etappe 4: Herkunft-Badges der Review-Ansicht (Schritt 4 — Sign-off).
+     Muster .marke, Farben ausschliesslich aus bestehenden :root-Tokens
+     (Konvention 5, keine Ad-hoc-Farben): bestaetigt=gruen, korrigiert=gelb/
+     orange (--u, dasselbe Token wie das W-U-G-Modell), ergaenzt=blau (--w),
+     offen=rot. */
+  .badge{font-size:11px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;
+         border-radius:5px;padding:3px 8px;border:1px solid var(--line);
+         background:var(--surface-2);color:var(--ink-soft);display:inline-block}
+  .badge-bestaetigt{border-color:var(--g);color:var(--g);background:var(--g-t)}
+  .badge-korrigiert{border-color:var(--u);color:var(--u);background:var(--u-t)}
+  .badge-ergaenzt{border-color:var(--w);color:var(--w);background:var(--w-t)}
+  .badge-offen{border-color:var(--rot);color:var(--rot);background:var(--rot-t)}
+
   .zweck{font-size:19px;line-height:1.55;color:var(--ink-soft);max-width:60ch;
          padding-bottom:26px;border-bottom:1px solid var(--line)}
 

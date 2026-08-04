@@ -4461,3 +4461,122 @@ der Einzeldatei — `BLOCKSTRECKEN_PRUEFUNGEN.indexOf(null)` ist `-1`.
 Schritt-3-Tests, jetzt auch für Schritt 4 belegt); die Gegenprobe direkt daneben hält fest, dass
 Schritt 2 unverändert kein `multiple` und kein Blockstrecken-`accept` trägt. **803 Tests grün**
 (801 + 2 neue).
+
+## Etappe 4 / Task V5: Die Review-Ansicht
+
+Das Herzstück des Schritt-4-Sign-offs: `ansichten.reviewBlock(inh, kurs, ablageDaten)` rendert aus
+der validierten Blockdatei (`04_validierung`), beiden Schritt-3-Varianten (`03_content`) und dem
+Dossier eine Übersicht — Herkunfts-Zählung, Quellen-Deckung, offene Punkte vorn, je Kapitel eine
+aufklappbare Zeile mit Herkunft-Badge/Beleg/Divergenz und dem Varianten-Nebeneinander. **Rein
+lesend** (Leitsatz „die App verwaltet nichts"): geändert wird im Dokument, neu hochgeladen, die
+Ansicht rendert frisch — kein Schreibpfad, keine Interaktion ausser dem nativen `<details>`-
+Aufklappen.
+
+**`controller.reviewNachladen(kursId)` (`app.js`) — Muster `dossierNachladen`/`briefingNachladen`,
+drei parallele Ladeketten statt einer.** Lädt die geltende `.docx` je Lieferobjekt
+(`inhalt.geltendeDatei`) und tauscht die Endung auf `.blocks` (B5-Invariante, Muster T13/A3), liest
+den Text (`graph.dateiLesen`) und parst ihn (`root.skriptLesen.lies`). Cache
+`state.data.review[kursId] = { validiert, claude, chatgpt }` — je geparstes `gelesen`-Objekt ODER
+`null` (fehlendes Lieferobjekt im Kontrakt, keine geltende Datei, kein Text ODER ein Parse-Fehler
+bei GENAU diesem Slot verhindern die anderen beiden Slots nicht — die drei Ladeketten laufen über
+`Promise.all`, aber jede fängt ihre eigenen "nichts gefunden"-Fälle intern ab und liefert `null`
+statt abzulehnen). `undefined` = nie geladen, `null` = lädt gerade (Doppelabruf-Schutz).
+**Nicht-sticky-Fehlerpfad (Etappe 1e):** nur ein echter Kettenfehler (Promise-Reject — praktisch
+selten, `graph.ordnerInhalt`/`graph.dateiLesen` fangen ihre eigenen Netzfehler bereits intern ab und
+lehnen nie ab) setzt `state.fehlerHinweis`, rendert, und fällt DANACH auf `undefined` zurück, damit
+der nächste Ansichtswechsel es erneut versucht — genau wie bei `dossierNachladen`/
+`briefingNachladen` blockiert der noch stehende `null`-Wert während `controller.render()` einen
+sofortigen Selbst-Retry aus demselben Render-Aufruf.
+
+**Render-Trigger nur auf Schritt 4, mit Kursordner** (Muster der Schritt-4-`ordnerNachladen`-Zeilen
+direkt darüber in `render()`): `if (k && String(p.schrittId) === '4' && state.data.ordner[k.kursId])
+{ controller.reviewNachladen(k.kursId); }`. `render()` reicht `state.data.review[k.kursId] || null`
+als `review`-Prop durch (Muster `dossier`).
+
+**Cache-Invalidierung an zwei Stellen — beide „unconditional", kein zweiter Bedingungspfad:**
+`weiterMitSkriptBau`s Erfolgspfad (`app.js`, gemeinsame Bau-Route für Schritt 3 UND 4, s. „Task
+V4") löscht `state.data.review[k.kursId]` direkt neben der bestehenden `dateiAuswahl`-Leerung — eine
+frische Ablage in `03_content` ODER `04_validierung` macht die geladene Review-Grundlage veraltet.
+`controller.gateKlick`s Erfolgspfad löscht ihn ebenso, unabhängig vom betroffenen Gate (Schritt
+2/4/7) — billiger als eine dritte, auf `n === '4'` bedingte Fallunterscheidung, und ein Gate-Klick
+an einem anderen Schritt löscht dabei nur einen ohnehin schon veralteten/leeren Cache-Eintrag.
+
+**Alle Zähl-/Gruppierhelfer sitzen privat in `ansichten.js`, nicht in `inhalt.js`** — der Task-Brief
+führt `inhalt.js` nicht in der Files-Liste, und jede Frage hier ist rein darstellend (keine
+Pass/Fail-Regel, die ein zweiter Aufrufer teilen müsste): `reviewZaehlung` (Herkunft-Zählung aus
+`kapitel[].validierung.herkunft`, ein Kapitel ohne/mit unbekanntem Wert zählt bei keinem der vier
+Zähler, aber zu `gesamt`), `reviewQIds`/`reviewQuellenDeckung` (eine EIGENE, kleine Kopie der
+Q-ID-Wortgrenzen-Regel `\bQ-\d{3}\b` — keine zweite Prüfungsquelle, das Gate bleibt
+`inhalt.validierungPruefe`/V2 Regel 2, hier nur Anzeige in BEIDEN Richtungen: Dossier-Q-IDs, die in
+der Leseliste fehlen, UND Q-IDs im Text, die im Dossier unbekannt sind), `reviewNeuZahl`/
+`reviewNeuGesamt` (Vorkommen von `[NEU` über `teile`-Werte-Join, Brief-Vorgabe), `reviewOffenePunkte`
+(führt `###OFFEN` der validierten Fassung UND beider Varianten mit Herkunftsausweis
+`validiert`/`claude`/`chatgpt` zusammen, PLUS je Kapitel mit `divergenz:offen` ein eigener Punkt
+„Divergenz offen: {ek} · {titel}"), `reviewKapitelVon` (Kapitel einer Variante über die EK-ID finden
+— eine triviale Suche, eigene kleine Kopie statt eines Exports aus `inhalt.js`s privatem
+`kapitelZuEk`, das dort für `validierungPruefe` lebt), `reviewBausteinHtml`/`reviewKapitelZeile`
+(die aufklappbare `<details>`-Zeile: Badge, EK, Titel, Beleg, Divergenz, `[NEU]`-Zähler im
+`<summary>`, darunter beide Varianten nebeneinander über die BESTEHENDE `.dd`/`.ddc`-Grid-Klasse —
+dieselbe zweispaltige Klasse wie die Leitplanken Do/Dont, Konvention 5: keine neue Layout-Klasse
+nötig — plus die `begruendung` des Entscheids). **Jeder Wert durch `esc()`** — die Varianten- und
+Kopf-Werte stammen aus einer hochgeladenen Blockdatei, ein Fremdwert wie jeder andere (Konvention
+4).
+
+**Sichtbarkeit über die bereits aufgelöste `ablage`-Variable in `einSchritt`, nie eine zweite
+`ablageVon()`-Aufrufstelle mit hartkodiertem `'4'`.** Der erste Entwurf rief innerhalb von
+`reviewBlock` selbst `I().ablageVon(inh, '4', kurs.kursId)` — das hätte den Block auch auf JEDEM
+anderen Schritt gezeigt (die Funktion fragt immer nach Schritt 4, unabhängig vom tatsächlich
+gerenderten Schritt), gefangen durch den eigenen Test „Schritt 3 zeigt ihn nicht" VOR dem ersten
+grünen Lauf. Fix: `einSchritt` entscheidet mit der schon oben berechneten `ablage`-Variable (für
+den AKTUELLEN `schrittId`) — `if (ablage && ablage.pruefung === 'validierung') { h +=
+reviewBlock(inh, kurs, ablageDaten); }`, direkt VOR `gateBlock`. `reviewBlock` selbst prüft nur noch
+Dossier + geladene validierte Fassung; ohne beides der Kurzhinweis „Review erscheint nach der ersten
+abgelegten validierten Fassung." Kontrakt-getrieben, nie die Schrittnummer hartkodiert (Global
+Constraint Etappe 4) — führt ein anderer Schritt künftig ebenfalls `pruefung: 'validierung'`, zeigt
+er den Block automatisch mit.
+
+**Vier neue CSS-Klassen in `index.html` (Konvention 5 erlaubt das explizit für Badges) — Farben
+ausschliesslich aus bestehenden `:root`-Tokens, keine Ad-hoc-Hexwerte:** `.badge` (Muster `.marke`)
+plus `.badge-bestaetigt` (`--g`/`--g-t`, grün), `.badge-korrigiert` (`--u`/`--u-t`, dasselbe
+Gelb/Orange-Token wie die U-Phase des W-U-G-Modells), `.badge-ergaenzt` (`--w`/`--w-t`, blau),
+`.badge-offen` (`--rot`/`--rot-t`, rot).
+
+**Tests (`test/review.test.js`, neu, 18 Fälle):** Blocktext-Fixtures laufen über die ECHTE
+`skriptLesen.lies()`-Kette (Task-Brief-Vorgabe, kein Handbau der `gelesen`-Objekte) — jedes Kapitel
+trägt nur `HERO` als Inhalt, die übrigen elf Pflichtbausteine fehlen bewusst
+(`gelesen.fehler` ist für `reviewBlock` irrelevant, das Gate dafür ist `inhalt.validierungPruefe`,
+nicht diese Ansicht). Abgedeckt: Kurzhinweis ohne validierte Fassung/ohne Review/ohne Dossier,
+Sichtbarkeit nur bei `pruefung==='validierung'` (Schritt 3 zeigt ihn nicht), Kopf-Zählung (2
+bestätigt/1 korrigiert/0 ergänzt/1 offen von 4), Quellen-Deckung in beiden Richtungen, `[NEU]`-Zahl
+über mehrere Kapitel, offene Punkte aus drei Quellen mit Herkunftsausweis PLUS ein
+Divergenz-offen-Kapitel, „keine offenen Punkte" ausdrücklich statt einer leeren Liste, eine
+aufgeklappte Kapitel-Zeile mit beiden Variantentexten escaped (Fremdwert-Probe `<img
+src=x onerror=alert(1)>`), Badge-Klasse je Katalogwert (alle vier), Fallback auf `badge-offen` bei
+fehlendem/unbekanntem `herkunft`-Wert, die Gate-Box bleibt unverändert UNTERHALB (Positionsvergleich
+der beiden `id`-Fundstellen im HTML-String) — sowie sechs Controller-Tests für
+`reviewNachladen` (Cache mit allen drei Slots, ein fehlender Slot lässt die anderen beiden
+unberührt, Doppelabruf-Schutz über einen hängenden `graph.ordnerInhalt`-Mock, Nicht-sticky-
+Fehlerpfad samt Beleg für den erneuten Versuch nach einem Fehler). **821 Tests grün** (Baseline 803
++ 18 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** in `reviewZaehlung` nach der
+echten Zählung `z.bestaetigt = 0;` fest gesetzt, `node --test test/review.test.js`:
+```
+ℹ tests 18
+ℹ pass 17
+ℹ fail 1
+
+✖ V5: Kopf zaehlt 2 bestaetigt / 1 korrigiert / 0 ergaenzt / 1 offen von 4 Eingangskompetenzen
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /2 best&auml;tigt/.
+```
+Genau der eine Kopf-Zählungs-Test fiel rot (das gerenderte HTML zeigte „0 bestätigt … 1 offen von 4
+Eingangskompetenzen" statt „2 bestätigt"), alle anderen 17 blieben grün; danach wiederhergestellt,
+komplette Suite erneut geprüft: `node --test` → **821/821 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** das reale `ablage-kontrakt.json`/`schritte.json` in
+SharePoint führen für Schritt 4 weiterhin nicht `pruefung: 'validierung'` (Weg B, unverändert seit
+V2/V4) — ohne das Feld greift auch die Review-Ansicht nirgends live (`ablage.pruefung` bleibt
+`null`, `reviewBlock` wird nie gerufen), kein Regressionsrisiko. Kein Schreibpfad für `offen[]`/
+`entschieden[]` aus dieser Ansicht heraus (Leitsatz „die App verwaltet nichts") — die bestehenden
+`dossier.offenNeu`/`offenEntscheiden`/`offenVerschieben`-Funktionen und ihre Controller-Handler
+bleiben unverändert im Dossier, ohne UI-Anbindung an die Review-Ansicht.
