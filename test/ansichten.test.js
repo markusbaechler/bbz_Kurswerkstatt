@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 
 require('../app.js');
-require('../inhalt.js');
+const { inhalt } = require('../inhalt.js');
 require('../dossier.js');
 const { ansichten } = require('../ansichten.js');
 const { INHALT, KURSE } = require('./fixture.js');
@@ -364,6 +364,67 @@ test('Schritt 3 mit freigegebenem Contract (status final, ueber ablageVon(2).lie
   } };
   const html = ansichten.einSchritt(INHALT, DBS, 3, null, props);
   assert.doesNotMatch(html, /Kein freigegebener Contract/);
+});
+
+/* ---------- V3, Etappe 4: Schritt 4 erbt aus den Schritt-3-Varianten + Contract ---------- */
+
+test('Schritt 4 zeigt KEINEN Kasten, wenn beide Skript-Varianten (docx + .blocks-Schwester) ' +
+     'im 03_content-Cache liegen UND der Contract final ist', () => {
+  const liefClaude = inhalt.lieferobjektVon(INHALT, '3', 'claude');
+  const liefChatgpt = inhalt.lieferobjektVon(INHALT, '3', 'chatgpt');
+  const lieferobjekt2 = INHALT['ablage-kontrakt'].schritte['2'].lieferobjekt;
+  const props = {
+    dossier: {
+      dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+      quellen: [], status: {}, offen: [], entschieden: []
+    },
+    dateien03: [
+      { name: `DBS-001_${liefClaude}_v2.docx` }, { name: `DBS-001_${liefClaude}_v2.blocks` },
+      { name: `DBS-001_${liefChatgpt}_v1.docx` }, { name: `DBS-001_${liefChatgpt}_v1.blocks` }
+    ],
+    dateien02: [{ name: `DBS-001_${lieferobjekt2}_final.xlsx` }]
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 4, null, props);
+  assert.doesNotMatch(html, /Schritt 4 braucht beide Skript-Varianten/);
+});
+
+test('Schritt 4 zeigt den Kasten, wenn eine Skript-Variante fehlt (chatgpt hat keine .blocks-Schwester)', () => {
+  const liefClaude = inhalt.lieferobjektVon(INHALT, '3', 'claude');
+  const liefChatgpt = inhalt.lieferobjektVon(INHALT, '3', 'chatgpt');
+  const lieferobjekt2 = INHALT['ablage-kontrakt'].schritte['2'].lieferobjekt;
+  const props = {
+    dossier: {
+      dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+      quellen: [], status: {}, offen: [], entschieden: []
+    },
+    dateien03: [
+      { name: `DBS-001_${liefClaude}_v2.docx` }, { name: `DBS-001_${liefClaude}_v2.blocks` },
+      { name: `DBS-001_${liefChatgpt}_v1.docx` }   /* .blocks-Schwester fehlt */
+    ],
+    dateien02: [{ name: `DBS-001_${lieferobjekt2}_final.xlsx` }]
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 4, null, props);
+  assert.match(html, /Schritt 4 braucht beide Skript-Varianten/);
+  assert.match(html, /class="box achtung"/, 'dieselbe Kasten-Optik wie die Schritt-2\/3-Kaltstart-Hinweise fehlt');
+});
+
+test('Schritt 4 zeigt den Kasten, wenn beide Varianten liegen, der Contract aber nicht final ist', () => {
+  const liefClaude = inhalt.lieferobjektVon(INHALT, '3', 'claude');
+  const liefChatgpt = inhalt.lieferobjektVon(INHALT, '3', 'chatgpt');
+  const lieferobjekt2 = INHALT['ablage-kontrakt'].schritte['2'].lieferobjekt;
+  const props = {
+    dossier: {
+      dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+      quellen: [], status: {}, offen: [], entschieden: []
+    },
+    dateien03: [
+      { name: `DBS-001_${liefClaude}_v2.docx` }, { name: `DBS-001_${liefClaude}_v2.blocks` },
+      { name: `DBS-001_${liefChatgpt}_v1.docx` }, { name: `DBS-001_${liefChatgpt}_v1.blocks` }
+    ],
+    dateien02: [{ name: `DBS-001_${lieferobjekt2}_v3.xlsx` }]  /* kein _final */
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 4, null, props);
+  assert.match(html, /Schritt 4 braucht beide Skript-Varianten/);
 });
 
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {

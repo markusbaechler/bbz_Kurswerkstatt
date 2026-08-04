@@ -791,6 +791,47 @@
       }
     }
 
+    /* V3, Etappe 4: Schritt 4 (Validierung) startet erst NACH beiden
+       Schritt-3-Varianten UND dem freigegebenen Contract aus Schritt 2 — ohne
+       beide .blocks-Fassungen gibt es nichts zu validieren (Regressionsbremse,
+       s. inhalt.validierungPruefe), ohne den Contract fehlt der Massstab fuer
+       die Lernziele. Gleiche Kaltstart-Optik wie die Kaesten in Schritt 2/3,
+       KEIN Disable der Knoepfe (Muster A3: Altkurse/laufende Migrationen
+       muessen weiterarbeiten koennen).
+       Bewusst NICHT ueber den Dossier-Status geprueft, anders als die
+       Schritt-2/3-Kaesten oben: Schritt 3 hat kein Gate, dossier.statusVon
+       wird fuer skript-claude/skript-chatgpt nie automatisch auf 'final'
+       gesetzt — ein Kurs kann Schritt 3 laengst abgeschlossen haben, ohne
+       dass das im Dossier steht. Stattdessen die tatsaechliche Dateiliste:
+       je Variante muss die geltende .docx UND ihre .blocks-Schwester
+       (gleicher Stamm, B5-Invariante) im 03_content-Cache liegen; der
+       Contract gilt, wenn seine _final-Fassung im 02_lernziele-Cache liegt
+       (finalVorhanden, nicht nur die hoechste Version). Lieferobjekt-
+       Kennungen kommen aus lieferobjektVon/ablageVon — nie hartkodiert. */
+    if (String(schrittId) === '4') {
+      var kursId4 = kurs ? kurs.kursId : '<Kurs>';
+      var variantenSchritt3 = I().varianten(inh, '3') || [];
+      var dateien03Kasten = Array.isArray(ablageDaten.dateien03) ? ablageDaten.dateien03 : null;
+      var fehlendeVariantenSchritt3 = variantenSchritt3.filter(function (v) {
+        if (!dateien03Kasten) return true;
+        var lief3v = I().lieferobjektVon(inh, '3', v);
+        var docx3v = lief3v ? I().geltendeDatei(dateien03Kasten, kursId4, lief3v) : null;
+        if (!docx3v) return true;
+        var blocks3v = docx3v.replace(/\.[a-z0-9]+$/i, '.blocks');
+        return !dateien03Kasten.some(function (x) { return x.name === blocks3v; });
+      });
+      var ablage2Fuer4 = I().ablageVon(inh, '2', kursId4);
+      var lieferobjekt2Fuer4 = ablage2Fuer4 ? ablage2Fuer4.lieferobjekt : null;
+      var dateien02Kasten = Array.isArray(ablageDaten.dateien02) ? ablageDaten.dateien02 : null;
+      var contractFinal4 = !!(lieferobjekt2Fuer4 && dateien02Kasten &&
+        I().finalVorhanden(dateien02Kasten, kursId4, lieferobjekt2Fuer4));
+      if (fehlendeVariantenSchritt3.length || !contractFinal4) {
+        h += '<div class="box achtung"><span class="bt">Grundlage unvollst&auml;ndig</span>' +
+             'Schritt 4 braucht beide Skript-Varianten aus Schritt 3 und den freigegebenen ' +
+             'Contract.</div>';
+      }
+    }
+
     /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
        nicht hinter den Leitplanken. Der Masterprompt zuerst. */
     if (hilfsmittel.length) {

@@ -1012,6 +1012,16 @@
         var ab = root.inhalt.ablageVon(inh, p.schrittId, k ? k.kursId : '');
         var ordn = k ? state.data.ordner[k.kursId] : null;
         var schl = k && ab ? k.kursId + '/' + ab.ordner : null;
+        /* V3, Etappe 4: Schritt 4 braucht zusaetzlich die Dateilisten aus
+           Schritt 3 (03_content, beide Varianten) und Schritt 2 (02_lernziele,
+           Contract) — fuer den Kaltstart-Kasten (ansichten.js) UND den
+           kopieren-Handler-Zweig unten. Ordner kommen aus ablageVon, nichts
+           hartkodiert (Muster A3-Contract-Nachladen). Nur berechnet, wenn
+           Schritt 4 aktiv ist. */
+        var ab3Fuer4 = (k && String(p.schrittId) === '4') ? root.inhalt.ablageVon(inh, '3', k.kursId) : null;
+        var ab2Fuer4 = (k && String(p.schrittId) === '4') ? root.inhalt.ablageVon(inh, '2', k.kursId) : null;
+        var dateien03Fuer4 = ab3Fuer4 ? state.data.dateien[k.kursId + '/' + ab3Fuer4.ordner] : null;
+        var dateien02Fuer4 = ab2Fuer4 ? state.data.dateien[k.kursId + '/' + ab2Fuer4.ordner] : null;
         controller.setz(meldung + root.ansichten.einSchritt(inh, k, p.schrittId, p.werkzeugId, {
           basisUrl: ordn ? ordn.webUrl : null,
           dateien: schl ? state.data.dateien[schl] : null,
@@ -1042,7 +1052,11 @@
           /* B9-F3: kein eigener Stempel noetig — state.data.uploadMeldung wird
              bereits bei jedem Kurs-/Schrittwechsel in controller.zu() geloescht
              (dasselbe kursVorher/schrittVorher-Muster wie dateiAuswahl). */
-          uploadMeldung: state.data.uploadMeldung || null
+          uploadMeldung: state.data.uploadMeldung || null,
+          /* V3, Etappe 4: nur auf Schritt 4 gefuellt (s. o.) — der Kaltstart-
+             Kasten in ansichten.js prueft beide Caches. */
+          dateien03: dateien03Fuer4,
+          dateien02: dateien02Fuer4
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         /* A3, Etappe 3: Schritt 3 erbt den GESETZTEN Contract-Stand (Version,
@@ -1053,6 +1067,14 @@
         if (k && String(p.schrittId) === '3') {
           var ab2Nachladen = root.inhalt.ablageVon(inh, '2', k.kursId);
           if (ab2Nachladen) controller.ordnerNachladen(k.kursId, ab2Nachladen.ordner);
+        }
+        /* V3, Etappe 4: Schritt 4 erbt aus Schritt 3 (beide Varianten) UND
+           Schritt 2 (Contract) — dieselbe Begruendung wie beim Schritt-3-
+           Nachladen oben, nur mit einem zusaetzlichen Ordner (Schritt 3 fuehrt
+           selbst schon zwei Varianten im selben Ordner 03_content). */
+        if (k && String(p.schrittId) === '4') {
+          if (ab3Fuer4) controller.ordnerNachladen(k.kursId, ab3Fuer4.ordner);
+          if (ab2Fuer4) controller.ordnerNachladen(k.kursId, ab2Fuer4.ordner);
         }
         /* Auf Schritt 1 stehen die Projekt-Instruktionen, und die tragen das
            Briefing. Es wurde aber nur auf Schritt 2 geladen — deshalb stand dort
@@ -1071,8 +1093,11 @@
            Schritt 2 (Etappe 2, Task 3) braucht das Dossier ebenso: der
            Kein-freigegebenes-Briefing-Kasten prueft status.briefing, und der
            kopieren-Handler stellt lernzielePromptKopf voran — beides ohne
-           geladenes Dossier unmoeglich. */
-        if (k && (String(p.schrittId) === '1' || String(p.schrittId) === '2' || String(p.schrittId) === '3') &&
+           geladenes Dossier unmoeglich. Schritt 4 (V3, Etappe 4) ebenso: der
+           kopieren-Handler stellt contentPromptKopf voran, und ohne Dossier
+           gibt es keinen Kopf (contentPromptKopf liefert dann ''). */
+        if (k && (String(p.schrittId) === '1' || String(p.schrittId) === '2' ||
+                  String(p.schrittId) === '3' || String(p.schrittId) === '4') &&
             state.data.ordner[k.kursId]) {
           controller.dossierNachladen(k.kursId);
         }
@@ -3007,6 +3032,66 @@
               }
             }
             text2 = root.inhalt.skriptPromptKopf(kurs4, d4, extras4) + text2;
+          }
+        }
+        /* Schritt 4 (V3, Etappe 4): Titel/Kompetenzfeld/Rechtsstand/Quellen aus
+           dem Dossier wie Schritt 2/3 — zusaetzlich die geltenden .blocks
+           beider Schritt-3-Varianten, der freigegebene Contract aus Schritt 2
+           und Version/Zielname des eigenen Lieferobjekts. T13/A3-Muster:
+           jedes Extra kommt aus einem bereits geladenen Cache (ordnerNachladen
+           fuer 03_content UND 02_lernziele, s. controller.render()), nichts
+           wird geraten. */
+        if (String(state.position.schrittId) === '4' && w.type === 'prompt') {
+          var kurs5 = nav.kurs();
+          var d5 = kurs5 ? state.data.dossier[kurs5.kursId] : null;
+          if (d5 && typeof d5 === 'object') {
+            var inh5 = state.data.inhalt;
+            var extras5 = {};
+            /* basisClaude/basisChatgpt: die geltende .blocks-Fassung je
+               Schritt-3-Variante — geltende .docx (geltendeDatei), Endung
+               getauscht (B5-Invariante: beide liegen unter demselben Stamm).
+               Der Ordner (03_content) ist fuer beide Varianten derselbe, nur
+               das Lieferobjekt unterscheidet sich (lieferobjektVon). */
+            var ab3Kopieren = root.inhalt.ablageVon(inh5, '3', kurs5.kursId);
+            var dateien3Kopieren = ab3Kopieren ? state.data.dateien[kurs5.kursId + '/' + ab3Kopieren.ordner] : undefined;
+            if (Array.isArray(dateien3Kopieren)) {
+              var liefClaude5 = root.inhalt.lieferobjektVon(inh5, '3', 'claude');
+              var liefChatgpt5 = root.inhalt.lieferobjektVon(inh5, '3', 'chatgpt');
+              if (liefClaude5) {
+                var docxClaude5 = root.inhalt.geltendeDatei(dateien3Kopieren, kurs5.kursId, liefClaude5);
+                if (docxClaude5) extras5.basisClaude = docxClaude5.replace(/\.[a-z0-9]+$/i, '.blocks');
+              }
+              if (liefChatgpt5) {
+                var docxChatgpt5 = root.inhalt.geltendeDatei(dateien3Kopieren, kurs5.kursId, liefChatgpt5);
+                if (docxChatgpt5) extras5.basisChatgpt = docxChatgpt5.replace(/\.[a-z0-9]+$/i, '.blocks');
+              }
+            }
+            /* contract: die _final-Fassung des Schritt-2-Lieferobjekts —
+               finalVorhanden liefert den Dateinamen direkt oder null, kein
+               zweiter Rechenweg ueber geltendeDatei noetig. */
+            var ab2Kopieren = root.inhalt.ablageVon(inh5, '2', kurs5.kursId);
+            if (ab2Kopieren && ab2Kopieren.lieferobjekt) {
+              var dateien2Kopieren = state.data.dateien[kurs5.kursId + '/' + ab2Kopieren.ordner];
+              if (Array.isArray(dateien2Kopieren)) {
+                var contract5 = root.inhalt.finalVorhanden(dateien2Kopieren, kurs5.kursId, ab2Kopieren.lieferobjekt);
+                if (contract5) extras5.contract = contract5;
+              }
+            }
+            /* version/zielname: das eigene Schritt-4-Lieferobjekt im
+               04_validierung-Ordner — Stamm mit .zip-Endung (B6-Muster: das
+               GEBAUTE Ablageformat bleibt docx, s. inhalt.erwarteteEndung;
+               der im Prompt-Kopf genannte Name ist derselbe Stamm mit
+               getauschter Endung, kein zweiter Rechenweg). */
+            var ab4Kopieren = root.inhalt.ablageVon(inh5, '4', kurs5.kursId);
+            if (ab4Kopieren && ab4Kopieren.lieferobjekt) {
+              var dateien4Kopieren = state.data.dateien[kurs5.kursId + '/' + ab4Kopieren.ordner];
+              if (Array.isArray(dateien4Kopieren)) {
+                extras5.version = root.inhalt.naechsteVersion(dateien4Kopieren, kurs5.kursId, ab4Kopieren.lieferobjekt);
+                var ziel5 = root.inhalt.hochladeZiel(inh5, '4', kurs5.kursId, dateien4Kopieren);
+                if (ziel5) extras5.zielname = ziel5.datei.replace(/\.[a-z0-9]+$/i, '.zip');
+              }
+            }
+            text2 = root.inhalt.contentPromptKopf(kurs5, d5, extras5) + text2;
           }
         }
         kopieren(text2, t);

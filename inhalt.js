@@ -1174,6 +1174,100 @@
       return z.join('\n');
     },
 
+    /* Prompt-Kopf fuer Schritt 4 (Validierung), V3 Etappe 4 — dasselbe Prinzip
+       wie briefingPromptKopf/lernzielePromptKopf/skriptPromptKopf: was die App
+       schon weiss, muss der Chat nicht erfragen. Schritt 4 validiert GEGEN die
+       beiden Schritt-3-Varianten und den freigegebenen Contract aus Schritt 2
+       (s. inhalt.validierungPruefe, V2) — dieser Kopf ist der GESETZTE Teil,
+       den validierungPruefe beim Pruefen voraussetzt (die Leseliste muss ALLE
+       Dossier-Quellen nennen, ###VALIDIERUNG ist je Kapitel Pflicht).
+
+       Rahmen und gemeinsame Saetze NICHT dupliziert (Konvention 9): Kurs-/
+       Kompetenzfeld-Zeilen wie in den drei vorigen Koepfen, Rechtsstand/
+       Zusatz/SAQ ueber regulatorikZeilen(d) (vierter Aufrufer), FACHQUELLEN
+       GENAU-Block ueber fachquellenZeilen(d) (vierter Aufrufer),
+       PROJEKT-WISSEN-Zeile ueber projektWissenZeilen(d) (dritter Aufrufer).
+       Ohne d (kein Dossier geladen — Schritt 1 nie durchlaufen) gibt es
+       keinen Kopf.
+
+       extras = { basisClaude, basisChatgpt, contract, version, zielname } —
+       reine Anzeigewerte, von app.js aus bereits geladenen dateien-Caches
+       berechnet (T13/A3-Muster: inhalt.geltendeDatei/finalVorhanden/
+       naechsteVersion/hochladeZiel — nichts wird hier neu erfunden). Fehlt
+       ein Feld, fehlt seine Zeile: die Funktion raet nie.
+       - basisClaude/basisChatgpt: die geltende .blocks-Fassung je
+         Schritt-3-Variante (geltende .docx, Endung getauscht — B5-Invariante:
+         beide liegen unter demselben Stamm).
+       - contract: die _final-Fassung des Schritt-2-Lieferobjekts
+         (finalVorhanden, NICHT die hoechste Version — ein Contract-Entwurf
+         ohne Gate 1 ist kein Massstab fuer die Validierung).
+       - version/zielname: Version und Zielname des Schritt-4-Lieferobjekts
+         selbst (naechsteVersion/hochladeZiel im 04_validierung-Ordner);
+         zielname nennt im Kopf das ZIP-Paket (Stamm mit .zip-Endung — das
+         GEBAUTE Ablageformat bleibt docx, wie bei den anderen Koepfen ist der
+         im Prompt genannte Name derselbe Stamm mit getauschter Endung).
+
+       Drei feste Regeln, UNCONDITIONAL sobald d vorliegt (kein extras-Wert
+       dahinter — Muster die Kurs-ID/Rechtsstand-Sichtbarkeits-Zeile in
+       skriptPromptKopf, F1): Altmaterial ist Prüfstein, nicht Wahrheitsquelle
+       (00_input/ dient dem Abgleich, keine Fundstelle darf sich darauf
+       berufen, ohne Datei und Seite zu nennen) · die Leseliste muss ALLE
+       Dossier-Quellen nennen (Schritt 4 ist der letzte Halt vor der
+       fachlichen Freigabe, eine Teil-Lieferung wie in Schritt 3 ist hier
+       nicht mehr akzeptabel, s. validierungPruefe Regel 2) · ###VALIDIERUNG
+       ist je Kapitel Pflicht (umgekehrt zu Schritt 3, s. validierungPruefe
+       Regel 1). */
+    contentPromptKopf: function (kurs, d, extras) {
+      if (!d) return '';
+      extras = extras || {};
+      var z = [];
+      z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
+      z.push('Diese Werte sind gesetzt. Übernimm sie. Frage sie NICHT erneut ab, rechne sie');
+      z.push('nicht um und bewerte sie nicht.');
+      z.push('');
+      z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
+      z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
+      z.push.apply(z, regulatorikZeilen(d));
+
+      if (extras.basisClaude) {
+        z.push('');
+        z.push('Variante A (claude): ' + extras.basisClaude);
+      }
+      if (extras.basisChatgpt) {
+        z.push('');
+        z.push('Variante B (chatgpt): ' + extras.basisChatgpt);
+      }
+      if (extras.contract) {
+        z.push('');
+        z.push('Contract: ' + extras.contract);
+      }
+      if (typeof extras.version === 'number') {
+        z.push('');
+        z.push('Version des Lieferobjekts: ' + extras.version + '.');
+        z.push('Setze im YAML-Feld \'version\' des _steckbrief GENAU diese Zahl, keine andere.');
+      }
+
+      z.push('');
+      z.push('00_input/ ist Prüfstein, nicht Wahrheitsquelle — jede Fundstelle heisst Datei ' +
+             'und Seite, nie \'laut Altmaterial\'.');
+      z.push('Die Leseliste nennt ALLE Dossier-Quellen — Schritt 4 lässt keine Lücke mehr zu.');
+      z.push('Jedes Kapitel trägt ###VALIDIERUNG — in Schritt 4 ist das Pflicht.');
+
+      z.push('');
+      z.push.apply(z, fachquellenZeilen(d));
+      z.push.apply(z, projektWissenZeilen(d));
+
+      if (extras.zielname) {
+        z.push('');
+        z.push('Liefere in Phase 2 DIREKT das ZIP-Paket ' + extras.zielname +
+               ' (Blockdatei + neue PNGs) zum Herunterladen.');
+      }
+      z.push('');
+      z.push('=== ENDE DER ANGABEN ===');
+      z.push('');
+      return z.join('\n');
+    },
+
     /* Bricht zu lange Zeilen an Wortgrenzen um. Vorhandene Zeilenenden bleiben
        stehen; eine Aufzaehlung behaelt ihre Einrueckung, damit die Fortsetzung
        nicht wie ein neuer Punkt aussieht. Ein einzelnes Wort, das laenger ist

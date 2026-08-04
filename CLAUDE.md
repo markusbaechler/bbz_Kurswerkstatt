@@ -4187,3 +4187,94 @@ SharePoint führen für Schritt 4 weiterhin nicht `pruefung: 'validierung'`/`que
 Die Verdrahtung in `controller.hochladen` (Datei-Klassifikation, Laden+Parsen der beiden
 Schritt-3-Varianten, Aufruf von `validierungPruefe`, Ablage) ist V4, nicht Teil von V2 — diese
 Task liefert ausschliesslich die reinen Prüffunktionen.
+
+## Etappe 4 / Task V3: `inhalt.contentPromptKopf` + Kaltstart-Kasten Schritt 4 + kopieren-Handler
+
+Schritt 4 (Validierung) bekommt seinen GESETZT-Prompt-Kopf nach dem Muster der Köpfe von
+Schritt 1–3 (`briefingPromptKopf`/`lernzielePromptKopf`/`skriptPromptKopf`) — was die App schon
+weiss (Kurs, Rechtsstand, Quellen, die beiden Schritt-3-Varianten, der Contract), muss der Chat
+nicht erfragen. Dieser Kopf ist der GESETZTE Teil, den `validierungPruefe` (V2) beim Prüfen
+voraussetzt: die Leseliste muss ALLE Dossier-Quellen nennen (V2 Regel 2), `###VALIDIERUNG` ist je
+Kapitel Pflicht (V2 Regel 1).
+
+**`inhalt.contentPromptKopf(kurs, d, extras) -> string`, `''` ohne `d`** — Konvention 9, dieselben
+Helfer wie `skriptPromptKopf`: `regulatorikZeilen(d)` (fünfter Aufrufer), `fachquellenZeilen(d)`
+(vierter Aufrufer), `projektWissenZeilen(d)` (dritter Aufrufer). `extras = { basisClaude,
+basisChatgpt, contract, version, zielname }` — reine Anzeigewerte, jede Zeile nur, wenn ihr Wert
+gesetzt ist (die Funktion rät nie), Muster T13/A3:
+- `Variante A (claude): {extras.basisClaude}` / `Variante B (chatgpt): {extras.basisChatgpt}` —
+  die geltende `.blocks`-Fassung je Schritt-3-Variante (geltende `.docx` über `geltendeDatei`,
+  Endung getauscht — B5-Invariante: beide liegen unter demselben Stamm).
+- `Contract: {extras.contract}` — die `_final`-Fassung des Schritt-2-Lieferobjekts
+  (`finalVorhanden`, NICHT die höchste Version — ein Contract-Entwurf ohne Gate 1 ist kein
+  Massstab für die Validierung).
+- `Version des Lieferobjekts: {extras.version}` mit demselben `YAML-Feld 'version'`-Satz wie in
+  den vorigen Köpfen.
+- Schluss-Satz: „Liefere in Phase 2 DIREKT das ZIP-Paket {extras.zielname} (Blockdatei + neue
+  PNGs) zum Herunterladen." — anders als in Schritt 3 (dort eine `.blocks`-Datei allein) liefert
+  Schritt 4 ein ZIP-Paket, weil zur Validierung sowohl die Blockdatei als auch etwaige neue PNGs
+  gehören.
+
+**Drei feste Regeln, UNCONDITIONAL sobald `d` vorliegt** (kein `extras`-Wert dahinter — Muster die
+Kurs-ID/Rechtsstand-Sichtbarkeits-Zeile in `skriptPromptKopf`, F1): Altmaterial ist Prüfstein,
+nicht Wahrheitsquelle („`00_input/` ist Prüfstein, nicht Wahrheitsquelle — jede Fundstelle heisst
+Datei und Seite, nie 'laut Altmaterial'.") · die Leseliste muss ALLE Dossier-Quellen nennen
+(„Die Leseliste nennt ALLE Dossier-Quellen — Schritt 4 lässt keine Lücke mehr zu.") · `###VALIDIERUNG`
+ist je Kapitel Pflicht („Jedes Kapitel trägt ###VALIDIERUNG — in Schritt 4 ist das Pflicht.").
+
+**`app.js` `kopieren`-Handler, Schritt-4-Zweig (Muster A3/T13):** `basisClaude`/`basisChatgpt` =
+geltende `.docx` je Variante aus dem 03_content-Cache (`lieferobjektVon(inh,'3','claude'|'chatgpt')`
++ `geltendeDatei`), Endung auf `.blocks` getauscht; `contract` = `finalVorhanden` am
+02_lernziele-Cache (liefert den `_final`-Dateinamen direkt oder `null`, kein zweiter Rechenweg über
+`geltendeDatei`); `version`/`zielname` aus dem 04_validierung-Cache (`naechsteVersion`/
+`hochladeZiel`, Stamm mit `.zip`-Endung). `controller.render()` lädt für Schritt 4 zusätzlich
+`03_content` UND `02_lernziele` nach (`ab3Fuer4`/`ab2Fuer4`, Ordner aus `ablageVon`, nichts
+hartkodiert — Muster A3-Contract-Nachladen) und reicht die beiden Dateilisten unter
+`ablageDaten.dateien03`/`ablageDaten.dateien02` an die Ansicht durch. Der Dossier-Nachlade-Trigger
+(`controller.dossierNachladen`) läuft seither auch auf Schritt 4 — ohne Dossier liefert
+`contentPromptKopf` `''`, und der Kaltstart-Kasten (s. u.) bräuchte ihn ohnehin nicht, weil der
+dort NICHT über den Dossier-Status prüft (s. u.), aber der kopieren-Handler schon.
+
+**`ansichten.einSchritt`, Schritt 4 — Kaltstart-Kasten `box achtung`, solange nicht BEIDE
+Varianten-`.blocks` im 03_content-Cache liegen ODER der Contract nicht final ist** („Schritt 4
+braucht beide Skript-Varianten aus Schritt 3 und den freigegebenen Contract") — Knöpfe bleiben
+aktiv (Muster A3: Altkurse/laufende Migrationen müssen weiterarbeiten können). **Bewusst NICHT
+über den Dossier-Status geprüft**, anders als die Schritt-2/3-Kästen: Schritt 3 hat kein Gate,
+`dossier.statusVon` wird für `skript-claude`/`skript-chatgpt` nie automatisch auf `final` gesetzt
+— ein Kurs kann Schritt 3 längst abgeschlossen haben, ohne dass das im Dossier steht. Stattdessen
+prüft der Kasten die tatsächliche Dateiliste: je Variante muss die geltende `.docx` UND ihre
+`.blocks`-Schwester (gleicher Stamm, B5-Invariante) im 03_content-Cache liegen; der Contract gilt,
+wenn seine `_final`-Fassung im 02_lernziele-Cache liegt (`finalVorhanden`, nicht nur die höchste
+Version). Lieferobjekt-Kennungen kommen aus `lieferobjektVon`/`ablageVon` — nie hartkodiert.
+
+**Tests:** `test/contentkopf.test.js` (neu, 4 Fälle) — voller Kopf mit allen `extras` (Variante
+A/B, Contract, Version, alle drei festen Regeln, FACHQUELLEN, PROJEKT-WISSEN, ZIP-Schluss-Satz;
+die Altmaterial-Zeile wird bewusst NUR in diesem einen Test geprüft, für eine saubere
+Mutationsprobe-Isolation), ohne `extras` (und mit leerem `{}`) fehlen genau Variante A/B/Contract/
+Version/Schluss-Satz, der Rest bleibt, ohne `d` `''`, `quellenfrei` zeigt den Quellenfrei-Satz.
+`test/ansichten.test.js` (3 neue Fälle) — beide Varianten + Contract final → kein Kasten, eine
+Variante ohne `.blocks`-Schwester → Kasten, beide Varianten da aber Contract nicht final → Kasten;
+Lieferobjekt-Kennungen in den Tests über `inhalt.lieferobjektVon`/`INHALT['ablage-kontrakt']...`
+gelesen, nie hardkodiert. **794 Tests grün** (Baseline 787 + 7 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die Altmaterial-Zeile (`z.push('00_input/ ist
+Prüfstein...')`) in `contentPromptKopf` auskommentiert, `node --test test/contentkopf.test.js`:
+```
+ℹ tests 4
+ℹ pass 3
+ℹ fail 1
+
+✖ voller Kopf mit allen extras traegt Kurs/Kompetenzfeld/Rechtsstand, Variante A/B, Contract,
+  Version, die drei festen Regeln, FACHQUELLEN, PROJEKT-WISSEN und den ZIP-Schluss-Satz
+  AssertionError [ERR_ASSERTION]: Altmaterial-Regel fehlt
+```
+Genau der eine Test fiel rot, die anderen drei blieben grün; danach die Zeile wiederhergestellt,
+komplette Suite erneut geprüft: `node --test` → **794/794 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** die Verdrahtung des Uploads für Schritt 4
+(`controller.hochladen`: Datei-Klassifikation, Laden+Parsen der beiden Schritt-3-Varianten, Aufruf
+von `validierungPruefe`, ZIP-Bau, Ablage) ist V4, nicht Teil von V3 — diese Task liefert
+ausschliesslich den Prompt-Kopf, den Kaltstart-Kasten und den kopieren-Handler-Zweig. Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 4 weiterhin nicht
+`pruefung: 'validierung'`/`quelle: 'blocks'`/`ext: 'docx'` (Weg B, unverändert seit V2) — ohne das
+Feld greift nichts live, kein Regressionsrisiko.
