@@ -52,7 +52,20 @@
                     _formularSnapshot) — kein Verzeichnis je Kurs, weil immer nur eine
                     Hochladen-Flaeche gleichzeitig sichtbar ist. null = nichts gewaehlt.
                     s. controller.dateiGewaehlt/hochladen, ansichten.js Hochladen-Block. */
-                 dateiAuswahl: null },
+                 dateiAuswahl: null,
+                 /* uploadMeldung (B9-F3): dieselbe Klasse Live-Befund wie dateiAuswahl,
+                    dritter Vorfall — jede Upload-Antwort (Erfolg wie Abweisung) landete
+                    bisher nur im Meldungsblock OBEN, weil klemmtSichtbar sofort nach dem
+                    Setzen von meld.textContent controller.render() ruft: der Neuaufbau
+                    ersetzt den lokalen #hochladefehler-Knoten durch einen neuen, leeren,
+                    bevor die Person (die beim Hochladen-Block UNTEN steht) ihn liest.
+                    { typ: 'ok'|'fehler', text } lebt deshalb im State, wird IM
+                    Hochladen-Block gerendert (ansichten.js) und NICHT beim Rendern
+                    konsumiert — anders als state.hinweis/fehlerHinweis. Geleert bei:
+                    neuem Hochladen-Klick (Start), neuer Dateiauswahl (dateiGewaehlt) und
+                    Navigation weg von der Kurs/Schritt-Kombination (controller.zu(),
+                    dasselbe Muster wie dateiAuswahl). null = keine Meldung. */
+                 uploadMeldung: null },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
                  variante: null, weg: null },
     laden:     false,
@@ -1025,7 +1038,11 @@
             state.data.dateiAuswahl.kursId === k.kursId &&
             state.data.dateiAuswahl.schrittId === String(p.schrittId))
             ? state.data.dateiAuswahl.dateien
-            : null
+            : null,
+          /* B9-F3: kein eigener Stempel noetig — state.data.uploadMeldung wird
+             bereits bei jedem Kurs-/Schrittwechsel in controller.zu() geloescht
+             (dasselbe kursVorher/schrittVorher-Muster wie dateiAuswahl). */
+          uploadMeldung: state.data.uploadMeldung || null
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         /* A3, Etappe 3: Schritt 3 erbt den GESETZTEN Contract-Stand (Version,
@@ -1987,8 +2004,12 @@
       Object.keys(aenderung).forEach(function (k) { state.position[k] = aenderung[k]; });
       var kursNachher = state.position.kursId || null;
       var schrittNachher = state.position.schrittId != null ? String(state.position.schrittId) : null;
+      /* B9-F3: uploadMeldung ist ein/derselbe Fall — sie darf ebenfalls keinen
+         Kurs-/Schrittwechsel ueberleben (dasselbe kursVorher/schrittVorher-
+         Muster, kein zweiter Vergleich noetig). */
       if (kursVorher !== kursNachher || schrittVorher !== schrittNachher) {
         state.data.dateiAuswahl = null;
+        state.data.uploadMeldung = null;
       }
       controller.render();
       /* Hart nach oben, nicht sanft: das Dokument ist eine Zeile vorher komplett
@@ -2141,6 +2162,10 @@
         schrittId: state.position.schrittId != null ? String(state.position.schrittId) : null,
         dateien: el.files ? Array.prototype.slice.call(el.files) : []
       };
+      /* B9-F3: eine neue Auswahl macht eine stehende Upload-Antwort (Erfolg oder
+         Abweisung der vorigen Datei) obsolet — sonst zeigt der Block nach dem
+         Wechsel weiterhin die Meldung zur ALTEN Datei. */
+      state.data.uploadMeldung = null;
       controller.render();
     },
 
@@ -2182,13 +2207,24 @@
       /* Zusaetzlich im State (T11, Muster quelleErfassen-I10): ein
          Zwischen-Render kann #hochladefehler aushaengen, bevor die Person
          die Meldung liest — state.fehlerHinweis lebt im State und uebersteht
-         das. */
+         das. B9-F3: state.data.uploadMeldung ebenso, zusaetzlich gerendert IM
+         Hochladen-Block selbst (ansichten.js) — der obere Meldungsblock
+         (fehlerHinweis) ist weit weg vom Ort des Geschehens, an dem die
+         Person gerade steht. EIN Punkt hier deckt ALLE Aufrufer von
+         klemmtSichtbar ab (Konvention 9), keine einzelne Aufrufstelle muss
+         angefasst werden. */
       function klemmtSichtbar(text) {
         state.fehlerHinweis = text;
+        state.data.uploadMeldung = { typ: 'fehler', text: text };
         klemmt(text);
         controller.render();
       }
       if (!dateiListe.length) { feld.click(); return; }
+      /* B9-F3: ein neuer Hochladen-Klick startet immer mit einer leeren Tafel —
+         eine stehende Meldung zur VORIGEN Datei/zum VORIGEN Versuch soll nicht
+         mitten im neuen Versuch (waehrend "wird geprueft/hochgeladen …") noch
+         herumstehen. Synchron, VOR jedem Netzzugriff. */
+      state.data.uploadMeldung = null;
 
       var ab = root.inhalt.ablageVon(inh, n, k.kursId);
       var schl = k.kursId + '/' + ab.ordner;
@@ -2252,8 +2288,13 @@
                  zeigt die Ansicht Geister-Namen und ein zweiter Klick laedt
                  Veraltetes neu hoch. */
               state.data.dateiAuswahl = null;
-              state.hinweis = 'Hochgeladen als ' + ziel.datei +
+              var erfolgstext = 'Hochgeladen als ' + ziel.datei +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
+              /* B9-F3: dieselbe persistente Meldung wie bei einer Abweisung
+                 (klemmtSichtbar), nur mit typ 'ok' — derselbe Text wie
+                 state.hinweis, damit oben und im Block dasselbe steht. */
+              state.data.uploadMeldung = { typ: 'ok', text: erfolgstext };
+              state.hinweis = erfolgstext;
               controller.render();
             });
           })
@@ -2418,9 +2459,12 @@
               var bz = ergebnis.bildzahl;
               /* B9-F1: dieselbe Leerung wie im xlsx-/mbz-Pfad oben. */
               state.data.dateiAuswahl = null;
-              state.hinweis = 'Hochgeladen als ' + ergebnis.ziel.datei + ' (+ ' + ergebnis.blocksName +
+              var erfolgstext = 'Hochgeladen als ' + ergebnis.ziel.datei + ' (+ ' + ergebnis.blocksName +
                 ', ' + bz + ' Bild' + (bz === 1 ? '' : 'er') + ')' +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
+              /* B9-F3: dieselbe persistente Meldung wie im xlsx-/mbz-Pfad oben. */
+              state.data.uploadMeldung = { typ: 'ok', text: erfolgstext };
+              state.hinweis = erfolgstext;
               controller.render();
             });
           })

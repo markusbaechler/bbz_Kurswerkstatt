@@ -163,6 +163,15 @@ test('Schritt 2 (kein Blockdatei-Gate) traegt weiterhin KEIN multiple', () => {
 const { controller, state, graph } = require('../app.js');
 const { xlsxLesen } = require('../xlsx-lesen.js');
 
+/* B9-F3 (d integration): viele Tests in dieser Datei ueberschreiben
+   controller.render mit einem No-op, um Netzaufrufe aus dem Hochladen-Fluss
+   zu vermeiden — der Ueberschrieb bleibt fuer den REST der Datei stehen, weil
+   controller ein einziges, geteiltes Objekt ist. Fuer den einen Integrations-
+   test, der den ECHTEN Render-Aufbau braucht, wird die Original-Implementierung
+   deshalb hier, vor dem ersten ueberschreibenden Test, gesichert (Muster
+   test/gate.test.js: echteUmbenennen). */
+const echtesRender = controller.render;
+
 function xlsxDatei(name, arrayBufferErgebnis) {
   return {
     name: name,
@@ -941,4 +950,183 @@ test('B9-F1 Fix-Runde 1 (b) Gegenprobe: unveraenderte Position sowie Varianten-/
   controller.zu({ weg: 'chat' });
   assert.ok(state.data.dateiAuswahl,
     'ein Wegwechsel innerhalb des Schritts haette nichts loeschen duerfen');
+});
+
+/* ---------- B9-F3: persistente Upload-Antwort AM Hochladen-Block ----------
+   Live-Befund (dritter Vorfall derselben Klasse): jede Upload-Antwort (Erfolg wie
+   Abweisung) landete nur im Meldungsblock OBEN ueber der Ansicht — klemmtSichtbar
+   ruft controller.render() SOFORT nach dem Setzen von meld.textContent, der
+   Neuaufbau ersetzt den lokalen #hochladefehler-Knoten dabei durch einen neuen,
+   leeren. Die Person steht beim Hochladen-Block UNTEN und sieht dort: nichts.
+   Fix: state.data.uploadMeldung = { typ: 'ok'|'fehler', text } — gesetzt an jeder
+   Stelle, die heute klemmtSichtbar bzw. die Erfolgsmeldung setzt (EIN Punkt fuer
+   klemmtSichtbar selbst deckt alle ihre Aufrufer ab, Konvention 9), gerendert IM
+   Hochladen-Block (ansichten.js), NICHT beim Rendern konsumiert. Geleert bei:
+   neuem Hochladen-Klick (Start), neuer Dateiauswahl (change) und Navigation weg
+   von der Kurs/Schritt-Kombination (dasselbe controller.zu()-Muster wie bei
+   dateiAuswahl, Fix-Runde 1). */
+
+test('B9-F3 (a): eine Abweisung setzt state.data.uploadMeldung mit typ fehler', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Lernort','Definition'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'));
+  assert.match(l.meldung, /Struktur weicht vom Contract ab/, 'Testvoraussetzung: Abweisung');
+  assert.deepStrictEqual(state.data.uploadMeldung, { typ: 'fehler', text: l.meldung },
+    'uploadMeldung haette denselben Text wie die lokale Meldung tragen sollen');
+});
+
+test('B9-F3 (b): ein erfolgreicher xlsx-Upload setzt state.data.uploadMeldung mit typ ok', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten'] },
+      { name: '2_Eingangskompetenzen', kopf: ['EK-ID','Thema','Definition','Wissensziel','Bloom-Stufe','Wie prüfbar (MC/MR)','Wie lernbar bei Lücken?'] },
+      { name: '3_Drehbuch', kopf: ['Uhrzeit','Dauer','Thema','Phase (W/U/G)','Lernziel-ID','Erwartetes Verhalten / Ergebnis','Aktivität Trainer / Moderation','Material & Hilfsmittel'] },
+      { name: '_steckbrief', kopf: ['feld','wert'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'));
+  assert.match(l.hinweis || '', /Hochgeladen als/, 'Testvoraussetzung: Erfolg');
+  assert.deepStrictEqual(state.data.uploadMeldung, { typ: 'ok', text: l.hinweis });
+});
+
+test('B9-F3 (b\'): ein erfolgreicher B5-Upload traegt die Hinweise-Anhaenge in uploadMeldung', async () => {
+  const l = await hochladenLaufB5(3, [blockDatei('egal.blocks', blockText())], { dossier: DOSSIER_OK });
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_skript-claude_v1\.docx/);
+  assert.match(l.hinweis || '', /Q-002/, 'Testvoraussetzung: der Hinweise-Anhang steht im Erfolgstext');
+  assert.deepStrictEqual(state.data.uploadMeldung, { typ: 'ok', text: l.hinweis },
+    'uploadMeldung haette denselben (inkl. Hinweise-Anhang) Text wie state.hinweis tragen sollen');
+});
+
+test('B9-F3 (c): die Ansicht zeigt die Meldung im Hochladen-Block — Fehler mit .klemmt, Erfolg mit .hinweis, ohne Haekchen-Doppelung, escaped', () => {
+  const fehlerHtml = ansichten.einSchritt(INHALT, AFL, 6, null,
+    { ordnerFehlt: false, dateien: [],
+      uploadMeldung: { typ: 'fehler', text: 'Nicht hochgeladen: <script>alert(1)</script> kaputt.' } });
+  assert.ok(fehlerHtml.indexOf('class="klemmt">Nicht hochgeladen') >= 0,
+    'die Fehlermeldung erscheint nicht in der .klemmt-Optik im Block');
+  assert.ok(fehlerHtml.indexOf('&lt;script&gt;alert(1)&lt;/script&gt;') >= 0, 'Fremdwert nicht escaped');
+  assert.ok(fehlerHtml.indexOf('<script>alert(1)</script>') < 0, 'ungeescapter Fremdwert im HTML');
+
+  const okHtml = ansichten.einSchritt(INHALT, AFL, 6, null,
+    { ordnerFehlt: false, dateien: [],
+      uploadMeldung: { typ: 'ok', text: 'Hochgeladen als AFL-001_export.mbz' } });
+  const okMarke = 'class="hinweis">Hochgeladen als AFL-001_export.mbz</p>';
+  assert.ok(okHtml.indexOf(okMarke) >= 0,
+    'die Erfolgsmeldung erscheint nicht unveraendert (ohne Haekchen) in der .hinweis-Optik im Block');
+  /* Keine Haekchen-Doppelung mit dem oberen Meldungsblock (Auftrag B9-F3): der
+     obere Block traegt bereits <b>&#10003;</b> vor state.hinweis — geprueft wird
+     hier gezielt der lokale Block selbst (das Segment um okMarke), nicht die
+     gesamte Ansicht — die fuehrt an anderer Stelle (Kette, Steckbrief-
+     Vollstaendigkeit) ganz legitim eigene Haekchen. */
+  const okBlockStart = okHtml.indexOf(okMarke);
+  const okUmgebung = okHtml.slice(Math.max(0, okBlockStart - 40), okBlockStart);
+  assert.ok(okUmgebung.indexOf('&#10003;') < 0,
+    'kein Haekchen unmittelbar vor der lokalen Upload-Erfolgsmeldung erwartet');
+});
+
+test('B9-F3 (c\'): ohne uploadMeldung fehlt der Block ganz', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 6, null, { ordnerFehlt: false, dateien: [], uploadMeldung: null });
+  assert.ok(h.indexOf('id="hochladefehler"') >= 0, 'der bestehende lokale Fehlerknoten bleibt erhalten');
+  assert.ok(h.indexOf('Hochgeladen als') < 0, 'ohne uploadMeldung darf kein Erfolgstext auftauchen');
+});
+
+test('B9-F3 (d integration): uploadMeldung uebersteht einen echten controller.render()-Aufruf und erscheint im Hochladen-Block', () => {
+  state.auth.account = { name: 'Test' };
+  state.data.inhalt = JSON.parse(JSON.stringify(INHALT));
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz', schritt: 2, status: 'inArbeit' }];
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '2', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  /* ordner selbst muss ein geladenes Objekt sein (nicht null), sonst zeigt die
+     Ansicht den Kaltstart-Kasten statt des Hochladen-Blocks (ordnerFehlt).
+     dossier/briefing dagegen auf null (= "nachgesehen, nichts da") — das
+     verhindert echte, ungemockte Netzaufruf-Versuche aus dossierNachladen/
+     briefingNachladen heraus (Muster test/formularerhalt.test.js). */
+  state.data.ordner = { 'AFL-001': { name: 'AFL-001_test', webUrl: 'https://x' } };
+  state.data.dateien = { 'AFL-001/02_lernziele': [] };
+  state.data.dossier = { 'AFL-001': null };
+  state.data.briefing = { 'AFL-001': null };
+  state.hinweis = null; state.fehlerHinweis = null;
+  state.data.uploadMeldung = { typ: 'fehler', text: 'Struktur weicht vom Contract ab — Pflichtblatt fehlt.' };
+
+  let geschrieben = '';
+  const app = {};
+  Object.defineProperty(app, 'innerHTML', { set: function (v) { geschrieben = v; } });
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'app') return app;
+      if (id === 'nav') return { innerHTML: '' };
+      return null;
+    },
+    querySelector: function () { return null; },
+    querySelectorAll: function () { return []; },
+    activeElement: null
+  };
+
+  echtesRender();
+
+  assert.deepStrictEqual(state.data.uploadMeldung,
+    { typ: 'fehler', text: 'Struktur weicht vom Contract ab — Pflichtblatt fehlt.' },
+    'uploadMeldung haette einen echten render()-Aufruf ueberleben muessen (nicht konsumiert wie hinweis/fehlerHinweis)');
+  assert.ok(geschrieben.indexOf('Struktur weicht vom Contract ab') >= 0,
+    'die Meldung haette im Hochladen-Block der gerenderten Ansicht erscheinen muessen');
+
+  delete global.document;
+  state.auth.account = null;
+  state.data.uploadMeldung = null;
+});
+
+test('B9-F3 (e): eine neue Dateiauswahl (change) leert eine stehende Upload-Meldung', () => {
+  controller.render = function () {};
+  state.data.uploadMeldung = { typ: 'fehler', text: 'alt' };
+  controller.dateiGewaehlt({ files: [{ name: 'neu.blocks' }] });
+  assert.strictEqual(state.data.uploadMeldung, null,
+    'eine neue Dateiauswahl haette die alte Upload-Meldung leeren sollen');
+});
+
+test('B9-F3 (f): ein Kurs-/Schrittwechsel leert die Upload-Meldung, unveraenderte Position/Varianten-/Wegwechsel behalten sie', () => {
+  controller.render = function () {};
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '3', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  state.data.uploadMeldung = { typ: 'ok', text: 'Hochgeladen als egal.docx' };
+
+  controller.zu({ schrittId: '3' });
+  assert.ok(state.data.uploadMeldung, 'unveraenderte Position haette nichts loeschen duerfen');
+
+  controller.zu({ variante: 'claude' });
+  assert.ok(state.data.uploadMeldung, 'ein Variantenwechsel haette nichts loeschen duerfen');
+
+  controller.zu({ schrittId: '6' });
+  assert.strictEqual(state.data.uploadMeldung, null,
+    'ein Schrittwechsel haette die Upload-Meldung loeschen sollen');
+});
+
+test('B9-F3 (g): ein neuer Hochladen-Klick leert eine stehende Meldung sofort, VOR jedem Netzzugriff', () => {
+  const meldung = { textContent: '', hidden: true };
+  state.data.inhalt = JSON.parse(JSON.stringify(INHALT));
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz', schritt: 6, status: 'inArbeit' }];
+  state.data.dateien = {};
+  state.data.dossier = { 'AFL-001': undefined };
+  state.data.dateiAuswahl = null;
+  state.data.uploadMeldung = { typ: 'fehler', text: 'ganz alt' };
+  state.fehlerHinweis = null;
+  state.hinweis = null;
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '6', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'datei') return { files: [{ name: 'AFL-001_export.mbz' }] };
+      if (id === 'hochladefehler') return meldung;
+      return null;
+    }
+  };
+  graph.ordnerInhalt = function () { return new Promise(function () {}); }; /* haengt absichtlich */
+  controller.render = function () {};
+
+  controller.hochladen('6', { disabled: false, textContent: 'Hochladen' });
+
+  assert.strictEqual(state.data.uploadMeldung, null,
+    'die alte Meldung haette synchron, vor jedem Netzzugriff, geleert werden sollen');
 });

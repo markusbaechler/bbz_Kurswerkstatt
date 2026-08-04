@@ -3365,3 +3365,109 @@ Suite erneut geprüft: `node --test` → **725/725 grün**.
 den Befund selbst hervorgebracht hat) ist Sache des Koordinators/B9, nicht Teil dieses Fix-Tasks —
 diese Task belegt ausschliesslich die berechneten EMU-Werte über `zip-lesen.js`, kein erneutes
 Word-Öffnen.
+
+## Fix-Task B9-F3: die Upload-Antwort war unsichtbar am Ort des Geschehens
+
+**Live-Befund (dritter Vorfall derselben Fehlerklasse wie B9-F1):** jede Upload-Antwort — Erfolg
+wie Abweisung — erschien nur im Meldungsblock OBEN über der Ansicht. Ursache:
+`klemmtSichtbar(text)` setzt zwar `meld.textContent`/`meld.hidden = false` am lokalen
+`#hochladefehler`-Knoten, ruft aber UNMITTELBAR danach `controller.render()` — der Neuaufbau
+ersetzt genau diesen Knoten durch einen neuen, leeren, bevor die Person ihn liest. Der
+Erfolgspfad (`state.hinweis = 'Hochgeladen als …'`) zeigte lokal noch nie irgendetwas — nur oben.
+Die Person steht beim Hochladen-Block UNTEN und sieht dort: nichts. Drei Live-Vorfälle trugen
+dieselbe Beschreibung „wirkt tot", bis der Mechanismus als eigene Fehlerklasse erkannt wurde
+(die ersten zwei — B9-F1 Dateiauswahl, B9-F1 Fix-Runde 1 Revisit — betrafen den Datei-INPUT
+selbst, dieser dritte die ANTWORT auf den Klick).
+
+**Fix: `state.data.uploadMeldung = { typ: 'ok'|'fehler', text }` — dieselbe Klasse Lösung wie bei
+`dateiAuswahl`, nur für die Antwort statt für die Eingabe.** Gesetzt an EINER Stelle für alle
+Abbruchpfade: `klemmtSichtbar(text)` selbst schreibt `state.data.uploadMeldung = { typ: 'fehler',
+text: text }` — jeder ihrer über ein Dutzend Aufrufer (T11-Struktur-/Endungs-Prüfung,
+Blockdatei-Gate B5 mit all seinen Teilprüfungen, Baufehler, Teilfehler) ist damit automatisch
+abgedeckt, ohne einzeln angefasst zu werden (Konvention 9). Für den Erfolg an den ZWEI
+Erfolgspfaden (`weiterMitUpload`, `weiterMitSkriptBau`) steht `state.data.uploadMeldung = { typ:
+'ok', text: erfolgstext }` direkt neben `state.hinweis = erfolgstext` — derselbe Text (inklusive
+eines etwaigen Hinweise-Anhangs aus `blocksPruefe`), damit oben und im Block nie auseinanderlaufen
+können.
+
+**`ansichten.js` rendert die Meldung IM Hochladen-Block, direkt beim Knopf** — nach dem
+`.arow`-Div (Knopf + Zielname), vor dem bestehenden `#hochladefehler`-Knoten (der bleibt
+unverändert bestehen, inklusive seiner eigenen, unmittelbaren DOM-Manipulation durch `klemmt()`):
+`<p class="hinweis">…</p>` für `typ === 'ok'`, `<p class="klemmt">…</p>` sonst — die bestehenden
+Klassen wiederverwendet (Konvention 5, keine Ad-hoc-Farbe), der Text durch `esc()` (Konvention 4).
+**Bewusst OHNE das Häkchen (`<b>&#10003;</b>`)**, das der obere Meldungsblock vor `state.hinweis`
+trägt — der lokale Block übernimmt nur Farbe/Optik der Klasse, ein zweites Häkchen wäre eine
+Doppelung derselben Aussage. Der obere Meldungsblock (`state.hinweis`/`state.fehlerHinweis`)
+bleibt unverändert bestehen — die Doppel-Anzeige ist gewollt: oben für den Verlauf (bleibt beim
+nächsten Klick/Navigieren stehen, bis konsumiert), unten am Ort des Geschehens.
+
+**`state.data.uploadMeldung` wird NICHT beim Rendern konsumiert** — anders als
+`state.hinweis`/`state.fehlerHinweis`, die `controller._renderAufbau()` nach dem Anzeigen sofort
+auf `null` setzt. `render()` reicht sie unverändert durch (`uploadMeldung: state.data.uploadMeldung
+|| null`), ohne eigenen Positions-Stempel: die Freshness kommt ausschliesslich aus den drei
+Lösch-Auslösern (kein vierter Mechanismus nötig, Konvention 9):
+1. **Neuer Hochladen-Klick (Start):** `controller.hochladen` setzt `state.data.uploadMeldung =
+   null` synchron, direkt nach dem Datei-Guard (`if (!dateiListe.length) …`) und VOR jedem
+   Netzzugriff — eine stehende Meldung zum VORIGEN Versuch soll nicht mitten im neuen Versuch
+   („wird geprüft …") noch herumstehen.
+2. **Neue Dateiauswahl:** `controller.dateiGewaehlt(el)` (das `change`-Handler-Gegenstück aus
+   B9-F1) löscht `state.data.uploadMeldung` mit — eine neue Auswahl macht die Antwort zur ALTEN
+   Datei obsolet.
+3. **Navigation weg von der Kurs/Schritt-Kombination:** `controller.zu()` löscht
+   `state.data.uploadMeldung` in DEMSELBEN Vorher/Nachher-Vergleich wie `state.data.dateiAuswahl`
+   (B9-F1 Fix-Runde 1) — kein zweiter Vergleich, dieselbe `kursVorher`/`schrittVorher`-Prüfung
+   deckt beide Felder ab.
+
+**Tests (`test/hochladen.test.js`, neun neue Fälle, Abschnitt „B9-F3"):** (a) eine echte Abweisung
+(T11-Struktur) setzt `uploadMeldung` mit `typ: 'fehler'` und demselben Text wie die lokale
+Meldung; (b) ein sauberer xlsx-Upload setzt `typ: 'ok'`; (b') ein B5-Erfolg mit
+Blockdatei+Diagramm trägt den Hinweise-Anhang (Dossier-Quelle Q-002) in `uploadMeldung.text`,
+identisch zu `state.hinweis`; (c) die Ansicht zeigt Fehler mit `.klemmt`, Erfolg mit `.hinweis`,
+beides escaped (Fremdwert-Probe mit `<script>`), OHNE Häkchen unmittelbar vor der lokalen
+Erfolgsmeldung (die Prüfung ist auf das unmittelbare Umfeld der Meldung selbst begrenzt, nicht auf
+die gesamte Ansicht — die führt an anderer Stelle, z. B. der Kette, ganz legitim eigene Häkchen);
+(c') ohne `uploadMeldung` fehlt der Block ganz, der bestehende `#hochladefehler`-Knoten bleibt;
+(d) Integrationstest mit dem ECHTEN `controller.render()` (nicht mit einem No-op-Mock, s. u.):
+`uploadMeldung` übersteht den Neuaufbau unverändert UND erscheint im geschriebenen `innerHTML`;
+(e) eine neue Dateiauswahl leert eine stehende Meldung; (f) ein Kurs-/Schrittwechsel leert sie,
+eine unveränderte Position sowie ein Varianten-/Wegwechsel behalten sie (Gegenprobe im selben
+Test); (g) ein neuer Hochladen-Klick leert eine stehende Meldung synchron, bevor `graph.
+ordnerInhalt` (hier absichtlich eine nie auflösende Promise) überhaupt gerufen wird.
+
+**Testinfrastruktur-Fund beim Schreiben von (d):** `controller` ist ein einziges, geteiltes Objekt
+über die ganze Testdatei — viele vorangehende Tests überschreiben `controller.render` mit einem
+No-op, um Netzaufrufe aus dem Hochladen-Fluss zu vermeiden, und dieser Überschrieb bleibt für den
+Rest der Datei stehen. Ein naiver Aufruf von `controller.render()` in Test (d) hätte deshalb nur
+den No-op eines VORHERIGEN Tests getroffen, nie den echten Aufbau — der Test wäre grün geworden,
+ohne je etwas zu beweisen (das exakte Gegenteil dessen, was Test (d) zeigen soll). Fix: die
+Original-Implementierung wird EINMAL, ganz oben in der Testdatei, vor dem ersten überschreibenden
+Test gesichert (`const echtesRender = controller.render;`, Muster `test/gate.test.js`
+`echteUmbenennen`) und in Test (d) explizit aufgerufen (`echtesRender()`) statt `controller.
+render()`. Die real ausgeführten Nachlade-Trigger (`dossierNachladen`/`briefingNachladen`, seit
+Etappe 2 auch auf Schritt 2) brauchen dafür `state.data.dossier['AFL-001']`/`state.data.
+briefing['AFL-001']` explizit auf `null` gesetzt (= „nachgesehen, nichts da") — sonst lösen sie
+echte, ungemockte `graph.*`-Aufrufe aus, die synchron an der fehlenden MSAL-Bibliothek in Node
+scheitern (Muster `test/formularerhalt.test.js`, dortiger Integrationstest löste dasselbe Problem
+bereits für den Formular-Erhalt).
+
+**Ergebnis: 737/737 Tests grün** (Baseline 728 + 9 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** das Rendern von `uploadMeldung` in `ansichten.js`
+auf `if (false && ablageDaten.uploadMeldung && ablageDaten.uploadMeldung.text)` gesetzt,
+`node --test test/hochladen.test.js`:
+```
+ℹ tests 60
+ℹ pass 58
+ℹ fail 2
+
+✖ B9-F3 (c): die Ansicht zeigt die Meldung im Hochladen-Block — Fehler mit .klemmt, Erfolg mit .hinweis, ohne Haekchen-Doppelung, escaped
+✖ B9-F3 (d integration): uploadMeldung uebersteht einen echten controller.render()-Aufruf und erscheint im Hochladen-Block
+```
+Genau die zwei Sichtbarkeits-Tests fielen rot — (c') blieb korrekt grün (prüft nur die Abwesenheit
+des Blocks, die auch ohne Rendern-Logik trivial wahr bleibt), alle anderen 57 blieben grün;
+danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **737/737 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** eine Live-Probe im Browser hat der Koordinator nicht
+angefordert. Der obere Meldungsblock bleibt bewusst bestehen (Doppel-Anzeige gewollt, s. o.) —
+eine Konsolidierung zu einer einzigen Anzeigestelle ist kein Ziel dieser Task und würde den
+Verlauf-Charakter des oberen Blocks aufgeben.

@@ -961,7 +961,20 @@
           (hziel ? '<span class="zielname">wird zu <code>' + esc(hziel.ordner) + '/' +
                    esc(hziel.datei) + '</code></span>'
                  : '<span class="dim">Ordner wird gelesen &hellip;</span>') +
-        '</div>' +
+        '</div>';
+
+      /* B9-F3: die letzte Upload-Antwort (Erfolg wie Abweisung) PERSISTENT direkt
+         beim Knopf — nicht nur oben im Meldungsblock, der weit weg vom Ort des
+         Geschehens steht und den die Person beim Hochladen-Block unten nicht vor
+         Augen hat. Bestehende .hinweis-/.klemmt-Klassen fuer die Optik
+         wiederverwendet, bewusst OHNE das Haekchen (<b>&#10003;</b>) des oberen
+         Blocks — das waere hier eine Doppelung derselben Aussage. */
+      if (ablageDaten.uploadMeldung && ablageDaten.uploadMeldung.text) {
+        var uploadMeldungKlasse = ablageDaten.uploadMeldung.typ === 'ok' ? 'hinweis' : 'klemmt';
+        h += '<p class="' + uploadMeldungKlasse + '">' + esc(ablageDaten.uploadMeldung.text) + '</p>';
+      }
+
+      h +=
         '<p class="klemmt" id="hochladefehler" hidden></p>' +
         (istBlockUpload
           ? '<p class="dim">W&auml;hle die Blockdatei (<code>.blocks</code> oder <code>.txt</code>) ' +
