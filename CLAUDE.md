@@ -31,6 +31,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `index.html` | App-Shell + **gesamtes CSS** (`:root`-Tokens oben, aus v0.2 übernommen) |
 | `app.js` | `CONFIG` · `state` · `helpers` · `controller` |
 | `dossier.js` | Das Kursdossier — reine Funktionen: Schema, Status, Quellen |
+| `register.js` | Das zentrale Register (`_zentral/register.json`) — reine Funktionen: eine Zeile je Kapitel/EK, ueber alle Kurse (Etappe 4, Task V7) |
 | `zip-lesen.js` | ZIP-Kern (Central Directory, Entpacken) + XML-Text-Dekoder — geteilt von `xlsx-lesen.js` und `docx-lesen.js` (Etappe 3, Task A1) |
 | `zip-schreiben.js` | Baut ein ZIP-Archiv dependency-frei (Store-only, CRC-32 selbst gerechnet) — das Gegenstueck zu `zip-lesen.js` (Etappe 3b, Task B1) |
 | `xlsx-lesen.js` | Liest eine .xlsx dependency-frei (ZIP + minimales XML) — Blattnamen und Kopfzeile je Blatt, fuer die Upload-Strukturpruefung (T11) |
@@ -4743,3 +4744,212 @@ komplette Suite erneut geprüft: `node --test` → **832/832 grün**.
 **Prozessnachtrag:** der Task-Report `task-V6-report.md` wurde beim ursprünglichen V6-Commit nicht
 geschrieben — nachgeholt zusammen mit dieser Fix-Runde
 (`.superpowers/sdd/2026-08-04-etappe-4-plan/task-V6-report.md`).
+
+## Etappe 4 / Task V7: Registerspeisung — `register.js` + `_zentral/register.json`
+
+Das zentrale Register (Meta-Architektur: eine maschinenlesbare Zeile je Kapitel/Eingangs-
+kompetenz, ÜBER ALLE KURSE hinweg) wird ab dieser Task als Nebenprodukt der Schritt-4-Validierung
+gespeist — neues reines Modul `register.js` (Muster `dossier.js`) plus eine eTag-geschützte
+Graph-Schreibstrecke für `_zentral/register.json`, mit Schreibpunkten beim Schritt-4-Ablegen
+(V4-Erfolg, Status `validiert`) und beim Sign-off-Gate-Klick (V6, Status `final`). **Kein UI**
+(Design §7.7) — ein reiner Datenbestand für eine spätere Impact-Analyse.
+
+**`register.js` (neu, UMD, Muster `dossier.js`) trägt fünf reine Funktionen:**
+- **`register.qIdsFuerEk(gelesen, ek)`** — die Q-IDs einer Eingangskompetenz. `###ZUORDNUNG`-Zeilen
+  (Format `"Kapitel N | EK | Text"`) werden per Substring auf die EK gematcht (kein starres Format
+  vorausgesetzt, dieselbe Konvention wie bei `OFFEN`/`ZUORDNUNG` sonst üblich, V2 Regel 3);
+  aus jeder treffenden Zeile werden Q-IDs extrahiert (`\bQ-\d{3}\b`, dieselbe Wortgrenzen-Regel wie
+  `quellenSpiegel`/`blocksPruefe`/`reviewQIds` — eine EIGENE, kleine Kopie statt eines Exports,
+  Konvention aus Etappe 4/V5: `register.js` ist wie `dossier.js` eine reine Funktionsbibliothek
+  ohne Abhängigkeit zu `inhalt.js`). **Kein Treffer** (weder eine passende Zeile noch darin eine
+  Q-ID — der Regelfall in der heutigen Blockgrammatik: `###ZUORDNUNG` trägt bisher nur einen
+  freien „wie Contract"-Text, keine Q-IDs, s. die Fixtures in `test/hochladen.test.js`): Rückfall
+  auf die dokumentweite Leseliste (`gelesen.quellen.gelesen`) — besser eine zu grosse Liste als
+  eine leere, die Impact-Analyse soll keine Quelle unter den Tisch fallen lassen.
+- **`register.zeilenAus(gelesen, d, kurs, status)`** — eine Zeile je Kapitel der validierten
+  Fassung: `{ kurs, ek, titel, quellen: [{id, stand}], rechtsstand, herkunft, beleg, status,
+  verbaut_in: null }`. `stand` je Q-ID kommt aus `d.quellen` (id-Match, `null` wenn unbekannt),
+  `rechtsstand` aus `d.regulatorik.stand` (fehlt er, ist er `null` — nie erfunden),
+  `herkunft`/`beleg` aus `kapitel.validierung` (V1, null-sicher ohne `###VALIDIERUNG`-Block).
+  `verbaut_in` bleibt IMMER `null` — das Feld ist für eine spätere Etappe (welches Lieferobjekt
+  eines FOLGENDEN Kurses diese Zeile tatsächlich verbaut), diese Task füllt es nie.
+- **`register.einpflegen(bestand, zeilen)`** — ersetzt alle Zeilen desselben Kurses, deren EK in
+  `zeilen` vorkommt; fremde Kurse UND fremde EKs desselben Kurses bleiben unberührt (dieselbe
+  Objektreferenz, kein Deep-Clone nötig). Stabil sortiert nach `(kurs, dann ek)` —
+  `Array.prototype.sort` ist seit ES2019 stabil. `bestand`-Schema `{ schema: 1, zeilen: [] }`.
+- **`register.lesen(text)`** — toleriert eine fehlende/leere Datei als Erstanlage
+  (`register.neu()`), anders als `dossier.lesen()` (dort bedeutet `null` „noch nicht angelegt",
+  vom Aufrufer unterschieden über `dossierNachladen`) — für das Register gibt es diesen
+  Unterschied nicht: eine fehlende Datei und ein frisch leerer Bestand sind für jeden Schreiber
+  dasselbe. Kaputtes JSON oder ein falsches Schema bleibt echt `null` — der Aufrufer
+  (`controller._registerBasis`) behandelt das als Lesefehler, nie als Erstanlage, und schreibt nie
+  blind darüber.
+
+**`app.js` — zwei neue, additive Graph-Helfer, Muster `dateiLesenGenau`/`graph.ablegen`, aber für
+`_zentral` statt den Kursordner (das Register ist EINE Datei für alle Kurse, kein `kursOrdner`-
+Umweg):** `graph.zentralDateiLesenGenau(datei)` (derselbe Metadaten-vor-Inhalt-Trick für den eTag,
+dieselben drei Fälle `{ok:true,text,eTag}` · `{ok:false,fehlt:true}` · `{ok:false,fehlt:false}`)
+und `graph.zentralAblegen(datei, text, eTagWert, nurNeu)` (`If-Match` bei gesetztem `eTagWert`,
+`conflictBehavior=fail` bei `nurNeu` ohne `eTagWert` — Erstanlage-Schutz wie bei `graph.ablegen`,
+Etappe 2 Task 7). Keine Cache-Invalidierung nötig — es gibt keinen `dateien`-Cache für
+`_zentral`-Dateien.
+
+**`controller.registerSchreiben(mutator)` — EINE kursübergreifende Warteschlange, kein
+Verzeichnis je Kurs wie `_dossierQueue`:** das Register ist kursübergreifend EINE Datei, zwei
+Kurse, die gleichzeitig ihr Register-Nebenprodukt schreiben, teilen sich dieselbe Datei und
+müssen deshalb strikt nacheinander schreiben. Muster `_dossierQueue`/`_dossierVersuch`/
+`dossierSchreiben` eins zu eins übertragen (`_registerQueue`/`_registerVersuch`/
+`_registerNeuLesen`/`registerSchreiben`), mit einem Unterschied: es gibt **keinen** separaten
+„Nachladen"-Trigger wie `dossierNachladen` (kein UI liest das Register) — `_registerBasis()` lädt
+deshalb selbst genau einmal je Sitzung nach (`state.data.register === undefined`), bevor der
+allererste Schreibversuch etwas überschreibt; scheitert dieses Erstlesen (echter Netzfehler, kein
+„fehlt"), bricht der Schreibversuch ab, statt blind mit `register.neu()` über einen ungelesenen
+Bestand zu schreiben. 412/409 laufen über denselben Mechanismus wie beim Dossier: einmal frisch
+lesen (`_registerNeuLesen`), Mutator genau einmal erneut anwenden.
+
+**Zwei Schreibpunkte, beide additiv nach dem jeweils bestehenden Dossier-Status-Write, beide mit
+demselben Nicht-Gate-Prinzip:**
+1. **V4-Erfolgspfad (`weiterMitSkriptBau`, Schritt-4-Zweig)** — direkt nach dem
+   `status.content='validiert'`-`dossierSchreiben`: `controller.registerSchreiben(function
+   (bestand) { var zeilen = root.register.zeilenAus(gelesen, dossierFuerRegister, k.kursId,
+   'validiert'); return root.register.einpflegen(bestand, zeilen); })`. `gelesen` ist die soeben
+   hochgeladene/gebaute Schritt-4-Blockdatei (nicht eine der beiden Schritt-3-Basen);
+   `dossierFuerRegister` ist `dSkript`, das in `weiterMitValidierungPruefe` bereits geladene
+   Dossier — lebt nur in dessen Scope (Muster `dSkript` als expliziter vierter Parameter dort,
+   s. „Task V4" oben) und wird deshalb als `opts.dossier` explizit an `weiterMitSkriptBau`
+   durchgereicht, statt per Closure erwartet zu werden (`weiterMitSkriptBau` ist ein Geschwister,
+   kein verschachtelter Aufruf).
+2. **`controller.gateKlick`, `statusSchreiben` (V6), NUR wenn `adressat === 'sign-off'`
+   (Schritt 4)** — im selben `.then()` nach dem `dossier.statusSetzen(kopie, lief, 'final')`-
+   Schreiben: `if (adressat !== 'sign-off' || !quelle.gelesen) return; controller.registerSchreiben
+   (function (bestand) { var zeilen = root.register.zeilenAus(quelle.gelesen, d, kursId, 'final');
+   return root.register.einpflegen(bestand, zeilen); })`. **`quelle.gelesen` ist neu an
+   `offenePunkteQuelle()`** — dieselbe Funktion, die seit V6 schon die Offen-Speisung-Quelle liefert
+   (Review-Cache `state.data.review[kursId].validiert` ODER ein Fresh-Read der `.blocks`-
+   Schwester VOR jeder Umbenennung), gibt seither zusätzlich das rohe `skriptLesen.lies()`-Ergebnis
+   zurück, statt nur die daraus extrahierten `punkte`/`hinweis` — **kein zweites Lesen** für das
+   Register. Ist `quelle.gelesen` `null` (Wiedereinstiegsfall a/b ohne Cache und ohne bekannte
+   `gewaehlt`-Datei — dort gibt es schlicht keine erreichbare Quelle mehr, kein Lese-/Parse-Fehler),
+   bleibt das Register still unangetastet — kein Fehler, kein Hinweis, derselbe Fall wie bei der
+   Offen-Speisung selbst.
+
+**Ein Register-Fehlschlag bricht NIE die Ablage/das Gate ab** (Task-Brief, Design-Leitsatz
+„Register ist Nebenprodukt, nie Gate") — beide Schreibpunkte hängen ein `.catch(function () {
+state.fehlerHinweis = 'Register nicht nachgeführt — nächstes Ablegen holt es nach.'; })` direkt an
+den `registerSchreiben`-Aufruf, das Ergebnis der Promise bleibt dabei aufgelöst (kein Wurf, der die
+äussere Kette erreichen könnte). Der Erfolgstext (`state.hinweis`) bleibt davon unberührt — beide
+Felder werden unverändert in EINEM Block gezeigt (M3, Etappe 1e Task 4).
+
+**Tests:** `test/register.test.js` (neu, 18 Fälle) — `zeilenAus` mit einer echten
+`skriptLesen.lies()`-Kette als `gelesen`-Quelle (Muster jeder Etappe-4-Testdatei, kein Handbau der
+`gelesen`-Objekte): Zuordnung greift, Rückfall auf die Leseliste, ein unbekannter Q-ID-Stand wird
+`null`, `rechtsstand` nur mit gesetztem `d.regulatorik.stand`, `herkunft`/`beleg` null-sicher ohne
+`###VALIDIERUNG`, alle Felder wörtlich übernommen, leeres `gelesen` ohne Crash; `einpflegen`
+(Erstanlage, Ersetzen derselben EK, ein FREMDER Kurs bleibt referenzgleich unberührt, eine FREMDE
+EK desselben Kurses bleibt unberührt, stabile Sortierung, ein ungültiger Bestand wird wie eine
+Erstanlage behandelt); `lesen` (Erstanlage aus fehlender/leerer Datei, ein gültiger Bestand,
+kaputtes JSON, unbekanntes Schema, `zeilen` als Nicht-Liste — je `null`). App-Ebene:
+`test/hochladen.test.js` (drei neue „V7"-Fälle — (a) V4-Erfolg schreibt eine Register-Zeile je
+Kapitel mit `status: 'validiert'`, inklusive Q-Stand-Abgleich aus dem Dossier; (b) ein
+Register-Schreibfehler (Graph 500) bricht die Ablage nicht ab — docx/blocks/Bild bleiben
+unverändert abgelegt, der Dossier-Status-Write bleibt `validiert`, `state.hinweis` unverändert,
+`state.fehlerHinweis` trägt den Nachhol-Hinweis; (c) ein 409 bei der Erstanlage löst genau EIN
+frisches Lesen (`_registerNeuLesen`) plus einen erneuten Schreibversuch mit dem frisch gelesenen
+eTag aus, danach Erfolg, kein Fehlerhinweis) sowie eine Erweiterung des `hochladenLaufB5`-
+Testharness um Default-Fakes für `graph.zentralDateiLesenGenau`/`zentralAblegen` (jeder bestehende
+V4-Test lief bis dahin ungemockt in diese neuen Codepfade hinein — ohne Fakes hätte das einen
+ECHTEN `fetch()`-Aufruf ausgelöst, s. „Testinfrastruktur-Fund" unten) plus `registerAblegenRufe`
+im Rückgabeobjekt. `test/gate.test.js` (vier neue „V7"-Fälle — Sign-off-Erfolg schreibt eine
+Register-Zeile mit `status: 'final'` aus dem Review-Cache; ein Register-Schreibfehler bricht das
+Gate nicht ab (`state.hinweis` bleibt der Erfolgstext, `state.fehlerHinweis` trägt den
+Nachhol-Hinweis); Schritt 2 (kein Sign-off) schreibt nie ins Register; ein Wiedereinstieg ohne
+Review-Cache und ohne bekannte `gewaehlt`-Datei lässt das Register still unangetastet, ohne
+Fehlerhinweis) sowie dieselbe Default-Fake-Ergänzung in `setzeKursMitInhalt()`. **857 Tests grün**
+(Baseline 832 + 25: 18 in `register.test.js`, 3 in `hochladen.test.js`, 4 in `gate.test.js`).
+
+**Testinfrastruktur-Fund (beim ersten Durchlauf der neuen V7-Tests):** `test/hochladen.test.js`
+require`t `dossier.js` explizit (Weg B: `app.js` setzt nur `root.dossier`/`root.register` selbst
+nie voraus, jede Testdatei muss ihre eigenen Globals selbst laden), aber `register.js` fehlte im
+ersten Durchlauf komplett im require-Kopf — `root.register` war beim ersten V7-Testlauf
+`undefined`, der Mutator in `controller.registerSchreiben` warf synchron
+(`TypeError: Cannot read properties of undefined`), das wurde durch den bereits vorhandenen
+`.catch()` als „Register-Fehlschlag" verschluckt und ERZEUGTE DABEI ZUFÄLLIG DIESELBE
+Fehlermeldung wie ein echter Schreibfehler — Test V7 (b) („Register-Schreibfehler") wurde dadurch
+scheinbar grün, obwohl er den falschen Fehler maskierte; V7 (a)/(c) (die tatsächlich einen echten
+Register-Write erwarten) fielen dagegen sofort korrekt rot (`registerAblegenRufe.length === 0`).
+Behoben mit `require('../register.js')` neben dem bestehenden `require('../dossier.js')`
+(beide Testdateien). **Zweiter, verwandter Fund:** ohne einen Default-Fake für
+`graph.zentralDateiLesenGenau`/`zentralAblegen` hätten alle BESTEHENDEN V4-/V6-Sign-off-Tests
+(keiner von ihnen mockt diese neuen Funktionen) beim ersten Durchlauf einen ECHTEN
+`fetch()`-Aufruf gegen `graph.microsoft.com` ausgelöst (`graph.driveId`/`auth.token` sind in
+mehreren dieser Tests bereits — von einem früheren Test im selben File — auf feste Fake-Werte
+gesetzt und werden nie zurückgesetzt, `global.fetch` dagegen zeigt nach dem einen Test, der es
+mockt, wieder auf Node 18s natives `fetch`) — ein Bruch der bestehenden Testphilosophie („reine
+Funktionen bleiben testbar, der Transport wird im Browser geprüft", s. „⚠ Fallen" oben). Geschlossen
+durch Default-Mocks in `hochladenLaufB5()` bzw. `setzeKursMitInhalt()` (beide Testdateien),
+VOR jedem Testaufbau gesetzt.
+
+**Mutationsprobe `register.einpflegen` (tatsächlich ausgeführt, wie im Brief verlangt):** die
+Filterbedingung in `einpflegen` auf `/* MUTATIONSPROBE */ false && !schluessel[...]` gesetzt (der
+gesamte Altbestand wird dadurch verworfen — „ersetzt ALLE Zeilen statt nur eigene"), `node --test
+test/register.test.js`:
+```
+ℹ tests 18
+ℹ pass 15
+ℹ fail 3
+
+✖ einpflegen: ein FREMDER Kurs bleibt unberührt — dieselbe Zeile (Referenzgleichheit)
+✖ einpflegen: eine FREMDE EK desselben Kurses bleibt unberührt
+✖ einpflegen: sortiert stabil nach (kurs, dann ek)
+```
+Genau die drei Tests fielen rot, die deren Assertion sich auf einen erhaltenen ALTBESTAND
+stützen — darunter, wörtlich wie im Brief benannt, der Fremdkurs-Test. Diese Fassung der Mutation
+(„ersetzt ALLE Zeilen" im wörtlichen Sinn, nicht nur die des schreibenden Kurses) trifft in dieser
+Testsuite drei statt nur eines Tests, weil hier zusätzlich zum Fremdkurs-Fall auch eine
+Fremd-EK-Probe und eine Sortier-Probe denselben Altbestand voraussetzen — die übrigen 15 Tests
+(inklusive „ersetzt eine bestehende Zeile" und „Erstanlage aus null", die keinen erhaltenen
+Altbestand brauchen) blieben grün. Danach wiederhergestellt, komplette Suite erneut geprüft:
+`node --test test/register.test.js` → **18/18 grün**.
+
+**Mutationsprobe V4-Schreibpunkt (tatsächlich ausgeführt):** den Register-Write in
+`weiterMitSkriptBau` (Schritt-4-Zweig) auf `if (/* MUTATIONSPROBE */ true) return;` gesetzt (kein
+`registerSchreiben`-Aufruf mehr nach dem Dossier-Status-Write), `node --test
+test/hochladen.test.js`:
+```
+✖ V7 (a): V4-Erfolg schreibt eine Register-Zeile je Kapitel mit status validiert
+  AssertionError [ERR_ASSERTION]: genau ein Register-Write erwartet — 0 !== 1
+✖ V7 (b): ein Register-Schreibfehler bricht die Ablage NICHT ab — state.fehlerHinweis nennt den Nachhol-Hinweis
+  AssertionError: The input did not match /Register nicht nachgeführt/. Input: ''
+✖ V7 (c): 412/409 beim Register-Schreiben löst genau EIN frisches Lesen + einen erneuten Schreibversuch aus
+  AssertionError [ERR_ASSERTION]: genau ein Erstlesen plus ein Neu-Lesen nach dem Konflikt erwartet — 0 !== 2
+```
+Genau die drei neuen V7-Tests fielen rot, alle anderen 85 blieben grün; danach wiederhergestellt,
+komplette Suite erneut geprüft: `node --test test/hochladen.test.js` → **88/88 grün**.
+
+**Mutationsprobe V6-Schreibpunkt (tatsächlich ausgeführt):** die Bedingung in `statusSchreiben`
+auf `if (/* MUTATIONSPROBE */ true || adressat !== 'sign-off' || !quelle.gelesen) return;`
+gesetzt (kein Register-Write mehr, unabhängig von `adressat`/`quelle.gelesen`), `node --test
+test/gate.test.js`:
+```
+✖ V7: Sign-off-Erfolg schreibt eine Register-Zeile mit status final aus dem Review-Cache
+  AssertionError [ERR_ASSERTION]: genau ein Register-Write erwartet — 0 !== 1
+✖ V7: ein Register-Schreibfehler beim Sign-off bricht das Gate NICHT ab
+  AssertionError: The input did not match /Register nicht nachgeführt/. Input: ''
+```
+Genau die zwei betroffenen V7-Tests fielen rot — die beiden übrigen neuen V7-Tests („Schritt 2
+schreibt kein Register", „Wiedereinstieg ohne Quelle bleibt still") blieben korrekt grün, weil sie
+ohnehin KEINEN Register-Write erwarten; alle 30 Bestandstests blieben unberührt. Danach
+wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **857/857 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** kein UI liest oder zeigt das Register — reiner
+Datenbestand für eine spätere Impact-Analyse-Ansicht (Design §7.7, ausdrücklich kein Ziel dieser
+Task). `verbaut_in` bleibt in jeder geschriebenen Zeile `null` — welches Lieferobjekt eines
+FOLGENDEN Kurses eine Zeile tatsächlich verbaut, ist eine spätere Etappe. Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 4 weiterhin nicht
+`pruefung: 'validierung'` (Weg B, unverändert seit V2) — ohne das Feld erreicht der V4-Schreibpfad
+den Register-Write dort nicht anders als heute schon; der V6-Schreibpunkt hängt an keinem
+Kontraktfeld (nur an `inhalt.gateAdressat(n) === 'sign-off'`) und greift, sobald Schritt 4
+überhaupt ein Gate hat. Die Q-ID-Zuordnung über `###ZUORDNUNG` ist heute in der Praxis fast immer
+der Rückfall-Pfad (die dokumentweite Leseliste) — kein reales Fixture/kein realer Prompt-Text
+befüllt `###ZUORDNUNG` bisher mit Q-IDs statt einem freien „wie Contract"-Text; `qIdsFuerEk` ist
+darauf vorbereitet, sobald sich das ändert, ohne dass register.js selbst angepasst werden müsste.

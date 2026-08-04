@@ -23,6 +23,10 @@ require('../inhalt.js');
    (Muster test/hochladen.test.js). */
 require('../skript-schema.js');
 require('../skript-lesen.js');
+/* V7 (Etappe 4): der Sign-off-Zweig von statusSchreiben (app.js) ruft
+   root.register.zeilenAus/einpflegen — root.register wird erst gesetzt,
+   sobald register.js geladen wurde (Muster root.skriptLesen oben). */
+require('../register.js');
 const { INHALT } = require('./fixture.js');
 
 /* graph ist ein einziges, geteiltes Objekt ueber die ganze Datei — jeder Test, der
@@ -69,6 +73,19 @@ function setzeKursMitInhalt() {
      Reset koennte ein Merker aus einem vorigen Test (z. B. bei einer geworfenen
      Assertion) den naechsten Test faelschlich als "laeuft schon" blockieren. */
   state.gateLaeuft = {};
+  /* V7 (Etappe 4): der Sign-off-Zweig (Schritt 4, statusSchreiben) versucht
+     seit dieser Task zusaetzlich, das zentrale Register zu schreiben
+     (controller.registerSchreiben) — ein Nebenprodukt, kein echter
+     Netzaufruf in dieser Testdatei (Muster jedes anderen Graph-Mocks hier).
+     Reset UND Default-Fakes bei JEDEM Testaufbau, sonst wuerde
+     state.data.register aus einem frueheren Test (derselbe geteilte Zustand
+     ueber die ganze Datei) den naechsten verfaelschen — Register-Tests unten
+     ueberschreiben graph.zentralDateiLesenGenau/zentralAblegen gezielt. */
+  state.data.register = undefined;
+  state.data.registerETag = undefined;
+  controller._registerQueue = null;
+  graph.zentralDateiLesenGenau = function () { return Promise.resolve({ ok: false, fehlt: true }); };
+  graph.zentralAblegen = function () { return Promise.resolve({ eTag: 'W/"reg1"' }); };
 }
 
 /* radios (Z9): das Fake-Dokument beantwortet querySelectorAll('[name="gate-version"]')
@@ -1050,5 +1067,134 @@ test('V6 Fix-Runde 1 (IMPORTANT): scheitert das frische Lesen (null), laeuft das
   assert.strictEqual(d1.status.content, 'final');
   assert.match(state.hinweis || '', /nicht lesbar/,
     'die Erfolgsmeldung soll den Hinweis "Blockdatei nicht lesbar" tragen — ' + JSON.stringify(state.hinweis));
+  delete global.document;
+});
+
+/* ---------- V7 (Etappe 4): Registerspeisung beim Sign-off-Gate ----------
+   statusSchreiben (app.js) schreibt bei adressat === 'sign-off' zusaetzlich
+   das zentrale Register (_zentral/register.json) — dieselbe gelesen-Fassung,
+   die auch die Offen-Speisung (V6) verwendet, kein zweites Lesen. Ein
+   Fehlschlag bricht das Gate NIE ab. */
+
+function gelesenMitEinemKapitel(kurs) {
+  return {
+    kapitel: [
+      { ek: kurs + '-EK-001', titel: 'Basiswissen',
+        validierung: { herkunft: 'bestaetigt', divergenz: 'keine' } }
+    ]
+  };
+}
+
+test('V7: Sign-off-Erfolg schreibt eine Register-Zeile mit status final aus dem Review-Cache', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = { 'DBS-001': { validiert: gelesenMitEinemKapitel('DBS-001'), claude: null, chatgpt: null } };
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_content_v3.docx'));
+  controller._bestaetige = function () { return true; };
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_v3.docx' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) { return Promise.resolve(nach); };
+  graph.ablegen = function () { return Promise.resolve({ eTag: 'W/"1"' }); };
+  const registerRufe = [];
+  graph.zentralAblegen = function (datei, text) {
+    registerRufe.push({ datei: datei, text: text });
+    return Promise.resolve({ eTag: 'W/"reg1"' });
+  };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.strictEqual(registerRufe.length, 1, 'genau ein Register-Write erwartet');
+  assert.strictEqual(registerRufe[0].datei, 'register.json');
+  const bestand = JSON.parse(registerRufe[0].text);
+  assert.strictEqual(bestand.zeilen.length, 1, JSON.stringify(bestand.zeilen));
+  assert.strictEqual(bestand.zeilen[0].kurs, 'DBS-001');
+  assert.strictEqual(bestand.zeilen[0].ek, 'DBS-001-EK-001');
+  assert.strictEqual(bestand.zeilen[0].status, 'final');
+  assert.strictEqual(state.fehlerHinweis, null, 'kein Register-Fehlerhinweis bei Erfolg');
+  delete global.document;
+});
+
+test('V7: ein Register-Schreibfehler beim Sign-off bricht das Gate NICHT ab', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = { 'DBS-001': { validiert: gelesenMitEinemKapitel('DBS-001'), claude: null, chatgpt: null } };
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_content_v3.docx'));
+  controller._bestaetige = function () { return true; };
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_v3.docx' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) { return Promise.resolve(nach); };
+  graph.ablegen = function () { return Promise.resolve({ eTag: 'W/"1"' }); };
+  graph.zentralAblegen = function () {
+    return Promise.reject(Object.assign(new Error('Graph 500'), { status: 500 }));
+  };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.match(state.hinweis || '', /Als final best.tigt/,
+    'das Gate haette trotz Register-Fehlschlag erfolgreich abschliessen sollen — ' + JSON.stringify(state.hinweis));
+  assert.match(state.fehlerHinweis || '', /Register nicht nachgeführt/);
+  assert.match(state.fehlerHinweis || '', /nächstes Ablegen holt es nach/);
+  delete global.document;
+});
+
+test('V7: Schritt 2 (nicht sign-off) schreibt kein Register', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};
+  state.hinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v3.xlsx'));
+  controller._bestaetige = function () { return true; };
+  let registerGerufen = false;
+  graph.zentralAblegen = function () { registerGerufen = true; return Promise.resolve({ eTag: 'x' }); };
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) { return Promise.resolve(nach); };
+  graph.ablegen = function () { return Promise.resolve({ eTag: 'W/"1"' }); };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(registerGerufen, false, 'Schritt 2 ist nicht sign-off — kein Register-Write erwartet');
+  delete global.document;
+});
+
+test('V7: Wiedereinstieg ohne Review-Cache und ohne bekannte gewaehlte Datei — Register bleibt still unangetastet, kein Fehlerhinweis', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_final.docx' },
+      { name: '_gate.md' },
+      { name: 'DBS-001_content_final.blocks' }
+    ]);
+  };
+  let registerGerufen = false;
+  graph.zentralAblegen = function () { registerGerufen = true; return Promise.resolve({ eTag: 'x' }); };
+  graph.ablegen = function () { return Promise.resolve({ eTag: 'W/"1"' }); };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.strictEqual(registerGerufen, false, 'ohne gelesen-Quelle darf das Register nicht angefasst werden');
+  assert.strictEqual(state.fehlerHinweis, null, 'kein Register-Fehlerhinweis, wenn es schlicht keine Quelle gibt');
   delete global.document;
 });

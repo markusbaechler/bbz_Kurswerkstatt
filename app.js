@@ -72,7 +72,15 @@
                     neuem Hochladen-Klick (Start), neuer Dateiauswahl (dateiGewaehlt) und
                     Navigation weg von der Kurs/Schritt-Kombination (controller.zu(),
                     dasselbe Muster wie dateiAuswahl). null = keine Meldung. */
-                 uploadMeldung: null },
+                 uploadMeldung: null,
+                 /* register/registerETag (V7, Etappe 4): das zentrale Register
+                    (_zentral/register.json) — anders als dossier[kursId] EINE
+                    Datei fuer ALLE Kurse, deshalb kein Verzeichnis je Kurs.
+                    undefined = in dieser Sitzung noch nie gelesen/geschrieben,
+                    sonst der zuletzt bekannte Bestand (register.js). registerETag
+                    bewusst getrennt gehalten (Muster dossierETag) — nie im
+                    Bestand selbst. s. controller.registerSchreiben. */
+                 register: undefined, registerETag: undefined },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
                  variante: null, weg: null },
     laden:     false,
@@ -661,6 +669,66 @@
             });
         })
         .catch(function () { return { ok: false, fehlt: false }; });
+    },
+
+    /* Wie dateiLesenGenau, aber fuer eine Datei in Kursproduktion/_zentral statt
+       im Kursordner (V7, Etappe 4) — das Register (_zentral/register.json) ist
+       kursuebergreifend EINE Datei, es gibt keinen kursOrdner-Umweg. Derselbe
+       Metadaten-vor-Inhalt-Trick fuer den eTag, dieselben drei Faelle
+       ({ok:true,text,eTag} · {ok:false,fehlt:true} · {ok:false,fehlt:false}). */
+    zentralDateiLesenGenau: function (datei) {
+      return graph.driveId().then(function (did) {
+        return auth.token().then(function (t) {
+          var basis = 'https://graph.microsoft.com/v1.0/drives/' + did +
+                      '/root:/' + encodeURI(CONFIG.sharePoint.zentral + '/' + datei);
+          return fetch(basis + '?$select=eTag', { headers: { Authorization: 'Bearer ' + t } })
+            .then(function (m) {
+              if (m.status === 404) return { ok: false, fehlt: true };
+              if (!m.ok) return { ok: false, fehlt: false };
+              return m.json().then(function (meta) {
+                return fetch(basis + ':/content', { headers: { Authorization: 'Bearer ' + t } })
+                  .then(function (x) {
+                    if (x.status === 404) return { ok: false, fehlt: true };
+                    if (!x.ok) return { ok: false, fehlt: false };
+                    return x.text().then(function (text) {
+                      return { ok: true, text: text, eTag: meta.eTag };
+                    });
+                  });
+              });
+            });
+        });
+      }).catch(function () { return { ok: false, fehlt: false }; });
+    },
+
+    /* Wie graph.ablegen, aber fuer Kursproduktion/_zentral statt den Kursordner
+       (V7, Etappe 4) — dasselbe eTag/If-Match- und nurNeu/conflictBehavior=fail-
+       Muster (Etappe 1e Task 1 / Etappe 2 Task 7), nur ohne den kursOrdner-Umweg.
+       Der Fehler traegt .status wie bei graph.ablegen, damit
+       controller._registerVersuch 412/409 erkennt, ohne den Meldungstext zu
+       parsen. Keine Cache-Invalidierung noetig — es gibt keinen dateien-Cache
+       fuer _zentral-Dateien (anders als graph.ablegen im Kursordner). */
+    zentralAblegen: function (datei, text, eTagWert, nurNeu) {
+      return graph.driveId().then(function (did) {
+        return auth.token().then(function (t) {
+          var headers = { Authorization: 'Bearer ' + t, 'Content-Type': 'text/plain; charset=utf-8' };
+          if (eTagWert) headers['If-Match'] = eTagWert;
+          var query = (nurNeu && !eTagWert) ? '?@microsoft.graph.conflictBehavior=fail' : '';
+          var p = CONFIG.sharePoint.zentral + '/' + datei;
+          return fetch('https://graph.microsoft.com/v1.0/drives/' + did +
+                '/root:/' + encodeURI(p) + ':/content' + query, {
+            method: 'PUT',
+            headers: headers,
+            body: new Blob([text], { type: 'text/plain;charset=utf-8' })
+          });
+        });
+      }).then(function (r) {
+        if (!r.ok) {
+          var fehler = new Error('Register nicht abgelegt (Graph ' + r.status + ')');
+          fehler.status = r.status;
+          throw fehler;
+        }
+        return r.json();
+      });
     },
 
     kurseLaden: function () {
@@ -1611,6 +1679,90 @@
       return eigenes;
     },
 
+    /* Das zentrale Register (_zentral/register.json, V7, Etappe 4) — EINE
+       Warteschlange fuer die ganze App, kein Verzeichnis je Kurs wie bei
+       _dossierQueue: das Register ist kursuebergreifend EINE Datei, zwei
+       Kurse, die gleichzeitig ihr Register-Nebenprodukt schreiben, teilen
+       sich dieselbe Datei und muessen deshalb strikt nacheinander schreiben,
+       nicht nur je Kurs. Muster _dossierQueue/_dossierVersuch/dossierSchreiben
+       eins zu eins uebertragen, mit einem Unterschied: es gibt keinen
+       separaten "Nachladen"-Trigger wie dossierNachladen (kein UI liest das
+       Register) — _registerBasis() laedt deshalb selbst genau einmal je
+       Sitzung nach, bevor der allererste Schreibversuch etwas ueberschreibt;
+       ein Lesefehler dabei bricht den Schreibversuch ab, statt blind mit
+       einem leeren Bestand (register.neu()) zu ueberschreiben, was noch nicht
+       gelesen wurde. */
+    _registerQueue: null,
+
+    _registerBasis: function () {
+      if (state.data.register !== undefined) return Promise.resolve(state.data.register);
+      return graph.zentralDateiLesenGenau(root.register.DATEI).then(function (r) {
+        if (r.ok) {
+          var b = root.register.lesen(r.text);
+          if (!b) throw new Error('Register unlesbar.');
+          state.data.register = b;
+          state.data.registerETag = r.eTag;
+        } else if (r.fehlt) {
+          state.data.register = root.register.neu();
+          state.data.registerETag = undefined;
+        } else {
+          throw new Error('Register nicht lesbar.');
+        }
+        return state.data.register;
+      });
+    },
+
+    _registerNeuLesen: function () {
+      return graph.zentralDateiLesenGenau(root.register.DATEI).then(function (r) {
+        if (!r.ok) throw new Error('Register nach Konflikt nicht lesbar.');
+        var b = root.register.lesen(r.text);
+        if (!b) throw new Error('Register nach Konflikt unlesbar.');
+        state.data.register = b;
+        state.data.registerETag = r.eTag;
+        return b;
+      });
+    },
+
+    _registerVersuch: function (mutator, nochmalErlaubt) {
+      var kopie = JSON.parse(JSON.stringify(state.data.register || root.register.neu()));
+      var neu;
+      try { neu = mutator(kopie); } catch (e) { return Promise.reject(e); }
+      if (neu === null || neu === undefined) return Promise.resolve(null);
+      var eTagAlt = state.data.registerETag;
+      return graph.zentralAblegen(root.register.DATEI, root.register.text(neu), eTagAlt, !eTagAlt)
+        .then(function (antwort) {
+          state.data.register = neu;
+          state.data.registerETag = antwort && antwort.eTag;
+          return neu;
+        })
+        .catch(function (e) {
+          if (e && (e.status === 412 || e.status === 409) && nochmalErlaubt) {
+            return controller._registerNeuLesen().then(function () {
+              return controller._registerVersuch(mutator, false);
+            });
+          }
+          throw e;
+        });
+    },
+
+    /* controller.registerSchreiben(mutator) — die einzige Stelle, die das
+       Register schreiben darf. Ruft mutator(kopie) gegen den aktuellen
+       Bestand (nach dem Nachladen aus _registerBasis) und schreibt das
+       Ergebnis; null vom Mutator heisst Abbruch, kein PUT. Aufrufer MUESSEN
+       das Ergebnis catchen — ein Fehlschlag bricht laut Task-Brief nie die
+       Ablage/das Gate ab, dafuer ist dieser Aufruf selbst verantwortlich,
+       nicht diese Warteschlange. */
+    registerSchreiben: function (mutator) {
+      var vorher = (controller._registerQueue || Promise.resolve()).then(function () {}, function () {});
+      var eigenes = vorher.then(function () {
+        return controller._registerBasis().then(function () {
+          return controller._registerVersuch(mutator, true);
+        });
+      });
+      controller._registerQueue = eigenes;
+      return eigenes;
+    },
+
     dossierSpeichern: function (knopf) {
       var kursId = state.position.kursId;
       if (!kursId) return;
@@ -2081,22 +2233,36 @@
            in der Erfolgsmeldung) — das Gate selbst bricht dafuer nie ab. Im
            Wiedereinstiegsfall (a)/(b) ohne Cache und ohne bekannte gewaehlt-Datei gibt
            es schlicht keine erreichbare Quelle mehr — dann bleibt die Liste leer. */
+        /* gelesen (V7, Etappe 4): dasselbe geparste skriptLesen.lies()-Ergebnis, das
+           schon fuer die Offen-Speisung gebraucht wird, wandert seither zusaetzlich
+           mit heraus — die Registerspeisung (statusSchreiben unten) braucht GENAU
+           dieselbe Fassung, kein zweites Lesen. null, wo es (noch) keine gibt
+           (nicht sign-off, kein Cache und keine bekannte gewaehlt-Datei, oder das
+           Lesen/Parsen scheiterte) — derselbe Fall, in dem auch keine Punkte
+           gespeist werden. */
         function offenePunkteQuelle() {
-          if (adressat !== 'sign-off') return Promise.resolve({ punkte: [], hinweis: null });
+          if (adressat !== 'sign-off') return Promise.resolve({ punkte: [], hinweis: null, gelesen: null });
           var cache = state.data.review[kursId];
           if (cache && cache.validiert) {
-            return Promise.resolve({ punkte: gateOffenePunkteAusGelesen(cache.validiert), hinweis: null });
+            return Promise.resolve({
+              punkte: gateOffenePunkteAusGelesen(cache.validiert), hinweis: null, gelesen: cache.validiert
+            });
           }
-          if (!gewaehlt) return Promise.resolve({ punkte: [], hinweis: null });
+          if (!gewaehlt) return Promise.resolve({ punkte: [], hinweis: null, gelesen: null });
           var blocksName = gateStamm(gewaehlt) + '.blocks';
           return graph.dateiLesen(kursId, ablage.ordner, blocksName).then(function (text) {
             if (!text) {
-              return { punkte: [], hinweis: 'Offene Punkte nicht übernommen — Blockdatei nicht lesbar.' };
+              return {
+                punkte: [], hinweis: 'Offene Punkte nicht übernommen — Blockdatei nicht lesbar.', gelesen: null
+              };
             }
             try {
-              return { punkte: gateOffenePunkteAusGelesen(root.skriptLesen.lies(text)), hinweis: null };
+              var g = root.skriptLesen.lies(text);
+              return { punkte: gateOffenePunkteAusGelesen(g), hinweis: null, gelesen: g };
             } catch (e) {
-              return { punkte: [], hinweis: 'Offene Punkte nicht übernommen — Blockdatei nicht lesbar.' };
+              return {
+                punkte: [], hinweis: 'Offene Punkte nicht übernommen — Blockdatei nicht lesbar.', gelesen: null
+              };
             }
           });
         }
@@ -2123,6 +2289,22 @@
                 }
               });
               return kopie;
+            }).then(function () {
+              /* V7: das Register als Nebenprodukt des Sign-off-Gates — NUR wenn
+                 dieses Gate 'sign-off' ist UND eine gelesene Fassung vorliegt
+                 (Cache oder Fresh-Read, s. offenePunkteQuelle). Ohne gelesen gibt
+                 es nichts, worueber sich Zeilen bilden liessen (Wiedereinstieg
+                 ohne Cache/gewaehlt-Datei) — dann bleibt das Register still
+                 unangetastet, kein Fehler, kein Hinweis (derselbe Fall wie bei
+                 der Offen-Speisung oben). Ein Schreib-Fehlschlag bricht das Gate
+                 NIE ab (Task-Brief) — nur eine Meldung. */
+              if (adressat !== 'sign-off' || !quelle.gelesen) return;
+              return controller.registerSchreiben(function (bestand) {
+                var zeilen = root.register.zeilenAus(quelle.gelesen, d, kursId, 'final');
+                return root.register.einpflegen(bestand, zeilen);
+              }).catch(function () {
+                state.fehlerHinweis = 'Register nicht nachgeführt — nächstes Ablegen holt es nach.';
+              });
             });
           });
         }
@@ -2723,7 +2905,8 @@
             var pngNamen = pngKandidaten.map(function (p) { return p.name; });
             var fehlendeNamen = root.inhalt.illustrationenFehlend(gelesen, pngNamen);
             if (!fehlendeNamen.length) {
-              weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten, { istValidierung: true });
+              weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten,
+                { istValidierung: true, dossier: dSkript });
               return;
             }
             /* Bild-Wiederverwendung (Task-Brief): eine referenzierte, aber
@@ -2748,7 +2931,7 @@
               var wiederverwendet = {};
               ergebnisse.forEach(function (e) { wiederverwendet[e.name] = new Uint8Array(e.buf); });
               weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten,
-                { istValidierung: true, wiederverwendeteBilder: wiederverwendet });
+                { istValidierung: true, wiederverwendeteBilder: wiederverwendet, dossier: dSkript });
             }).catch(function (e) { klemmtSichtbar(e.message || String(e)); });
           })
           .catch(function (e) { klemmtSichtbar(e.message || String(e)); });
@@ -2768,6 +2951,11 @@
            dupliziert (Task-Brief: "sie bleiben in 03_content"). */
         var istValidierungBau = !!opts.istValidierung;
         var wiederverwendeteBilder = opts.wiederverwendeteBilder || {};
+        /* V7: das geladene Dossier fuer den Register-Write — dSkript lebt nur
+           im Scope von pruefeUndBaueBlock/weiterMitValidierungPruefe (Muster
+           V4-Kommentar dort), deshalb hier explizit durchgereicht statt per
+           Closure erwartet. null fuer Schritt 3 (kein Register-Write). */
+        var dossierFuerRegister = opts.dossier || null;
 
         var variante = (gelesen.skript && gelesen.skript.variante) || gewaehlt;
         var kursSkript = (gelesen.skript && gelesen.skript.kurs) || k.kursId;
@@ -2927,6 +3115,19 @@
               return controller.dossierSchreiben(k.kursId, function (kopie) {
                 root.dossier.statusSetzen(kopie, ab.lieferobjekt, 'validiert');
                 return kopie;
+              }).then(function () {
+                /* V7: das Register als Nebenprodukt der Validierung — EINE Zeile
+                   je Kapitel/EK der soeben abgelegten Fassung, Status 'validiert'.
+                   dossierFuerRegister ist hier immer ein Objekt (validierungPruefe
+                   liefert oben sonst schon 'null' zurueck und bricht vor diesem
+                   Punkt ab, s. weiterMitValidierungPruefe). Ein Fehlschlag bricht
+                   die Ablage NIE ab (Task-Brief) — nur eine Meldung, kein Wurf. */
+                return controller.registerSchreiben(function (bestand) {
+                  var zeilen = root.register.zeilenAus(gelesen, dossierFuerRegister, k.kursId, 'validiert');
+                  return root.register.einpflegen(bestand, zeilen);
+                }).catch(function () {
+                  state.fehlerHinweis = 'Register nicht nachgeführt — nächstes Ablegen holt es nach.';
+                });
               }).then(function () { return ergebnis; });
             });
           })

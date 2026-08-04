@@ -200,6 +200,10 @@ const { xlsxLesen } = require('../xlsx-lesen.js');
    explizites require hier, sonst ist root.dossier beim ersten V4-Testlauf
    undefined (Muster test/ablegen.test.js). */
 require('../dossier.js');
+/* V7 (Etappe 4): der Register-Write (root.register.zeilenAus/einpflegen)
+   laeuft ueber controller.registerSchreiben — dasselbe explizite require wie
+   bei dossier.js direkt darueber, aus demselben Grund (Weg B). */
+require('../register.js');
 
 /* B9-F3 (d integration): viele Tests in dieser Datei ueberschreiben
    controller.render mit einem No-op, um Netzaufrufe aus dem Hochladen-Fluss
@@ -514,8 +518,9 @@ async function hochladenLaufB5(n, dateiListe, opts) {
   const meldung = { textContent: '', hidden: true };
   const hochladenRufe = [];
   const ablegenRufe = [];
+  const registerAblegenRufe = [];
   const rufe = { ordnerInhalt: 0, vorlageLaden: 0, pngRender: 0, pngAufrufe: [],
-                 dateiLesen: 0, kursDateiRoh: 0 };
+                 dateiLesen: 0, kursDateiRoh: 0, zentralDateiLesenGenau: 0 };
 
   state.data.inhalt = opts.inhalt || JSON.parse(JSON.stringify(INHALT));
   state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
@@ -527,6 +532,29 @@ async function hochladenLaufB5(n, dateiListe, opts) {
   state.hinweis = null;
   state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: String(n),
                      werkzeugId: null, werk: null, variante: opts.variante || null, weg: null };
+
+  /* V7 (Etappe 4): der Schritt-4-Zweig versucht seit dieser Task zusaetzlich,
+     das zentrale Register zu schreiben (controller.registerSchreiben) — ein
+     Nebenprodukt, kein echter Netzaufruf in dieser Testdatei (Muster jedes
+     anderen Graph-Mocks hier). Reset UND Default-Fakes bei JEDEM Lauf, sonst
+     wuerde state.data.register aus einem frueheren Test (derselbe geteilte
+     Zustand ueber die ganze Datei) den naechsten Lauf verfaelschen.
+     opts.registerLesenGenau/opts.registerAblegenWirft erlauben gezielte
+     Register-Tests, ohne den Rest des Harness anzufassen. */
+  state.data.register = undefined;
+  state.data.registerETag = undefined;
+  controller._registerQueue = null;
+  graph.zentralDateiLesenGenau = function () {
+    rufe.zentralDateiLesenGenau++;
+    if (opts.registerLesenGenau) return opts.registerLesenGenau(rufe.zentralDateiLesenGenau);
+    return Promise.resolve({ ok: false, fehlt: true });
+  };
+  graph.zentralAblegen = function (datei, text, eTagWert, nurNeu) {
+    registerAblegenRufe.push({ datei: datei, text: text, eTagWert: eTagWert, nurNeu: nurNeu });
+    if (opts.registerAblegen) return opts.registerAblegen(datei, text, eTagWert, nurNeu, registerAblegenRufe.length);
+    if (opts.registerAblegenWirft) return Promise.reject(opts.registerAblegenWirft);
+    return Promise.resolve({ eTag: 'reg-etag' });
+  };
 
   global.document = {
     getElementById: function (id) {
@@ -636,7 +664,8 @@ async function hochladenLaufB5(n, dateiListe, opts) {
   const knopf = { disabled: false, textContent: 'Hochladen' };
   controller.hochladen(String(n), knopf);
   await new Promise(function (r) { setTimeout(r, 120); });
-  return { hochladenRufe: hochladenRufe, ablegenRufe: ablegenRufe, meldung: meldung.textContent,
+  return { hochladenRufe: hochladenRufe, ablegenRufe: ablegenRufe, registerAblegenRufe: registerAblegenRufe,
+           meldung: meldung.textContent,
            fehlerHinweis: state.fehlerHinweis, hinweis: state.hinweis,
            rufe: rufe, knopf: knopf };
 }
@@ -1698,4 +1727,89 @@ test('V4 (g) kein Varianten-Widerspruchs-Check gegen die UI — Schritt 4 fuehrt
     });
   assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
   assert.doesNotMatch(l.meldung, /Variante zuerst angleichen/);
+});
+
+/* ---------- V7 (Etappe 4): Registerspeisung — der V4-Erfolgspfad schreibt
+   das zentrale Register (_zentral/register.json) als Nebenprodukt, status
+   'validiert'. Ein Fehlschlag bricht die Ablage NIE ab. ---------- */
+
+test('V7 (a): V4-Erfolg schreibt eine Register-Zeile je Kapitel mit status validiert', async () => {
+  const l = await hochladenLaufB5(4, [blockDatei('egal.blocks', blockText4())], {
+    dossier: DOSSIER_OK_STATUS,
+    dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+    blocksTexte: {
+      'AFL-001_skript-claude_v1.blocks': basisText('claude'),
+      'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+    }
+  });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.registerAblegenRufe.length, 1, 'genau ein Register-Write erwartet');
+  const registerRuf = l.registerAblegenRufe[0];
+  assert.strictEqual(registerRuf.datei, 'register.json');
+  const bestand = JSON.parse(registerRuf.text);
+  assert.strictEqual(bestand.schema, 1);
+  assert.strictEqual(bestand.zeilen.length, 1, JSON.stringify(bestand.zeilen));
+  assert.strictEqual(bestand.zeilen[0].kurs, 'AFL-001');
+  assert.strictEqual(bestand.zeilen[0].ek, 'AFL-001-EK-001');
+  assert.strictEqual(bestand.zeilen[0].status, 'validiert');
+  assert.strictEqual(bestand.zeilen[0].rechtsstand, '1.1.2026');
+  assert.deepStrictEqual(bestand.zeilen[0].quellen, [
+    { id: 'Q-001', stand: null }, { id: 'Q-002', stand: null }
+  ], 'Q-Staende kommen aus dem Dossier — DOSSIER_OK_STATUS fuehrt keinen stand je Quelle');
+});
+
+test('V7 (b): ein Register-Schreibfehler bricht die Ablage NICHT ab — state.fehlerHinweis nennt den Nachhol-Hinweis', async () => {
+  const l = await hochladenLaufB5(4, [blockDatei('egal.blocks', blockText4())], {
+    dossier: DOSSIER_OK_STATUS,
+    dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+    blocksTexte: {
+      'AFL-001_skript-claude_v1.blocks': basisText('claude'),
+      'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+    },
+    registerAblegenWirft: Object.assign(new Error('Graph 500'), { status: 500 })
+  });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet am lokalen Hochladen-Knoten: ' + l.meldung);
+  assert.strictEqual(l.hochladenRufe.length, 3, 'docx + blocks + Diagramm-Bild trotz Register-Fehlschlag');
+  assert.strictEqual(JSON.parse(l.ablegenRufe[0].text).status.content, 'validiert',
+    'der Dossier-Status-Write darf vom Register-Fehlschlag nicht betroffen sein');
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_content_v1\.docx/,
+    'die Erfolgsmeldung bleibt unveraendert, auch wenn das Register nicht geschrieben werden konnte');
+  assert.match(l.fehlerHinweis || '', /Register nicht nachgeführt/);
+  assert.match(l.fehlerHinweis || '', /nächstes Ablegen holt es nach/);
+});
+
+test('V7 (c): 412/409 beim Register-Schreiben löst genau EIN frisches Lesen + einen erneuten Schreibversuch aus', async () => {
+  let lesenCalls = 0;
+  const l = await hochladenLaufB5(4, [blockDatei('egal.blocks', blockText4())], {
+    dossier: DOSSIER_OK_STATUS,
+    dateienJeOrdner: { '04_validierung': [], '03_content': DATEIEN_03_BEIDE_BASEN },
+    blocksTexte: {
+      'AFL-001_skript-claude_v1.blocks': basisText('claude'),
+      'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
+    },
+    /* Erster Aufruf (in _registerBasis, vor dem ersten Schreiben): "gibt es
+       noch nicht" -> Erstanlage, kein eTag. Zweiter Aufruf (_registerNeuLesen
+       nach dem 409): das Register existiert jetzt (eine fremde Erstanlage),
+       mit eTag — der zweite Schreibversuch traegt diesen eTag als If-Match. */
+    registerLesenGenau: function (n) {
+      lesenCalls = n;
+      if (n === 1) return Promise.resolve({ ok: false, fehlt: true });
+      return Promise.resolve({ ok: true, text: JSON.stringify({ schema: 1, zeilen: [] }), eTag: 'W/"fremd"' });
+    },
+    /* Erster Schreibversuch (Erstanlage, nurNeu=true): 409 — eine fremde
+       Sitzung hat das Register zwischenzeitlich angelegt. Zweiter Versuch:
+       Erfolg. */
+    registerAblegen: function (datei, text, eTagWert, nurNeu, aufrufNr) {
+      if (aufrufNr === 1) {
+        assert.strictEqual(nurNeu, true, 'die Erstanlage haette conflictBehavior=fail erwartet');
+        return Promise.reject(Object.assign(new Error('Conflict'), { status: 409 }));
+      }
+      assert.strictEqual(eTagWert, 'W/"fremd"', 'der zweite Versuch haette den frisch gelesenen eTag tragen muessen');
+      return Promise.resolve({ eTag: 'W/"neu"' });
+    }
+  });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(lesenCalls, 2, 'genau ein Erstlesen plus ein Neu-Lesen nach dem Konflikt erwartet');
+  assert.strictEqual(l.registerAblegenRufe.length, 2, 'genau ein Konflikt-Versuch plus ein erfolgreicher Retry');
+  assert.strictEqual(l.fehlerHinweis, null, 'nach erfolgreichem Retry darf kein Register-Fehlerhinweis stehen');
 });
