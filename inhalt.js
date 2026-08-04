@@ -547,11 +547,24 @@
        zur Auswahl. Grundlage der Versions-Auswahl in der Gate-Box (Z9,
        Entscheid Markus 2026-07-30): dort waehlt der Mensch ausdruecklich,
        WELCHE Fassung final wird, statt dass geltendeDatei() (hoechste Nummer)
-       das stillschweigend fuer ihn entscheidet. */
-    versionenVon: function (dateien, kursId, lieferobjekt) {
+       das stillschweigend fuer ihn entscheidet.
+
+       Vierter, optionaler Parameter `endung` (V6 Fix-Runde 1, CRITICAL-Fix):
+       ohne ihn matcht die Regex JEDE Endung — bei einem Lieferobjekt mit
+       mehreren Dateien je Versionsstamm (Schritt 4: docx UND blocks, B5/V4)
+       liefert das dieselbe Version ZWEIMAL, einmal je Endung. Die Gate-Box
+       darf aber nur die Hauptendung des Kontrakts (inhalt.erwarteteEndung)
+       zur Auswahl stellen — ein Radio auf die .blocks-Schwester haette
+       gateKlick sonst dazu gebracht, die Blockdatei unter dem Word-Namen
+       final zu benennen (Datenverlust-Risiko, Review-Finding CRITICAL).
+       Bestehende Aufrufer ohne `endung` bleiben unveraendert (Rueckfall auf
+       "jede Endung") — geprueft: kein Aufrufer ausser ansichten.gateFreigabe,
+       der Parameter wird dort seither immer mitgegeben. */
+    versionenVon: function (dateien, kursId, lieferobjekt, endung) {
       if (!Array.isArray(dateien)) return [];
+      var endungTeil = endung ? reEsc(endung) : '[a-z0-9]+';
       var re = new RegExp('^' + reEsc(kursId) + '_' + reEsc(lieferobjekt) +
-                          '_v(\\d+)\\.[a-z0-9]+$', 'i');
+                          '_v(\\d+)\\.' + endungTeil + '$', 'i');
       var treffer = [];
       dateien.forEach(function (d) {
         var m = re.exec(d.name || '');

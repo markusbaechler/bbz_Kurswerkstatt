@@ -2163,6 +2163,20 @@
         var radios = typeof document !== 'undefined' ? document.querySelectorAll('[name="gate-version"]') : [];
         Array.prototype.forEach.call(radios, function (r) { if (r.checked) gewaehlt = r.value; });
         if (!gewaehlt) throw new Error('keine Fassung ausgewählt in ' + ablage.ordner);
+        /* V6 Fix-Runde 1 (CRITICAL-Fix, Doppelschutz zur Radio-Liste): die Ansicht
+           zeigt seither nur noch Fassungen der Kontrakt-Endung (versionenVon() mit
+           endung-Filter, s. ansichten.gateFreigabe) — dieser Guard sichert dieselbe
+           Regel zusaetzlich im Controller ab, VOR jedem Schreibzugriff (kein
+           Protokoll, keine Umbenennung, kein Dossier-Schreiben). Ohne ihn haette
+           eine .blocks-"gewaehlte" Fassung (verdrehte Radio-Reihenfolge, ein
+           manipuliertes/veraltetes DOM, ein direkter Testaufruf) die Blockdatei
+           unter dem Word-Zielnamen final benannt — der nachfolgende
+           Geschwister-Nachzug haette danach mit demselben Zielnamen kollidiert
+           (Datenverlust-Risiko, unabhaengiger Review). */
+        if (endung && gateEndung(gewaehlt) !== endung) {
+          throw new Error('gewählte Fassung ' + gewaehlt + ' hat nicht die erwartete Endung .' +
+            endung + ' — bitte die Hauptfassung wählen');
+        }
         /* Fix-Runde Z9 (Review-Finding): gewaehlt kommt aus dem DOM, also aus dem Stand
            zur RENDER-Zeit — nicht aus derselben dateien-Liste, die hier gerade frisch
            gelesen wurde. Zwischen Render und Klick kann die Datei verschwunden sein

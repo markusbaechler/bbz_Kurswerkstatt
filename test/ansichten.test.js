@@ -924,6 +924,28 @@ test('mit mehreren Fassungen ist die hoechste vorausgewaehlt, jede niedrigere tr
   assert.match(html, /value="DBS-001_lernziele-drehbuch_v3\.xlsx"[^>]*>[\s\S]*?es existiert bereits DBS-001_lernziele-drehbuch_v5\.xlsx/);
 });
 
+/* V6 Fix-Runde 1 (CRITICAL-Fix): Schritt 4 legt docx UND blocks unter demselben
+   _vN-Versionsstamm ab (B5/V4) — ohne endung-Filter in versionenVon() zeigte die
+   Radio-Liste beide Dateien als zwei separate, gleichwertige "Fassungen" derselben
+   Version, und ob docx oder blocks auf Platz 0 (vorausgewaehlt/checked) landete,
+   hing von der Reihenfolge ab, in der Graph den Ordner zurueckgab. Wurde die
+   .blocks-Datei bestaetigt, benannte gateKlick sie zur Word-Endung um —
+   Datenverlust-Risiko im Normalbetrieb (unabhaengiger Review). Seit dem Fix zeigt
+   die Radio-Liste ausschliesslich Fassungen der erwarteten Kontrakt-Endung. */
+test('V6 Fix-Runde 1 (CRITICAL): Schritt 4 zeigt in der Radio-Liste NUR die docx-Hauptfassung, nie die .blocks-Geschwisterdatei desselben Stamms', () => {
+  const props = { dossier: dossierOhneOffen(), dateien: [
+    { name: 'DBS-001_content_v3.docx' },
+    { name: 'DBS-001_content_v3.blocks' }
+  ] };
+  const html = ansichten.einSchritt(INHALT, DBS, 4, null, props);
+  assert.match(html, /name="gate-version"[^>]*value="DBS-001_content_v3\.docx"[^>]*checked/,
+    'die docx-Fassung fehlt oder ist nicht vorausgewaehlt');
+  assert.doesNotMatch(html, /value="DBS-001_content_v3\.blocks"/,
+    'die Blockdatei darf nie als eigene, waehlbare Fassung erscheinen');
+  const radioCount = (html.match(/name="gate-version"/g) || []).length;
+  assert.strictEqual(radioCount, 1, 'nur EIN Radio je Versionsstamm, nicht eins je Endung');
+});
+
 test('Z9: offene Punkte im Dossier sperren den Gate-Knopf in der Ansicht nicht mehr (S2 bleibt Controller-Waechter, s. o.)', () => {
   const d = dossierOhneOffen();
   d.offen = [{ was: 'Bloom-Stufe pruefen', wo: 'LZ-004', fuer: 'gate-1' }];

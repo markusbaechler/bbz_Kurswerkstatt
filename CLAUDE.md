@@ -4676,3 +4676,70 @@ Schritt 4 weiterhin nicht `pruefung: 'validierung'` (Weg B, unverändert seit V2
 Feld erreicht `controller.gateKlick` den Sign-off-Zweig für Schritt 4 dort nicht anders als heute
 schon (die Stamm-Umbenennung selbst hängt an keinem Kontraktfeld, nur an tatsächlich vorhandenen
 Geschwisterdateien — sie greift auch ohne `pruefung`, sobald Schritt 4 überhaupt ein Gate hat).
+
+### Fix-Runde 1 (unabhängiger Review, 1 Critical + 1 Important)
+
+**[CRITICAL] Die Radio-Liste konnte `.blocks` als „gewählte Fassung" anbieten — vertauschte
+Umbenennung.** `inhalt.versionenVon` filterte bisher nicht nach Endung (Regex
+`_v(\d+)\.[a-z0-9]+$`, jede Endung) — für Schritt 4 (docx UND blocks im selben `_vN`-Stamm, B5/V4)
+lieferte sie JEDE Version ZWEIMAL, einmal je Endung: zwei Radiobuttons je Version, und ob `.docx`
+oder `.blocks` auf Platz 0 (vorausgewählt) landete, hing von der Reihenfolge ab, in der Graph den
+Ordner zurückgab. Wurde `.blocks` bestätigt, hätte `gateKlick` die Blocks-Datei zu `…_final.docx`
+umbenannt (Blockdatei-Inhalt unter Word-Namen), und der Geschwister-Nachzug wäre danach mit
+demselben Zielnamen kollidiert — Datenverlust-Risiko im Normalbetrieb.
+
+**Fix, beides wie vom Review empfohlen:**
+1. `inhalt.versionenVon(dateien, kursId, lieferobjekt, endung)` bekommt einen vierten, optionalen
+   Parameter — eine Quelle statt eines Filters an der Aufrufstelle (Review-Empfehlung geprüft:
+   der Filter gehört in die Funktion, nicht davor, weil sonst jeder künftige Aufrufer ihn selbst
+   nachbauen müsste). Ohne `endung` bleibt das Verhalten unverändert (jede Endung matcht) —
+   Rückwärtskompatibilität für Aufrufer, die die Unterscheidung nicht brauchen (geprüft: es gibt
+   ausser `ansichten.gateFreigabe` keinen). `ansichten.gateFreigabe` berechnet `endung` (bereits
+   vorhanden über `inhalt.erwarteteEndung`) jetzt VOR dem `versionenVon`-Aufruf und reicht sie mit
+   — die Radio-Liste zeigt seither ausschliesslich Fassungen der Kontrakt-Hauptendung, nie die
+   `.blocks`-Geschwisterdatei.
+2. **Harter Guard in `controller.gateKlick` (app.js), VOR jedem Schreibzugriff** — Doppelschutz,
+   Muster „keine Fassung ausgewählt" direkt darüber: `if (endung && gateEndung(gewaehlt) !==
+   endung) throw new Error(...)`, unmittelbar nach der `!gewaehlt`-Prüfung, noch vor dem
+   Verschwunden-Check (`dateien.some(...)`) und dem Bestätigungs-Dialog. Schützt unabhängig von
+   der Ansicht — falls doch je eine `.blocks`-„gewählte" Fassung den Controller erreicht (ein
+   direkter Aufruf, ein veraltetes DOM), bricht der Aufruf ab, bevor `graph.ablegen` (Protokoll)
+   oder `graph.umbenennen` überhaupt gerufen werden.
+
+**[IMPORTANT] Fresh-Read-Zweig der Offen-Speisung war ungetestet.** Der Pfad „kein Review-Cache →
+`graph.dateiLesen` der `.blocks`-Schwester VOR dem Umbenennen → `skriptLesen.lies` → Punkte" hatte
+keine Testabdeckung — alle bisherigen V6-Tests setzten `state.data.review[kursId].validiert` vorab.
+Zwei neue Tests schliessen die Lücke: (1) ohne Cache liest ein Fake-`graph.dateiLesen` einen echten
+Blocktext (echte `skriptLesen.lies`-Kette), die zwei daraus extrahierten Punkte landen mit
+`fuer:'schritt-5'` im Dossier-Mutator, UND ein Aufruf-Log belegt, dass `graph.dateiLesen` VOR jedem
+`graph.umbenennen` läuft; (2) scheitert das Lesen (`null`), läuft das Gate trotzdem vollständig
+durch (Status wird final), die Speisung bleibt leer, und die Erfolgsmeldung trägt den Hinweis
+„Blockdatei nicht lesbar".
+
+**Tests (drei neue, `test/gate.test.js`):** CRITICAL-Test (`.blocks` als DOM-Auswahl → weder
+`graph.ablegen` noch `graph.umbenennen` werden je gerufen, `state.fehlerHinweis` nennt `.docx`),
+zwei IMPORTANT-Tests für den Fresh-Read-Zweig (Erfolg mit Reihenfolge-Beleg, Fehlschlag mit
+Hinweis). Dazu zwei Tests in `test/final.test.js` (`versionenVon` mit `endung`-Filter für docx
+UND blocks getrennt, sowie ein expliziter Rückwärtskompatibilitäts-Beleg ohne `endung`) und ein
+Test in `test/ansichten.test.js` (Schritt-4-Radio-Liste zeigt genau EIN Radio, nie `.blocks`).
+**832 Tests grün** (Baseline 826 + 6 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie verlangt):** den neuen Guard in `controller.gateKlick`
+auf `if (/* MUTATIONSPROBE */ false && endung && gateEndung(gewaehlt) !== endung)` gesetzt,
+`node --test test/gate.test.js`:
+```
+ℹ tests 30
+ℹ pass 29
+ℹ fail 1
+
+✖ V6 Fix-Runde 1 (CRITICAL): gateKlick mit der .blocks-Geschwisterdatei als "gewaehlte" Fassung bricht VOR jedem Schreibzugriff ab
+  AssertionError [ERR_ASSERTION]: trotz falscher Endung wurde geschrieben (Protokoll oder Dossier) — die Blockdatei waere fast final benannt worden
+  true !== false
+```
+Genau der eine neue Guard-Test fiel rot, alle anderen 29 (inklusive der beiden neuen
+Fresh-Read-Tests und der kompletten Bestandssuite) blieben grün; danach wiederhergestellt,
+komplette Suite erneut geprüft: `node --test` → **832/832 grün**.
+
+**Prozessnachtrag:** der Task-Report `task-V6-report.md` wurde beim ursprünglichen V6-Commit nicht
+geschrieben — nachgeholt zusammen mit dieser Fix-Runde
+(`.superpowers/sdd/2026-08-04-etappe-4-plan/task-V6-report.md`).

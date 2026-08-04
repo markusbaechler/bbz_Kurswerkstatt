@@ -17,6 +17,12 @@ const assert = require('node:assert');
 const { controller, state, graph, auth } = require('../app.js');
 require('../dossier.js');
 require('../inhalt.js');
+/* V6 Fix-Runde 1 (IMPORTANT-Fix): der Fresh-Read-Zweig der Offen-Speisung ruft
+   root.skriptLesen.lies() direkt (app.js, offenePunkteQuelle) — root.skriptLesen
+   wird erst gesetzt, sobald skript-schema.js/skript-lesen.js geladen wurden
+   (Muster test/hochladen.test.js). */
+require('../skript-schema.js');
+require('../skript-lesen.js');
 const { INHALT } = require('./fixture.js');
 
 /* graph ist ein einziges, geteiltes Objekt ueber die ganze Datei — jeder Test, der
@@ -895,5 +901,154 @@ test('V6: ohne Review-Cache und ohne S2-Sperre (Schritt 2) bleibt die Offen-Spei
   assert.ok(dossierText, 'der Dossier-Schreiber wurde nicht aufgerufen');
   const d = JSON.parse(dossierText);
   assert.strictEqual((d.offen || []).length, 0, 'Schritt 2 darf keine schritt-5-Punkte anlegen');
+  delete global.document;
+});
+
+/* ---------- V6 Fix-Runde 1 (unabhaengiger Review): CRITICAL + IMPORTANT ----------
+   CRITICAL: inhalt.versionenVon() filterte bisher nicht nach Endung — bei Schritt 4
+   (docx UND blocks im selben _vN-Stamm, B5/V4) lieferte sie JEDE Version zweimal,
+   einmal je Endung. Die Ansicht ist seither ueber den neuen endung-Parameter
+   gefixt (test/final.test.js, test/ansichten.test.js); dieser Block sichert
+   zusaetzlich den Controller selbst ab — ein zweiter, unabhaengiger Schutz VOR
+   jedem Schreibzugriff, falls trotzdem je eine .blocks-"gewaehlte" Fassung den
+   Controller erreicht (verdrehte Radio-Reihenfolge, veraltetes DOM, ein direkter
+   Testaufruf). IMPORTANT: der Fresh-Read-Zweig der Offen-Speisung (kein
+   Review-Cache -> graph.dateiLesen der .blocks-Schwester VOR dem Umbenennen ->
+   skriptLesen.lies -> Punkte) hatte bisher keine Testabdeckung — alle bisherigen
+   V6-Tests setzten den Review-Cache vorab. */
+
+/* Ein minimaler, aber fuer skriptLesen.lies() unproblematischer Blocktext: er
+   wirft NICHT (###SKRIPT ist vorhanden), auch wenn er als KAPITEL unvollstaendig
+   waere (fehlende Pflichtbausteine landen in gelesen.fehler — gateOffenePunkteAusGelesen
+   liest aber nur .offen/.kapitel[].validierung.divergenz, nie .fehler; s. app.js,
+   offenePunkteQuelle() prueft das Ergebnis ebenfalls nicht auf .fehler). Genau das
+   macht dieses Fixture fuer den Test ausreichend, ohne alle zwoelf Pflichtbausteine
+   nachzubauen (Muster blockText4() in test/hochladen.test.js, hier bewusst minimal
+   gehalten). */
+function blocksTextMitOffenenPunkten() {
+  return [
+    '###SKRIPT kurs=DBS-001 | variante=claude | titel=Content | rechtsstand=1.1.2026',
+    '###OFFEN',
+    'Rechtsstand fuer Kapitel 3 pruefen',
+    '###KAPITEL nr=1 | ek=DBS-001-EK-002 | titel=Freizuegigkeit | bloom=2 | richtzeit=25',
+    '###VALIDIERUNG',
+    'herkunft: bestaetigt',
+    'divergenz: offen',
+    '###ENDE-KAPITEL'
+  ].join('\n');
+}
+
+test('V6 Fix-Runde 1 (CRITICAL): gateKlick mit der .blocks-Geschwisterdatei als "gewaehlte" Fassung bricht VOR jedem Schreibzugriff ab', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  /* Simuliert genau das Szenario aus dem Review: die Radio-Auswahl (verdreht,
+     veraltet, oder ein direkter Testaufruf) zeigt auf die .blocks-Datei statt
+     auf die docx-Hauptfassung. */
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_content_v3.blocks'));
+  controller._bestaetige = function () { return true; };
+  let ablegenGerufen = false;
+  let umbenennenGerufen = false;
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_v3.docx' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) { umbenennenGerufen = true; return Promise.resolve(nach); };
+  graph.ablegen = function () { ablegenGerufen = true; return Promise.resolve({ eTag: 'W/"1"' }); };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.strictEqual(ablegenGerufen, false,
+    'trotz falscher Endung wurde geschrieben (Protokoll oder Dossier) — die Blockdatei waere fast final benannt worden');
+  assert.strictEqual(umbenennenGerufen, false, 'trotz falscher Endung wurde umbenannt');
+  assert.match(state.fehlerHinweis || '', /\.docx/,
+    'die Fehlermeldung soll die erwartete Endung nennen — ' + JSON.stringify(state.fehlerHinweis));
+  delete global.document;
+});
+
+test('V6 Fix-Runde 1 (IMPORTANT): ohne Review-Cache werden die offenen Punkte ueber das frische Lesen der .blocks-Schwester gespeist — VOR jeder Umbenennung', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};   /* kein Cache — der Fresh-Read-Zweig muss greifen */
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_content_v3.docx'));
+  controller._bestaetige = function () { return true; };
+  const reihenfolge = [];
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_v3.docx' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.dateiLesen = function (kursId, ordner, datei) {
+    reihenfolge.push('lesen:' + datei);
+    return Promise.resolve(blocksTextMitOffenenPunkten());
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) {
+    reihenfolge.push('umbenennen:' + von);
+    return Promise.resolve(nach);
+  };
+  let dossierText = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    if (ordner === '') dossierText = text;
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.ok(dossierText, 'der Dossier-Schreiber wurde nicht aufgerufen');
+  const d1 = JSON.parse(dossierText);
+  assert.strictEqual(d1.offen.length, 2, JSON.stringify(d1.offen));
+  assert.deepStrictEqual(d1.offen.map(function (e) { return e.was; }), [
+    'Rechtsstand fuer Kapitel 3 pruefen',
+    'Divergenz offen: DBS-001-EK-002 · Freizuegigkeit'
+  ]);
+  assert.deepStrictEqual(d1.offen.map(function (e) { return e.fuer; }), ['schritt-5', 'schritt-5']);
+  assert.deepStrictEqual(reihenfolge, [
+    'lesen:DBS-001_content_v3.blocks',
+    'umbenennen:DBS-001_content_v3.docx',
+    'umbenennen:DBS-001_content_v3.blocks'
+  ], 'das Lesen der .blocks-Schwester muss VOR jeder Umbenennung passieren — ' + JSON.stringify(reihenfolge));
+  delete global.document;
+});
+
+test('V6 Fix-Runde 1 (IMPORTANT): scheitert das frische Lesen (null), laeuft das Gate trotzdem durch — Speisung uebersprungen, Hinweis in der Erfolgsmeldung', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_content_v3.docx'));
+  controller._bestaetige = function () { return true; };
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_v3.docx' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.dateiLesen = function () { return Promise.resolve(null); };
+  graph.umbenennen = function (kursId, ordner, von, nach) { return Promise.resolve(nach); };
+  let dossierText = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    if (ordner === '') dossierText = text;
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.ok(dossierText, 'das Gate haette trotz nicht lesbarer Blockdatei durchlaufen sollen');
+  const d1 = JSON.parse(dossierText);
+  assert.strictEqual((d1.offen || []).length, 0, 'ohne lesbare Quelle duerfen keine Punkte entstehen');
+  assert.strictEqual(d1.status.content, 'final');
+  assert.match(state.hinweis || '', /nicht lesbar/,
+    'die Erfolgsmeldung soll den Hinweis "Blockdatei nicht lesbar" tragen — ' + JSON.stringify(state.hinweis));
   delete global.document;
 });

@@ -813,9 +813,16 @@
   function gateFreigabe(inh, kurs, schrittId, ablage, ablageDaten, d) {
     var dateien = Array.isArray(ablageDaten.dateien) ? ablageDaten.dateien : null;
     var lief = I().lieferobjektVon(inh, schrittId, ablageDaten.variante);
-    var versionen = (dateien && lief) ? I().versionenVon(dateien, kurs.kursId, lief) : [];
-    var final = (dateien && lief) ? I().finalVorhanden(dateien, kurs.kursId, lief) : null;
     var endung = I().erwarteteEndung(inh, schrittId);
+    /* V6 Fix-Runde 1 (CRITICAL-Fix): versionenVon() bekommt die erwartete
+       Kontrakt-Endung mit — sonst zeigt Schritt 4 (docx+blocks im selben
+       _vN-Stamm, B5/V4) jede Version ZWEIMAL, einmal je Endung, und welche
+       davon auf Platz 0 (vorausgewaehlt) landet, haengt von der Graph-
+       Reihenfolge ab. Die Radio-Liste stellt seither ausschliesslich die
+       Hauptendung des Kontrakts zur Auswahl — die .blocks-Schwester wird nie
+       als eigene, waehlbare Fassung angezeigt. */
+    var versionen = (dateien && lief) ? I().versionenVon(dateien, kurs.kursId, lief, endung) : [];
+    var final = (dateien && lief) ? I().finalVorhanden(dateien, kurs.kursId, lief) : null;
     var nach = (lief && endung) ? I().finalName(kurs.kursId, lief, endung) : null;
     var gateDateiName = I().gateDatei(inh);
     var protokollDa = !!(dateien && dateien.some(function (x) { return x.name === gateDateiName; }));

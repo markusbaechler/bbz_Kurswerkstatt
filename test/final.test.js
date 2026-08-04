@@ -82,6 +82,35 @@ test('versionenVon ignoriert fremde Kurse/Lieferobjekte und liefert [] ohne Arra
   assert.deepStrictEqual(inhalt.versionenVon(undefined, 'AFL-001', 'lernziele-drehbuch'), []);
 });
 
+/* V6 Fix-Runde 1 (CRITICAL-Fix): ohne endung-Filter matcht die Regex JEDE Endung —
+   bei einem Lieferobjekt mit mehreren Dateien je Versionsstamm (Schritt 4: docx UND
+   blocks, B5/V4) lieferte versionenVon() dieselbe Version bisher ZWEIMAL, einmal je
+   Endung. Der optionale vierte Parameter grenzt auf die erwartete Kontrakt-Endung
+   ein — genau die Grundlage, auf der ansichten.gateFreigabe die Radio-Liste seither
+   aufbaut. */
+test('V6 Fix-Runde 1: versionenVon mit endung-Filter zeigt nur die Fassungen dieser Endung, nicht die Geschwisterdatei gleichen Stamms', () => {
+  const dateien = d(
+    'DBS-001_content_v3.docx', 'DBS-001_content_v3.blocks',
+    'DBS-001_content_v2.docx', 'DBS-001_content_v2.blocks'
+  );
+  assert.deepStrictEqual(inhalt.versionenVon(dateien, 'DBS-001', 'content', 'docx'), [
+    { name: 'DBS-001_content_v3.docx', version: 3 },
+    { name: 'DBS-001_content_v2.docx', version: 2 }
+  ]);
+  assert.deepStrictEqual(inhalt.versionenVon(dateien, 'DBS-001', 'content', 'blocks'), [
+    { name: 'DBS-001_content_v3.blocks', version: 3 },
+    { name: 'DBS-001_content_v2.blocks', version: 2 }
+  ]);
+});
+
+test('V6 Fix-Runde 1: versionenVon OHNE endung-Parameter bleibt rueckwaertskompatibel (bestehendes Verhalten unveraendert)', () => {
+  const dateien = d('AFL-001_lernziele-drehbuch_v1.xlsx', 'AFL-001_lernziele-drehbuch_v2.xlsx');
+  assert.deepStrictEqual(inhalt.versionenVon(dateien, 'AFL-001', 'lernziele-drehbuch'), [
+    { name: 'AFL-001_lernziele-drehbuch_v2.xlsx', version: 2 },
+    { name: 'AFL-001_lernziele-drehbuch_v1.xlsx', version: 1 }
+  ]);
+});
+
 /* ---------- Ansicht: Weg Hochladen ---------- */
 
 test('bei _final zeigt der Upload die Sperre statt eines Zielnamens', () => {
