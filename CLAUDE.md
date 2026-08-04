@@ -3156,3 +3156,91 @@ SharePoint führen `pruefung: 'skript'` für Schritt 3 weiterhin nicht (Weg B, u
 Der Illustrations-Katalog (B7) bleibt ungebaut; sobald er existiert, braucht der Prompt einen
 neuen, eigenen Abschnitt dafür — kein Wiederaufleben von `katalog:` im aktuellen Wortlaut ohne
 diesen Schritt.
+
+## Fix-Task B9-F1: die Dateiauswahl überlebt keinen Render
+
+**Live-Befund aus der Abnahme (Etappe 3b):** der Weg Hochladen wirkte „tot". Ursache:
+`controller.render()` baut die Schritt-Ansicht als HTML-String neu — der Datei-Input `#datei`
+ist danach ein NEUES, leeres Element (Datei-Inputs sind nicht programmatisch wiederbefüllbar,
+dieselbe dokumentierte Grenze wie beim Formular-Erhalt, s. „quelle-datei bleibt aussen vor"
+oben). Schritt 3 löst nach dem Öffnen MEHRERE asynchrone Nachladen-Render aus
+(`dossierNachladen`, `briefingNachladen`, `ordnerNachladen` für `03_content` UND
+`02_lernziele`, s. A3/B5) — wer Dateien wählte und erst NACH so einem Zwischen-Render auf
+„Hochladen" klickte, traf auf ein leeres `feld.files`: der Guard `if (!dateiListe.length) {
+feld.click(); return; }` öffnete nur wieder den Dialog, ohne je hochzuladen. Betroffen waren
+alle Hochladen-Wege (Schritt 2 xlsx, Schritt 6 mbz, Schritt 3 Blockdatei) — in Schritt 3 war das
+Zeitfenster nur am grössten.
+
+**Fix: die Auswahl lebt im State, nicht im Element.** File-Objekte überleben im JS-Heap, nur
+das Input-Element stirbt beim Neuaufbau — deshalb hebt `controller.dateiGewaehlt(el)` die
+Auswahl bei jedem `change` am Feld `#datei` in `state.data.dateiAuswahl = { kursId, schrittId,
+dateien }`, gestempelt mit `state.position` (Muster `_formularSnapshot`), und rendert danach —
+das ist jetzt gefahrlos, weil die Auswahl den Render übersteht. Die neue Delegation sitzt neben
+der bestehenden `input`-Delegation (`app.js`): `document.addEventListener('change', …)`, weil
+ein Datei-Input kein `input`-, nur ein `change`-Ereignis feuert.
+
+`controller.hochladen` liest `dateiListe` seither ZUERST aus `state.data.dateiAuswahl`, wenn
+dessen Stempel zu Kurs UND Schritt passt (`auswahlPasst`) — `feld.files` bleibt der Rückfall für
+„gewählt und sofort geklickt, kein Render dazwischen" und für jeden bestehenden Testpfad, der
+`files` direkt setzt (Regressionsschutz, s. u.). Der leere-Auswahl-Guard (`feld.click()`) bleibt
+unverändert bestehen. Nach ERFOLGREICHER Ablage wird `state.data.dateiAuswahl = null` gesetzt
+(an beiden Erfolgspfaden in `controller.hochladen` — dem einfachen xlsx-/mbz-Weg und dem
+Blockdatei-Bau-Weg, B5) — sonst zeigte die Ansicht Geister-Namen weiter, und ein zweiter Klick
+hätte Veraltetes erneut hochgeladen. Bei Abbruch/Fehler bleibt die Auswahl bewusst stehen: die
+Person will nachbessern und erneut klicken; wählt sie eine andere Datei, ersetzt der
+`change`-Handler die Auswahl ohnehin.
+
+**Fremd-Kurs-Schutz ohne aktives Aufräumen:** `state.data.dateiAuswahl` ist EIN Objekt (kein
+Verzeichnis je Kurs — es ist immer nur eine Hochladen-Fläche gleichzeitig sichtbar). Ein
+Kurs-/Schrittwechsel macht eine bestehende Auswahl automatisch unbrauchbar, weil sowohl
+`controller.render()` (beim Durchreichen an `ansichten.einSchritt`) als auch
+`controller.hochladen` den Stempel gegen `state.position` bzw. den aktuellen Kurs/Schritt
+prüfen — dieselbe Technik wie beim Formular-Erhalt, nur ohne den generischen
+`_formularSnapshot`-Mechanismus (der deckt DOM-Felder ab, hier gibt es nach dem Neuaufbau gar
+kein Feld mehr, das etwas enthalten könnte).
+
+**Ansicht (`ansichten.js`, Hochladen-Block):** direkt unter dem `<input type="file" id="datei">`
+steht, sobald `ablageDaten.dateiAuswahl` ein nichtleeres Array ist, eine Zeile „Gewählt: {Name}
+&middot; {Name} ({n} Dateien)" — jeder Dateiname durch `esc()` (Konvention 4, SharePoint-Werte
+UND jetzt auch lokale Dateinamen sind Fremdwerte). Nichts gewählt: die Zeile fehlt ganz, kein
+leerer Rahmen.
+
+**Tests (`test/hochladen.test.js`, fünf neue Fälle, Abschnitt „B9-F1"):** (1) ein `change` auf
+`#datei` hebt die Auswahl mit Stempel in den State, ruft `render()` und die Ansicht zeigt beide
+Namen escaped (Fremdwert-Probe mit einem `<img …>`-Dateinamen); (2) DER BEFUND selbst: Auswahl
+im State, `feld.files` nach dem simulierten Render leer — `controller.hochladen` lädt trotzdem
+hoch (der bisherige Silent-Return-Fall wird zum Erfolgsfall); (3) ein erfolgreicher Upload leert
+die State-Auswahl wieder, die Ansicht zeigt danach keine Geister-Namen mehr; (4) Stempel-Schutz:
+eine Auswahl von Kurs „VL-001"/Schritt 6 wird in der Ansicht für Kurs „AFL-001"/Schritt 6 nicht
+verwendet, der Guard verhält sich wie bei leerer Auswahl (Dateidialog öffnet erneut); (5)
+Regressionsbeleg: ohne State-Auswahl bleibt `feld.files` der Weg — alle bestehenden T11-xlsx- und
+B5-Tests (die `files` direkt setzen und sofort klicken, ohne je durch `change` zu laufen) bleiben
+unverändert grün, weil sie über genau diesen Rückfall laufen. **722/722 Tests grün** (Baseline
+717 + 5 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** in `controller.hochladen` `auswahlPasst`
+hart auf `false` gesetzt (State-Vorrang entfernt, nur noch `feld.files`), `node --test
+test/hochladen.test.js`:
+```
+ℹ tests 48
+ℹ pass 46
+ℹ fail 2
+
+✖ B9-F1 (2) DER BEFUND: Auswahl im State, Input nach Render leer — controller.hochladen laedt trotzdem
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + null
+  - '06_moodle'
+✖ B9-F1 (3): ein erfolgreicher Upload leert die State-Auswahl wieder
+  AssertionError [ERR_ASSERTION]: Testvoraussetzung: Upload lief durch
+  + null
+  - 'AFL-001_export.mbz'
+```
+Genau die zwei von der Mutation betroffenen Tests fielen rot (Test 3 scheitert an seiner eigenen
+Testvoraussetzung, weil sie dieselbe DER-BEFUND-Szene wie Test 2 nutzt — derselbe zugrunde
+liegende Codepfad), alle anderen 46 blieben grün; danach wiederhergestellt, komplette Suite
+erneut geprüft: `node --test` → **722/722 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** eine Live-Probe im Browser hat der Koordinator nicht
+angefordert bzw. selbst übernommen (die Testdateien `_tmp-test.blocks`/`_tmp-illu.png` lagen im
+Repo-Root bereit, wurden für diese Task nicht committet). Der Beweis für den reproduzierten
+Befund ist Test (2) — exakt der gemeldete Fall.

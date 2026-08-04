@@ -939,7 +939,22 @@
 
       h += '<input type="file" id="datei"' +
           (istBlockUpload ? ' multiple accept=".blocks,.txt,.png"'
-                          : (endung ? ' accept=".' + esc(endung) + '"' : '')) + ' />' +
+                          : (endung ? ' accept=".' + esc(endung) + '"' : '')) + ' />';
+
+      /* B9-F1: die zuletzt gewaehlten Dateien stehen im State (dateiGewaehlt),
+         nicht mehr im — bei jedem Render neuen, leeren — Input selbst. Ohne
+         diese Zeile saehe die Person nach einem Zwischen-Render nicht mehr,
+         was sie schon ausgewaehlt hat. Nichts gewaehlt: die Zeile fehlt. */
+      if (Array.isArray(ablageDaten.dateiAuswahl) && ablageDaten.dateiAuswahl.length) {
+        var dateiAuswahlNamen = ablageDaten.dateiAuswahl.map(function (d) {
+          return esc(d.name || '(ohne Namen)');
+        });
+        var dateiAuswahlAnzahl = ablageDaten.dateiAuswahl.length;
+        h += '<p class="dim">Gew&auml;hlt: ' + dateiAuswahlNamen.join(' &middot; ') + ' (' +
+          dateiAuswahlAnzahl + (dateiAuswahlAnzahl === 1 ? ' Datei)' : ' Dateien)') + '</p>';
+      }
+
+      h +=
         '<div class="arow">' +
           '<button class="knopf gross" data-action="hochladen" data-schritt="' +
             esc(schrittId) + '">Hochladen</button>' +

@@ -739,3 +739,147 @@ test('I3: docx gelingt, blocks scheitert — die Meldung nennt "naechste Version
   assert.doesNotMatch(l.meldung, /erneutes Hochladen ist sicher/);
   assert.match(l.fehlerHinweis || '', /nächste, vollständige Version daneben/);
 });
+
+/* ---------- B9-F1: die Dateiauswahl ueberlebt keinen Render (Live-Befund) ----------
+   controller.render() baut die Schritt-Ansicht als HTML-String neu — der Datei-Input
+   #datei ist danach ein NEUES, leeres Element (Datei-Inputs sind nicht programmatisch
+   wiederbefuellbar). Schritt 3 loest nach dem Oeffnen mehrere asynchrone Nachladen-
+   Render aus (dossierNachladen, briefingNachladen, ordnerNachladen fuer zwei Ordner) —
+   wer waehlt und erst NACH so einem Zwischen-Render klickt, traf bisher auf ein leeres
+   feld.files und damit auf den Guard "if (!dateiListe.length) { feld.click(); return; }"
+   statt auf einen Upload. Fix: File-Objekte leben im JS-Heap weiter, nur das Element
+   stirbt — die Auswahl wird deshalb beim change-Event in state.data.dateiAuswahl
+   gehoben (mit Positions-Stempel, Muster _formularSnapshot) und controller.hochladen
+   liest sie dort zuerst, feld.files bleibt nur der Ruckfall. */
+
+function hochladenLaufAuswahl(n, feldDateien, auswahlDateien) {
+  const meldung = { textContent: '', hidden: true };
+  const hochgeladenMit = { ordner: null, datei: null };
+
+  state.data.inhalt = JSON.parse(JSON.stringify(INHALT));
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
+                        schritt: +n, status: 'inArbeit' }];
+  state.data.dateien = {};
+  state.data.dossier = { 'AFL-001': undefined };
+  state.data.dateiAuswahl = auswahlDateien
+    ? { kursId: 'AFL-001', schrittId: String(n), dateien: auswahlDateien }
+    : null;
+  state.fehlerHinweis = null;
+  state.hinweis = null;
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: String(n),
+                     werkzeugId: null, werk: null, variante: null, weg: null };
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'datei') return { files: feldDateien, click: function () {} };
+      if (id === 'hochladefehler') return meldung;
+      return null;
+    }
+  };
+
+  graph.ordnerInhalt = function () { return Promise.resolve([]); };
+  graph.hochladen = function (kursId, ordner, datei) {
+    hochgeladenMit.ordner = ordner; hochgeladenMit.datei = datei;
+    return Promise.resolve();
+  };
+  graph.standNachAblage = function () { return null; };
+  graph.standSetzenRoh = function () { return Promise.resolve(); };
+  controller.render = function () {};
+
+  const knopf = { disabled: false, textContent: 'Hochladen' };
+  controller.hochladen(String(n), knopf);
+  return new Promise(function (r) { setTimeout(r, 30); }).then(function () {
+    return { hochgeladenMit: hochgeladenMit, meldung: meldung.textContent,
+             dateiAuswahlNachher: state.data.dateiAuswahl };
+  });
+}
+
+test('B9-F1 (1): Aenderung am Datei-Input hebt die Auswahl mit Positions-Stempel in den State und rendert; die Ansicht zeigt beide Namen escaped', () => {
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '6', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  state.data.dateiAuswahl = null;
+  let renderRufe = 0;
+  controller.render = function () { renderRufe++; };
+
+  const el = { files: [{ name: 'export.mbz' }, { name: '<img onerror=alert(1)>.png' }] };
+  controller.dateiGewaehlt(el);
+
+  assert.strictEqual(renderRufe, 1, 'render haette genau einmal aufgerufen werden muessen');
+  assert.deepStrictEqual(state.data.dateiAuswahl, {
+    kursId: 'AFL-001', schrittId: '6',
+    dateien: [{ name: 'export.mbz' }, { name: '<img onerror=alert(1)>.png' }]
+  });
+
+  const h = ansichten.einSchritt(INHALT, AFL, 6, null,
+    { ordnerFehlt: false, dateien: [], dateiAuswahl: state.data.dateiAuswahl.dateien });
+  assert.ok(h.indexOf('Gew&auml;hlt') >= 0, 'die Auswahl wird nicht angezeigt');
+  assert.ok(h.indexOf('export.mbz') >= 0, 'Dateiname export.mbz fehlt');
+  assert.ok(h.indexOf('(2 Dateien)') >= 0, 'Anzahl fehlt oder falsch');
+  assert.ok(h.indexOf('&lt;img onerror=alert(1)&gt;.png') >= 0, 'Fremdwert nicht escaped');
+  assert.ok(h.indexOf('<img onerror=alert(1)>.png') < 0, 'ungeescapter Fremdwert im HTML');
+});
+
+test('B9-F1 (2) DER BEFUND: Auswahl im State, Input nach Render leer — controller.hochladen laedt trotzdem', async () => {
+  const l = await hochladenLaufAuswahl(6, [], [{ name: 'AFL-001_export.mbz' }]);
+  assert.strictEqual(l.meldung, '', 'kein Upload-Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochgeladenMit.ordner, '06_moodle');
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_export.mbz');
+});
+
+test('B9-F1 (3): ein erfolgreicher Upload leert die State-Auswahl wieder', async () => {
+  const l = await hochladenLaufAuswahl(6, [], [{ name: 'AFL-001_export.mbz' }]);
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_export.mbz', 'Testvoraussetzung: Upload lief durch');
+  assert.strictEqual(l.dateiAuswahlNachher, null, 'die State-Auswahl haette nach Erfolg geleert werden muessen');
+
+  const h = ansichten.einSchritt(INHALT, AFL, 6, null, { ordnerFehlt: false, dateien: [], dateiAuswahl: null });
+  assert.ok(h.indexOf('Gew&auml;hlt') < 0, 'nach dem Leeren duerfen keine Geister-Namen mehr stehen');
+});
+
+test('B9-F1 (4) Stempel-Schutz: eine Auswahl von einem anderen Kurs/Schritt wird nicht verwendet', async () => {
+  const meldung = { textContent: '', hidden: true };
+  const hochgeladenMit = { ordner: null, datei: null };
+  let geklickt = false;
+
+  state.data.inhalt = JSON.parse(JSON.stringify(INHALT));
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz', schritt: 6, status: 'inArbeit' }];
+  state.data.dateien = {};
+  state.data.dossier = { 'AFL-001': undefined };
+  /* Auswahl gehoert zu Kurs B (VL-001) bzw. einem anderen Schritt — fuer die aktuelle
+     Ansicht (AFL-001, Schritt 6) darf sie nicht einspringen. */
+  state.data.dateiAuswahl = { kursId: 'VL-001', schrittId: '6', dateien: [{ name: 'fremd.mbz' }] };
+  state.fehlerHinweis = null;
+  state.hinweis = null;
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '6', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'datei') return { files: [], click: function () { geklickt = true; } };
+      if (id === 'hochladefehler') return meldung;
+      return null;
+    }
+  };
+  graph.ordnerInhalt = function () { return Promise.resolve([]); };
+  graph.hochladen = function (kursId, ordner, datei) {
+    hochgeladenMit.ordner = ordner; hochgeladenMit.datei = datei;
+    return Promise.resolve();
+  };
+  controller.render = function () {};
+
+  const knopf = { disabled: false, textContent: 'Hochladen' };
+  controller.hochladen('6', knopf);
+  await new Promise(function (r) { setTimeout(r, 30); });
+
+  assert.strictEqual(hochgeladenMit.datei, null, 'die fremde Auswahl haette nicht hochgeladen werden duerfen');
+  assert.strictEqual(geklickt, true, 'ohne passende Auswahl haette der Dateidialog erneut geoeffnet werden muessen (bisheriger Guard)');
+});
+
+/* Regressionsbeleg (5): bestehende Wege setzen feld.files direkt und klicken sofort,
+   ohne je state.data.dateiAuswahl zu befuellen — der Ruckfall-Pfad deckt sie weiterhin,
+   unveraendert gegenueber vor B9-F1. */
+test('B9-F1 (5): ohne State-Auswahl bleibt feld.files der Weg — Regressionsbeleg', async () => {
+  state.data.dateiAuswahl = null;
+  const l = await hochladenLaufAuswahl(6, [{ name: 'AFL-001_export.mbz' }], null);
+  assert.strictEqual(l.meldung, '', 'kein Upload-Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_export.mbz');
+});

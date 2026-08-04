@@ -42,7 +42,17 @@
        null = geladen, aber nicht gefunden/fehlgeschlagen, sonst das
        ArrayBuffer. Ein Abruf je Sitzung (graph.vorlageLaden), s. dort. */
     data:      { kurse: [], inhalt: null, ordner: {}, dateien: {}, briefing: {}, dossier: {}, dossierETag: {},
-                 vorlage: undefined },
+                 vorlage: undefined,
+                 /* dateiAuswahl (B9-F1): die Auswahl am Datei-Input #datei ueberlebt
+                    keinen Render (Live-Befund) — controller.render() baut die Ansicht
+                    als HTML-String neu, der Input ist danach ein NEUES, leeres Element.
+                    File-Objekte leben aber im JS-Heap weiter, deshalb wird die Auswahl
+                    beim change-Event hierher gehoben statt im Element zu bleiben: EIN
+                    Objekt { kursId, schrittId, dateien }, mit Positions-Stempel (Muster
+                    _formularSnapshot) — kein Verzeichnis je Kurs, weil immer nur eine
+                    Hochladen-Flaeche gleichzeitig sichtbar ist. null = nichts gewaehlt.
+                    s. controller.dateiGewaehlt/hochladen, ansichten.js Hochladen-Block. */
+                 dateiAuswahl: null },
     position:  { bereich: 'arbeiten', kursId: null, schrittId: null, werkzeugId: null, werk: null,
                  variante: null, weg: null },
     laden:     false,
@@ -1007,7 +1017,15 @@
           weg: p.weg,
           /* F3, Fix-Runde 1: der Lauf-Merker fuer GENAU diesen Kurs+Schritt —
              s. state.gateLaeuft oben. */
-          gateLaeuft: k ? !!state.gateLaeuft[k.kursId + '/' + p.schrittId] : false
+          gateLaeuft: k ? !!state.gateLaeuft[k.kursId + '/' + p.schrittId] : false,
+          /* B9-F1: nur durchreichen, wenn der Positions-Stempel noch zu Kurs UND
+             Schritt passt (Fremd-Kurs-Schutz, Muster _formularSnapshot) — sonst
+             stammt die Auswahl von einer anderen Ansicht und gehoert hier nicht hin. */
+          dateiAuswahl: (k && state.data.dateiAuswahl &&
+            state.data.dateiAuswahl.kursId === k.kursId &&
+            state.data.dateiAuswahl.schrittId === String(p.schrittId))
+            ? state.data.dateiAuswahl.dateien
+            : null
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         /* A3, Etappe 3: Schritt 3 erbt den GESETZTEN Contract-Stand (Version,
@@ -2091,6 +2109,23 @@
         .catch(function (e) { klemmt('Nicht angelegt. ' + (e.message || e)); });
     },
 
+    /* Hebt die Datei-Auswahl aus dem Input in den State (B9-F1) — aufgerufen
+       aus der change-Delegation weiter unten, sobald am Feld #datei etwas
+       gewaehlt wird. Gestempelt mit der aktuellen Position (Muster
+       _formularSnapshot): controller.hochladen und ansichten.js verwenden die
+       Auswahl nur, wenn Kurs UND Schritt noch passen — ein Kurs-/Schrittwechsel
+       macht sie stillschweigend unbrauchbar, ohne dass hier aufgeraeumt werden
+       muesste. render() DANACH ist gefahrlos: der Input stirbt beim Neuaufbau,
+       die File-Objekte leben im State weiter. */
+    dateiGewaehlt: function (el) {
+      state.data.dateiAuswahl = {
+        kursId: state.position.kursId || null,
+        schrittId: state.position.schrittId != null ? String(state.position.schrittId) : null,
+        dateien: el.files ? Array.prototype.slice.call(el.files) : []
+      };
+      controller.render();
+    },
+
     /* Der Weg Hochladen — fuer Lieferobjekte, die nicht als Text entstehen.
        Ordner und Name kommen aus dem Kontrakt, nie aus dem Dateidialog: eine
        falsch benannte Datei faellt sonst aus Versionszaehlung und Gate-Aufloesung. */
@@ -2103,8 +2138,21 @@
          in EINER Auswahl — der Input traegt seither `multiple` (ansichten.js,
          nur wo der Kontrakt pruefung:'skript' fuehrt). Jeder andere Weg
          (T11/xlsx, Schritt 6/mbz) liest weiterhin nur die erste Datei —
-         unveraendert, weil dort nie mehr als eine gewaehlt wird. */
-      var dateiListe = feld.files ? Array.prototype.slice.call(feld.files) : [];
+         unveraendert, weil dort nie mehr als eine gewaehlt wird.
+
+         B9-F1 (Live-Befund): das Feld selbst kann zum Klickzeitpunkt schon
+         ein NEUES, leeres Element sein — ein Zwischen-Render (Schritt 3 loest
+         nach dem Oeffnen mehrere aus: dossierNachladen, briefingNachladen,
+         zwei ordnerNachladen) baut die Ansicht neu, bevor die Person klickt.
+         Die State-Auswahl (dateiGewaehlt) hat Vorrang, wenn ihr Stempel noch
+         zu Kurs UND Schritt passt; feld.files bleibt der Ruckfall fuer den
+         Fall "gewaehlt und sofort geklickt, kein Render dazwischen" sowie
+         jeden bestehenden Testpfad, der files direkt setzt. */
+      var auswahl = state.data.dateiAuswahl;
+      var auswahlPasst = !!(auswahl && auswahl.kursId === k.kursId &&
+        auswahl.schrittId === String(n) && auswahl.dateien && auswahl.dateien.length);
+      var dateiListe = auswahlPasst ? auswahl.dateien
+        : (feld.files ? Array.prototype.slice.call(feld.files) : []);
       var datei = dateiListe[0] || null;
       var meld = document.getElementById('hochladefehler');
 
@@ -2182,6 +2230,10 @@
           })
           .then(function (ziel) {
             return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
+              /* B9-F1: nach erfolgreicher Ablage die State-Auswahl leeren — sonst
+                 zeigt die Ansicht Geister-Namen und ein zweiter Klick laedt
+                 Veraltetes neu hoch. */
+              state.data.dateiAuswahl = null;
               state.hinweis = 'Hochgeladen als ' + ziel.datei +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
               controller.render();
@@ -2346,6 +2398,8 @@
           .then(function (ergebnis) {
             return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
               var bz = ergebnis.bildzahl;
+              /* B9-F1: dieselbe Leerung wie im xlsx-/mbz-Pfad oben. */
+              state.data.dateiAuswahl = null;
               state.hinweis = 'Hochgeladen als ' + ergebnis.ziel.datei + ' (+ ' + ergebnis.blocksName +
                 ', ' + bz + ' Bild' + (bz === 1 ? '' : 'er') + ')' +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
@@ -2566,6 +2620,11 @@
     document.addEventListener('input', function (e) {
       if (e.target && e.target.dataset && e.target.dataset.feld) controller.briefingFelderZaehlen();
       if (e.target && e.target.name === 'content-modus') controller.contentModus(e.target);
+    });
+
+    /* B9-F1: change statt input — ein Datei-Input feuert kein input, nur change. */
+    document.addEventListener('change', function (e) {
+      if (e.target && e.target.id === 'datei') controller.dateiGewaehlt(e.target);
     });
 
     document.addEventListener('click', function (e) {
