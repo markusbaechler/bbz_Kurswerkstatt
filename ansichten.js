@@ -938,7 +938,7 @@
       } else {
 
       h += '<input type="file" id="datei"' +
-          (istBlockUpload ? ' multiple accept=".blocks,.txt,.png"'
+          (istBlockUpload ? ' multiple accept=".blocks,.txt,.png,.zip"'
                           : (endung ? ' accept=".' + esc(endung) + '"' : '')) + ' />';
 
       /* B9-F1: die zuletzt gewaehlten Dateien stehen im State (dateiGewaehlt),
@@ -979,7 +979,9 @@
         (istBlockUpload
           ? '<p class="dim">W&auml;hle die Blockdatei (<code>.blocks</code> oder <code>.txt</code>) ' +
             'und alle referenzierten Illustrationen (<code>.png</code>) zusammen aus &mdash; mehrere ' +
-            'Dateien per Strg/Cmd-Klick. Die Kurswerkstatt baut daraus das Word, pr&uuml;ft es und ' +
+            'Dateien per Strg/Cmd-Klick &mdash; oder liefere alles geb&uuml;ndelt in EINEM ' +
+            '<code>.zip</code>-Paket (Unterordner darin sind erlaubt, nur der Dateiname z&auml;hlt). ' +
+            'Die Kurswerkstatt baut daraus das Word, pr&uuml;ft es und ' +
             'legt Word, Blockdatei (als <code>.blocks</code> daneben) und Bilder ' +
             '(<code>abbildungen/</code>) in einem Vorgang ab. Wie die Dateien auf deinem Rechner ' +
             'heissen, spielt keine Rolle. ' +

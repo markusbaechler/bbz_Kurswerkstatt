@@ -2549,13 +2549,102 @@
         root.inhalt.erwarteteEndung(inh, n) === 'docx';
 
       if (geprueftPflichtSkript) {
-        /* Erwartete Upload-Dateien: genau EINE Blockdatei (.blocks/.txt)
-           plus beliebig viele Illustrationen (.png) — nichts anderes. Jede
-           unpassende Datei bricht laut ab, kein stiller Bypass (F5-Muster:
-           das Gate weist ab statt still durchzulassen). */
-        var blockKandidaten = dateiListe.filter(function (d) { return /\.(blocks|txt)$/i.test(d.name || ''); });
-        var pngKandidaten = dateiListe.filter(function (d) { return /\.png$/i.test(d.name || ''); });
-        var unbekannteDateien = dateiListe.filter(function (d) {
+        /* K2 (Etappe 4): EIN ZIP-Paket statt der fummeligen Mehrfachauswahl —
+           additiv, keine zweite Pruefstrecke. Ist die Auswahl genau EINE
+           .zip-Datei, wird sie browserseitig entpackt (zipLesen.oeffne); die
+           entpackten Eintraege werden zu denselben Pseudo-Datei-Objekten
+           { name, text(), arrayBuffer() }, die die BESTEHENDE Klassifikation
+           unten ohnehin schon konsumiert — sie laeuft danach unveraendert.
+           ZIP + weitere Dateien in derselben Auswahl brechen ab (entweder
+           das Paket ODER Einzeldateien, nicht gemischt — sonst waere
+           unklar, was zusaetzlich zum Paket noch gelten soll). Die
+           Mehrfachauswahl (B5) bleibt als zweiter, gleichwertiger Weg
+           bestehen. */
+        var zipVorhanden = dateiListe.some(function (d) { return /\.zip$/i.test(d.name || ''); });
+        if (zipVorhanden && dateiListe.length > 1) {
+          klemmtSichtbar('Nicht hochgeladen: entweder das ZIP-Paket (eine Datei) oder ' +
+            'einzelne Dateien — nicht beides in derselben Auswahl.');
+          return;
+        }
+        var istZipPaket = zipVorhanden; /* wegen der Pruefung oben hier immer genau 1 Datei */
+
+        /* Entpackt ein ZIP-Paket zu einer flachen Liste von Pseudo-Dateien.
+           Ordnerpfade werden auf den Basisnamen reduziert (split('/').pop())
+           — der Chat/ein Zip-Werkzeug darf Unterordner anlegen, die App
+           kennt nur flache Dateinamen; kollidieren zwei Pfade auf denselben
+           Basisnamen, ist das nicht auflösbar und bricht ab. Andere
+           Endungen als .blocks/.txt/.png im Paket brechen ebenfalls ab —
+           dieselbe Abweisungsregel wie bei der Mehrfachauswahl, nur schon
+           VOR der eigentlichen Klassifikation angewandt. Ein Lesefehler
+           (kein Zip-Archiv) traegt das bestehende Wortlaut-Muster "Datei
+           nicht lesbar — nicht hochgeladen: …". */
+        var zipEntpacken = function (zipDatei) {
+          var lesenZip = (zipDatei.arrayBuffer && typeof zipDatei.arrayBuffer === 'function')
+            ? zipDatei.arrayBuffer()
+            : Promise.reject(new Error('Diese Datei kann nicht gelesen werden.'));
+          return lesenZip
+            .then(function (buf) { return root.zipLesen.oeffne(buf); })
+            .catch(function (e) {
+              throw new Error('Datei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
+            })
+            .then(function (zip) {
+              var pfade = Object.keys(zip.eintraege).filter(function (name) { return !/\/$/.test(name); });
+              var basisZuPfad = {};
+              var doppelt = null;
+              pfade.forEach(function (pfad) {
+                var basis = pfad.split('/').pop();
+                if (!basis) return;
+                if (Object.prototype.hasOwnProperty.call(basisZuPfad, basis)) {
+                  if (!doppelt) doppelt = [basisZuPfad[basis], pfad];
+                } else {
+                  basisZuPfad[basis] = pfad;
+                }
+              });
+              if (doppelt) {
+                throw new Error('Nicht hochgeladen: ZIP enthält doppelte Dateinamen (nach ' +
+                  'Ordner-Reduktion auf den Basisnamen) — "' + doppelt[0] + '" und "' +
+                  doppelt[1] + '".');
+              }
+              var basisNamen = Object.keys(basisZuPfad);
+              var unerlaubt = basisNamen.filter(function (b) { return !/\.(blocks|txt|png)$/i.test(b); });
+              if (unerlaubt.length) {
+                throw new Error('Nicht hochgeladen: ZIP enthält unerwartete Dateiendung(en) — ' +
+                  'erlaubt sind nur .blocks/.txt/.png: ' + unerlaubt.join(', ') + '.');
+              }
+              return basisNamen.map(function (b) {
+                var pfad = basisZuPfad[b];
+                return {
+                  name: b,
+                  text: function () { return zip.lies(pfad); },
+                  arrayBuffer: function () {
+                    return zip.liesBytes(pfad).then(function (bytes) { return bytes.buffer; });
+                  }
+                };
+              });
+            });
+        };
+
+        var dateienQuelle = istZipPaket ? zipEntpacken(dateiListe[0]) : Promise.resolve(dateiListe);
+
+        dateienQuelle
+          .then(function (dateienEffektiv) { pruefeUndBaueBlock(dateienEffektiv); })
+          .catch(function (e) {
+            klemmtSichtbar(e.message || String(e));
+          });
+        return;
+      }
+
+      /* Erwartete Upload-Dateien im Blockdatei-Gate: genau EINE Blockdatei
+         (.blocks/.txt) plus beliebig viele Illustrationen (.png) — nichts
+         anderes. Jede unpassende Datei bricht laut ab, kein stiller Bypass
+         (F5-Muster: das Gate weist ab statt still durchzulassen).
+         dateienEffektiv ist entweder die urspruengliche Mehrfachauswahl
+         (B5) oder — seit K2 — die aus einem ZIP-Paket entpackte, flache
+         Dateiliste; die Pruefkette selbst kennt den Unterschied nicht. */
+      function pruefeUndBaueBlock(dateienEffektiv) {
+        var blockKandidaten = dateienEffektiv.filter(function (d) { return /\.(blocks|txt)$/i.test(d.name || ''); });
+        var pngKandidaten = dateienEffektiv.filter(function (d) { return /\.png$/i.test(d.name || ''); });
+        var unbekannteDateien = dateienEffektiv.filter(function (d) {
           return blockKandidaten.indexOf(d) < 0 && pngKandidaten.indexOf(d) < 0;
         });
         if (unbekannteDateien.length) {
@@ -2650,7 +2739,6 @@
           .catch(function (e) {
             klemmtSichtbar('Blockdatei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
           });
-        return;
       }
 
       weiterMitUpload();

@@ -3709,3 +3709,123 @@ Genau der eine, verschaerfte Test (e) fiel rot, alle anderen 54 blieben gruen; d
 wiederhergestellt, komplette Suite erneut geprueft: `node --test` → **745/745 gruen**
 (unveraendert gegenueber dem ersten K1-Durchlauf — Fix-Runde 1 aendert nur bestehende Assertions
 in Test (e), keine neuen Testfaelle).
+
+## Task K2: EIN-ZIP-Upload — die Blockdatei-Strecke von Schritt 3 nimmt auch ein Paket
+
+**Ausgangslage:** der Blockdatei-Upload (B5, Etappe 3b) verlangte bisher eine Mehrfachauswahl —
+EINE `.blocks`-Datei plus, bei einem Kapitel mit vielen Illustrationen, ebenso viele `.png`
+(im Extremfall: 1 + 13 Dateien in einer Auswahl per Strg/Cmd-Klick). Fummelig, und der Chat
+kann eine solche Mehrfachauswahl nicht selbst erzeugen — er liefert höchstens mehrere
+Anhänge, die der Mensch dann von Hand zusammen auswählt. K2 ergänzt einen zweiten,
+gleichwertigen Weg: EIN `.zip`-Paket, das die Kurswerkstatt selbst entpackt.
+
+**`controller.hochladen` (app.js) — additiv VOR der bestehenden Klassifikation, keine zweite
+Prüfstrecke.** Innerhalb des Blockdatei-Gates (`geprueftPflichtSkript`, unverändert seit B5)
+prüft ein neuer, erster Schritt die Auswahl auf ein ZIP: `dateiListe.some(...)` sucht eine
+`.zip`-Datei. Trägt die Auswahl mehr als eine Datei UND darunter ein ZIP, bricht sie sofort ab
+(„entweder das ZIP-Paket (eine Datei) oder einzelne Dateien — nicht beides in derselben
+Auswahl") — ein ZIP neben Einzeldateien wäre unklar: was gilt zusätzlich zum Paket? Ist die
+Auswahl GENAU EIN ZIP, entpackt `zipEntpacken(zipDatei)` es browserseitig über
+`root.zipLesen.oeffne(buf)` (derselbe ZIP-Kern wie xlsx-/docx-Lesen, Etappe 3/A1) und baut aus
+jedem Nicht-Ordner-Eintrag (Pfade auf `/` werden übersprungen) ein Pseudo-Datei-Objekt
+`{ name, text(), arrayBuffer() }` — GENAU die zwei Methoden, die die bestehende Kette schon
+konsumiert (`blockDatei.text()`, `pngKandidaten[].arrayBuffer()`); `arrayBuffer()` liest über
+`zip.liesBytes(pfad)` und reicht `bytes.buffer` durch (die entpackten Bytes sind bereits ein
+exakt sitzendes `Uint8Array`, kein Offset-Rest aus dem ZIP-Gesamtpuffer).
+
+**Ordnerpfade werden auf den Basisnamen reduziert (`pfad.split('/').pop()`) — der Chat/ein
+Zip-Werkzeug darf Unterordner anlegen, die App kennt nur flache Dateinamen.** Kollidieren zwei
+Pfade nach der Reduktion auf denselben Basisnamen (z. B. `a/bild.png` und `b/bild.png`), ist
+das nicht auflösbar: Abbruch mit BEIDEN vollen Pfaden in der Meldung, nicht nur dem Basisnamen
+— sonst wüsste die Person nicht, welche zwei Dateien gemeint sind. Eine Endung ausserhalb von
+`.blocks/.txt/.png` im Paket bricht ebenfalls ab, mit den betroffenen Namen — dieselbe
+Abweisungsregel wie bei der Mehrfachauswahl (B5), nur schon beim Entpacken angewandt statt
+erst in der nachgelagerten Klassifikation. Ein Lesefehler (kein Zip-Archiv, `zipLesen.oeffne`
+wirft) trägt das bestehende Wortlaut-Muster „Datei nicht lesbar — nicht hochgeladen: …" (T11/A2).
+
+**Die bestehende Klassifikation lief bisher direkt auf `dateiListe`; sie ist dafür in eine
+eigene Funktion `pruefeUndBaueBlock(dateienEffektiv)` gezogen** (unverändert im Rumpf — nur
+`dateiListe` durch den Parameter ersetzt) und wird sowohl vom Mehrfachauswahl-Pfad
+(`Promise.resolve(dateiListe)`) als auch vom ZIP-Pfad (`zipEntpacken(...)`) über dieselbe
+`.then(function (dateienEffektiv) { pruefeUndBaueBlock(dateienEffektiv); })`-Zeile
+aufgerufen — die Klassifikation selbst kennt den Unterschied nicht (Konvention 9: eine
+Prüfkette statt zweier Kopien). Ein Fehler aus `zipEntpacken` (Lesefehler, doppelte
+Basisnamen, unerlaubte Endung) landet über den äusseren `.catch` bei `klemmtSichtbar`, nie bei
+`pruefeUndBaueBlock` selbst — die dortigen Meldungen bleiben unverändert an die
+Mehrfachauswahl-Fälle gebunden.
+
+**`ansichten.js`:** der Datei-Input trägt seither `accept=".blocks,.txt,.png,.zip"` (nur wo
+`istBlockUpload`, unverändert seit B5 — Schritt 2/6 bleiben ohne `.zip`). Der Hinweistext
+darunter nennt jetzt beide Lieferformen: die bestehende Mehrfachauswahl per Strg/Cmd-Klick UND
+„oder liefere alles gebündelt in EINEM `.zip`-Paket (Unterordner darin sind erlaubt, nur der
+Dateiname zählt)".
+
+**Werkzeug-Baum (`skript-inhaltskontrakt.txt`, Weg B, kein Git — `_verlauf`-Kopie vor der
+Änderung angelegt: `_verlauf/skript-inhaltskontrakt_vor-etappe4-k2.txt`):** ein neuer Absatz
+„ZIP-PAKET ALS BEVORZUGTE LIEFERFORM" im Abschnitt AUSGABEFORM CHAT, direkt nach
+„ILLUSTRATIONEN IM CHAT-WEG" (derselbe Ort, weil die ZIP-Frage nur relevant wird, sobald
+Illustrationen dazukommen — ohne PNGs ist die Blockdatei allein ohnehin schon eine
+Einzeldatei). Kernregeln, spiegelbildlich zur App-Prüfung: GENAU eine `.blocks`-Datei im Zip
+(Name wie GESETZT), jede PNG trägt GENAU den unter `datei:` genannten Namen, Unterordner
+erlaubt, ein zweites Zip oder eine Mischung aus Zip und Einzeldateien nicht — „entweder das
+Paket ODER Einzeldateien, nie beides zugleich". Ohne Zip bleibt die Einzeldatei-Lieferung
+weiterhin vollwertig gültig — kein „Zip oder nichts". `build-skript.cjs` (Generator) bekommt
+denselben Hinweis zusätzlich im `guide-skript`-Anleitungsschritt „In der Kurswerkstatt
+hochladen" (Weg Chat) — Bevorzugung ZIP, Einzeldatei-Alternative, eine Prüfung für beide.
+
+**Tests (`test/hochladen.test.js`, App):** acht neue Fälle unter „K2 (…)" — (1) ZIP mit 1
+`.blocks` + 2 PNGs läuft durch, die Ablage ist identisch zu derselben Lieferung als
+Einzelauswahl (Vergleich beider `hochladenRufe`-Pfadlisten per `deepStrictEqual`); (2) ZIP mit
+zwei `.blocks`-Dateien bricht wie bei zwei Einzeldateien ab; (3) Unterordner-Pfade im ZIP
+werden auf den Basisnamen reduziert (Illustration landet unter `bild1.png`, nicht
+`bilder/bild1.png`); (3b) zwei Pfade, die auf denselben Basisnamen kollidieren, brechen mit
+beiden vollen Pfaden in der Meldung ab; (4) ZIP plus eine zusätzliche Einzeldatei bricht ab,
+nicht gemischt; (5) ein kaputtes ZIP (kein Zip-Archiv) bricht mit dem bestehenden „nicht
+lesbar"-Wortlaut ab, kein Netzzugriff; (6) eine unerlaubte Endung im ZIP bricht ab, mit dem
+Namen in der Meldung; ein weiterer Fall belegt, dass Schritt 2 (kein Blockdatei-Gate) ein
+`.zip` weiterhin unverändert über die bestehende xlsx-Abweisung behandelt — kein Entpacken
+ausserhalb des Blockdatei-Gates. Zwei `ansichten.js`-Tests: der bestehende
+`accept`-Attribut-Test ist auf `.blocks,.txt,.png,.zip` erweitert, ein neuer Test belegt den
+`.zip`-Hinweis im Fliesstext. **754 Tests grün** (Baseline 745 + 9 neue).
+
+**Tests (`test/build-skript.test.js`, Werkzeuge):** zwei neue Fälle — beide Chat-Fassungen
+nennen `.zip` als bevorzugte Lieferform samt Dateinamens-Bindung an `datei:` und der
+weiterhin-gültig-Klausel für die Einzeldatei-Lieferung; `guide-skript.stepsProWeg.chat` nennt
+`.zip` im Hochladen-Schritt. **324 Tests grün** (Baseline 322 + 2 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt, laut Brief):** die Basisnamen-Reduktion in
+`zipEntpacken` stillgelegt (`var basis = pfad.split('/').pop();` → `var basis = pfad;`),
+`node --test test/hochladen.test.js`:
+```
+ℹ tests 70
+ℹ pass 68
+ℹ fail 2
+
+✖ K2 (3): Unterordner-Pfade im ZIP werden auf den Basisnamen reduziert (99.147ms)
+  AssertionError [ERR_ASSERTION]: die Illustration haette unter dem Basisnamen (ohne "bilder/") abgelegt werden muessen
+      at TestContext.<anonymous> (…\test\hochladen.test.js:823:10)
+
+✖ K2 (3b): doppelte Basisnamen nach der Ordner-Reduktion: Abbruch mit beiden Pfaden (100.3794ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  5 !== 0
+      at TestContext.<anonymous> (…\test\hochladen.test.js:834:10)
+```
+Der vom Brief benannte Unterordner-Test (3) fiel wie vorhergesagt rot; zusätzlich fiel Test
+(3b) rot — ohne Reduktion sind `a/bild.png` und `b/bild.png` keine kollidierenden Basisnamen
+mehr, der Duplikat-Guard griff also gar nicht mehr, und die Lieferung lief (mit einer
+fehlenden, weil nie referenzierten Illustration `egal.blocks` ohne `ILLUSTRATION`-Block)
+stattdessen durch — ein direkter, erwartbarer Nebeneffekt derselben Mutation, kein Hinweis auf
+einen weiteren Defekt. Alle anderen 68 Tests blieben grün; danach wiederhergestellt, komplette
+Suite erneut geprüft: `node --test` → **754/754 grün** (App), `node --test test/*.test.js` →
+**324/324 grün** (Werkzeuge).
+
+**Offen / bewusst nicht Teil von K2:** das reale `ablage-kontrakt.json`/`schritte.json` in
+SharePoint führen `pruefung: 'skript'` für Schritt 3 weiterhin nicht (Weg B, unverändert seit
+A2/B5) — K2 ändert nur App-Code, Prompt-Texte im Werkzeuge-Baum und Test-Fixtures; live greift
+nichts, bis SharePoint nachgezogen ist. `werkzeuge.json`/SharePoint (`guide-1`, Schritt 1)
+kennt die ZIP-Option nicht — das ist `guide-skript` (Schritt 3), ein separates, bereits
+generiertes Werkzeug; ein Redaktionsabgleich mit der Live-Datei in SharePoint (Publizieren)
+ist wie bei jedem Werkzeug-Text ein eigener, freigabepflichtiger Schritt (Muster
+Etappe-2-Task-8-Nachzug). Keine Grössenbegrenzung fürs ZIP selbst (Browser-Speicher ist die
+einzige faktische Grenze) — bei den bisherigen Kapitelgrössen (einstellige bis niedrige
+zweistellige Bilderzahl) kein praktisches Thema.

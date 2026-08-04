@@ -144,7 +144,15 @@ test('Schritte ohne den Weg bekommen kein Dateifeld', () => {
 test('Schritt 3 (Blockdatei-Gate) traegt multiple + die passenden accept-Endungen', () => {
   const h = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
   assert.ok(/id="datei"[^>]*\bmultiple\b/.test(h), 'kein multiple am Datei-Input');
-  assert.ok(/accept="\.blocks,\.txt,\.png"/.test(h), 'accept nennt nicht .blocks/.txt/.png');
+  /* K2 (Etappe 4): .zip zusaetzlich zu .blocks/.txt/.png — ein ZIP-Paket ist
+     seither die bevorzugte, alternative Lieferform (s. hochladenLaufB5-Tests
+     "K2 (…)" weiter unten). */
+  assert.ok(/accept="\.blocks,\.txt,\.png,\.zip"/.test(h), 'accept nennt nicht .blocks/.txt/.png/.zip');
+});
+
+test('K2: der Hinweistext am Block-Upload nennt beide Lieferformen (Einzelauswahl UND ZIP-Paket)', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(/\.zip/.test(h), 'kein Hinweis auf das ZIP-Paket');
 });
 
 test('Schritt 2 (kein Blockdatei-Gate) traegt weiterhin KEIN multiple', () => {
@@ -442,6 +450,17 @@ function pngDatei(name) {
   return {
     name: name,
     arrayBuffer: function () { return Promise.resolve(new Uint8Array([1, 2, 3, 4]).buffer); }
+  };
+}
+
+/* K2 (Etappe 4): ein ZIP-Paket als Pseudo-Datei — echter Round-trip ueber
+   zipSchreiben.baue(), Muster test/zipschreiben.test.js. eintraege wie dort:
+   [{name, daten}], daten String ODER Uint8Array. */
+function zipDateiBauen(name, eintraege) {
+  const buf = zipSchreiben.baue(eintraege).buffer;
+  return {
+    name: name,
+    arrayBuffer: function () { return Promise.resolve(buf); }
   };
 }
 
@@ -753,6 +772,105 @@ test('I3: docx gelingt, blocks scheitert — die Meldung nennt "naechste Version
   assert.match(l.meldung, /unvollständige v1 in SharePoint von Hand löschen \(Papierkorb\)/);
   assert.doesNotMatch(l.meldung, /erneutes Hochladen ist sicher/);
   assert.match(l.fehlerHinweis || '', /nächste, vollständige Version daneben/);
+});
+
+/* ---------- K2 (Etappe 4): EIN ZIP-Paket statt Mehrfachauswahl ----------
+   Der Chat liefert fuer Schritt 3 bisher .blocks + beliebig viele PNGs in
+   EINER, fummeligen Mehrfachauswahl. Seither darf die Auswahl stattdessen
+   GENAU EIN .zip-Paket sein — die App entpackt es browserseitig
+   (zipLesen.oeffne) und speist die entpackten Eintraege unveraendert in die
+   BESTEHENDE Klassifikation/Pruefkette (keine zweite Pruefstrecke). Die
+   Mehrfachauswahl bleibt als zweiter, gleichwertiger Weg bestehen. */
+
+test('K2 (1): ZIP mit 1 blocks + 2 PNGs entpackt und legt identisch zur Einzelauswahl ab', async () => {
+  const paket = zipDateiBauen('paket.zip', [
+    { name: 'egal.blocks', daten: blockText() },
+    { name: 'bild1.png', daten: new Uint8Array([1, 2, 3, 4]) },
+    { name: 'bild2.png', daten: new Uint8Array([5, 6, 7, 8]) }
+  ]);
+  const lZip = await hochladenLaufB5(3, [paket], { dossier: DOSSIER_OK });
+  const lEinzel = await hochladenLaufB5(3,
+    [blockDatei('egal.blocks', blockText()), pngDatei('bild1.png'), pngDatei('bild2.png')],
+    { dossier: DOSSIER_OK });
+  assert.strictEqual(lZip.meldung, '', 'kein Fehler erwartet: ' + lZip.meldung);
+  assert.strictEqual(lZip.hochladenRufe.length, 5, 'docx + blocks + 1 Diagramm + 2 Illustrationen erwartet');
+  assert.deepStrictEqual(
+    lZip.hochladenRufe.map(function (r) { return r.ordner + '/' + r.datei; }),
+    lEinzel.hochladenRufe.map(function (r) { return r.ordner + '/' + r.datei; }),
+    'ZIP-Paket und Einzelauswahl haetten dieselbe Ablage erzeugen sollen'
+  );
+});
+
+test('K2 (2): ZIP mit zwei .blocks-Dateien: Abbruch wie bei zwei Einzeldateien', async () => {
+  const paket = zipDateiBauen('paket.zip', [
+    { name: 'a.blocks', daten: blockText() },
+    { name: 'b.blocks', daten: blockText() }
+  ]);
+  const l = await hochladenLaufB5(3, [paket], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.match(l.meldung, /genau EINE Blockdatei/);
+  assert.match(l.meldung, /gewählt wurden 2/);
+});
+
+test('K2 (3): Unterordner-Pfade im ZIP werden auf den Basisnamen reduziert', async () => {
+  const paket = zipDateiBauen('paket.zip', [
+    { name: 'unterordner/egal.blocks', daten: blockText() },
+    { name: 'bilder/bild1.png', daten: new Uint8Array([1, 2, 3, 4]) }
+  ]);
+  const l = await hochladenLaufB5(3, [paket], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochladenRufe.length, 4, 'docx + blocks + 1 Diagramm + 1 Illustration erwartet');
+  assert.ok(l.hochladenRufe.some(function (r) { return r.datei === 'bild1.png'; }),
+    'die Illustration haette unter dem Basisnamen (ohne "bilder/") abgelegt werden muessen');
+});
+
+test('K2 (3b): doppelte Basisnamen nach der Ordner-Reduktion: Abbruch mit beiden Pfaden', async () => {
+  const paket = zipDateiBauen('paket.zip', [
+    { name: 'a/bild.png', daten: new Uint8Array([1, 2, 3, 4]) },
+    { name: 'b/bild.png', daten: new Uint8Array([5, 6, 7, 8]) },
+    { name: 'egal.blocks', daten: blockText() }
+  ]);
+  const l = await hochladenLaufB5(3, [paket], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.match(l.meldung, /doppelte Dateinamen/);
+  assert.match(l.meldung, /a\/bild\.png/);
+  assert.match(l.meldung, /b\/bild\.png/);
+});
+
+test('K2 (4): ZIP-Paket PLUS eine zusaetzliche Einzeldatei: Abbruch, nicht gemischt', async () => {
+  const paket = zipDateiBauen('paket.zip', [{ name: 'egal.blocks', daten: blockText() }]);
+  const l = await hochladenLaufB5(3, [paket, pngDatei('extra.png')], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.match(l.meldung, /entweder das ZIP-Paket/);
+});
+
+test('K2 (5): kaputtes ZIP (kein Zip-Archiv): klare Meldung, kein Netzzugriff', async () => {
+  const kaputt = {
+    name: 'kaputt.zip',
+    arrayBuffer: function () { return Promise.resolve(new TextEncoder().encode('kein zip').buffer); }
+  };
+  const l = await hochladenLaufB5(3, [kaputt], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.strictEqual(l.rufe.ordnerInhalt, 0);
+  assert.match(l.meldung, /nicht lesbar/);
+  assert.match(l.fehlerHinweis || '', /nicht lesbar/);
+});
+
+test('K2 (6): ZIP mit unerlaubter Dateiendung: Abbruch', async () => {
+  const paket = zipDateiBauen('paket.zip', [
+    { name: 'egal.blocks', daten: blockText() },
+    { name: 'anhang.docx', daten: 'x' }
+  ]);
+  const l = await hochladenLaufB5(3, [paket], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.match(l.meldung, /unerwartete Dateiendung/);
+  assert.match(l.meldung, /anhang\.docx/);
+});
+
+test('K2: Schritt 2 (kein Blockdatei-Gate) entpackt kein ZIP — bleibt bei der bestehenden xlsx-Abweisung', async () => {
+  const l = await hochladenLauf(2, { name: 'paket.zip' });
+  assert.strictEqual(l.hochgeladenMit.datei, null);
+  assert.match(l.meldung, /\.xlsx-Datei/);
 });
 
 /* ---------- B9-F1: die Dateiauswahl ueberlebt keinen Render (Live-Befund) ----------
