@@ -233,7 +233,11 @@ async function hochladenLauf(n, dateiObjekt, inhOverride, dossierOverride, opts)
        struktur-Befund-Pfad, der schon vorher abbricht. */
     if (opts.hochladenWirft) return Promise.reject(opts.hochladenWirft);
     hochgeladenMit.ordner = ordner; hochgeladenMit.datei = datei;
-    return Promise.resolve();
+    /* K3-Testhilfe: opts.webUrl simuliert die Graph-Antwort mit webUrl —
+       Default (undefined) liefert eine Antwort OHNE das Feld, wie bisher,
+       damit bestehende Tests (deepStrictEqual ohne url-Schluessel) unveraendert
+       gruen bleiben. */
+    return Promise.resolve(opts.webUrl !== undefined ? { webUrl: opts.webUrl } : {});
   };
   graph.standNachAblage = function () { return null; };
   graph.standSetzenRoh = function () { return Promise.resolve(); };
@@ -524,12 +528,22 @@ async function hochladenLaufB5(n, dateiListe, opts) {
       return Promise.reject(new TypeError('graph.hochladen: "' + datei + '" ist kein Blob-' +
         'faehiges Objekt (fehlt .size/.slice) — genau der K2-Fix-Runde-1-Befund.'));
     }
+    var indexVorDemPush = hochladenRufe.length;
     hochladenRufe.push({ ordner: ordner, datei: datei, blob: blob });
     /* I3-Testhilfe: ab dem N-ten Aufruf (1-basiert) schlaegt graph.hochladen
        fehl — damit laesst sich der Teilfehler-Pfad (geschafft.length > 0,
        ein SPAETERER Ablage-Schritt scheitert) gezielt nachstellen. */
     if (opts.hochladenFehlerAb && hochladenRufe.length >= opts.hochladenFehlerAb) {
       return Promise.reject(new Error('Graph 500'));
+    }
+    /* K3-Testhilfe: opts.webUrls (Array, je Aufruf-Index — docx zuerst, dann
+       blocks, dann Bilder) simuliert die Graph-Antwort mit webUrl. Default
+       (kein opts.webUrls) liefert eine Antwort OHNE das Feld an jedem Aufruf,
+       wie bisher — bestehende deepStrictEqual-Tests ohne url-Schluessel
+       bleiben dadurch unveraendert gruen. */
+    if (opts.webUrls) {
+      var url = opts.webUrls[indexVorDemPush];
+      return Promise.resolve(url !== undefined ? { webUrl: url } : {});
     }
     return Promise.resolve();
   };
@@ -1327,4 +1341,94 @@ test('B9-F3 (g): ein neuer Hochladen-Klick leert eine stehende Meldung sofort, V
 
   assert.strictEqual(state.data.uploadMeldung, null,
     'die alte Meldung haette synchron, vor jedem Netzzugriff, geleert werden sollen');
+});
+
+/* ---------- K3: „Im Word oeffnen"-Link in der Upload-Meldung ----------
+   Nach einem erfolgreichen Upload nennt uploadMeldung zusaetzlich die
+   webUrl des HAUPTARTEFAKTS (graph.hochladen liefert die Graph-Antwort
+   bereits zurueck, s. app.js graph.hochladen). Der Renderer (ansichten.js)
+   zeigt den Link nur bei einer echten https-URL — kein erfundener Link,
+   kein Crash, wenn Graph die webUrl nicht mitliefert. */
+
+test('K3 (a): Erfolg xlsx-Weg — uploadMeldung traegt die Graph-webUrl', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten'] },
+      { name: '2_Eingangskompetenzen', kopf: ['EK-ID','Thema','Definition','Wissensziel','Bloom-Stufe','Wie prüfbar (MC/MR)','Wie lernbar bei Lücken?'] },
+      { name: '3_Drehbuch', kopf: ['Uhrzeit','Dauer','Thema','Phase (W/U/G)','Lernziel-ID','Erwartetes Verhalten / Ergebnis','Aktivität Trainer / Moderation','Material & Hilfsmittel'] },
+      { name: '_steckbrief', kopf: ['feld','wert'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'), undefined, undefined,
+    { webUrl: 'https://bbz.sharepoint.com/sites/x/Kursproduktion/AFL-001_x/02_lernziele/egal.xlsx' });
+  assert.match(l.hinweis || '', /Hochgeladen als/, 'Testvoraussetzung: Erfolg');
+  assert.strictEqual(state.data.uploadMeldung.url,
+    'https://bbz.sharepoint.com/sites/x/Kursproduktion/AFL-001_x/02_lernziele/egal.xlsx');
+});
+
+test('K3 (b): Erfolg Blockweg — der Link zeigt auf das docx, nicht auf blocks/Bild', async () => {
+  const l = await hochladenLaufB5(3, [blockDatei('egal.blocks', blockText())], {
+    dossier: DOSSIER_OK,
+    webUrls: [
+      'https://bbz.sharepoint.com/sites/x/Kursproduktion/AFL-001_x/03_content/AFL-001_skript-claude_v1.docx',
+      'https://bbz.sharepoint.com/sites/x/Kursproduktion/AFL-001_x/03_content/AFL-001_skript-claude_v1.blocks',
+      'https://bbz.sharepoint.com/sites/x/Kursproduktion/AFL-001_x/03_content/abbildungen/AFL-001-claude-abb-001.png'
+    ]
+  });
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_skript-claude_v1\.docx/, 'Testvoraussetzung: Erfolg');
+  assert.strictEqual(state.data.uploadMeldung.url,
+    'https://bbz.sharepoint.com/sites/x/Kursproduktion/AFL-001_x/03_content/AFL-001_skript-claude_v1.docx',
+    'der Link haette auf das docx zeigen sollen, nicht auf blocks oder das Bild');
+});
+
+test('K3 (c): Fehler — keine url in uploadMeldung', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Lernort','Definition'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'), undefined, undefined,
+    { webUrl: 'https://bbz.sharepoint.com/sollte-nie-erscheinen' });
+  assert.match(l.meldung, /Struktur weicht vom Contract ab/, 'Testvoraussetzung: Abweisung');
+  assert.strictEqual(state.data.uploadMeldung.url, undefined,
+    'eine Fehlermeldung darf nie eine url tragen');
+});
+
+test('K3 (d): webUrl fehlt in der Graph-Antwort — Meldung ohne Link, kein Crash', async () => {
+  xlsxLesen.blaetterUndKoepfe = function () {
+    return Promise.resolve([
+      { name: '1_Lernziele', kopf: ['Lernziel-ID','Thema','Definition','Lernziel (handlungsorientiert)','Bloom-Stufe','Wie prüfbar (MC/MR)','Typisches Fehlverhalten'] },
+      { name: '2_Eingangskompetenzen', kopf: ['EK-ID','Thema','Definition','Wissensziel','Bloom-Stufe','Wie prüfbar (MC/MR)','Wie lernbar bei Lücken?'] },
+      { name: '3_Drehbuch', kopf: ['Uhrzeit','Dauer','Thema','Phase (W/U/G)','Lernziel-ID','Erwartetes Verhalten / Ergebnis','Aktivität Trainer / Moderation','Material & Hilfsmittel'] },
+      { name: '_steckbrief', kopf: ['feld','wert'] }
+    ]);
+  };
+  const l = await hochladenLauf(2, xlsxDatei('egal.xlsx'));
+  assert.match(l.hinweis || '', /Hochgeladen als/, 'Testvoraussetzung: Erfolg');
+  assert.deepStrictEqual(state.data.uploadMeldung, { typ: 'ok', text: l.hinweis },
+    'ohne webUrl in der Antwort darf uploadMeldung keinen url-Schluessel tragen');
+});
+
+test('K3 (e): Nicht-https-Wert wird nicht als Link gerendert (Guard)', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 6, null,
+    { ordnerFehlt: false, dateien: [],
+      uploadMeldung: { typ: 'ok', text: 'Hochgeladen als AFL-001_export.mbz',
+        url: 'javascript:alert(1)' } });
+  assert.ok(h.indexOf('Im Word') < 0, 'ein Nicht-https-Wert haette keinen Link erzeugen duerfen');
+  assert.ok(h.indexOf('javascript:alert(1)') < 0, 'der manipulierte Wert haette gar nicht im HTML stehen duerfen');
+
+  const httpHtml = ansichten.einSchritt(INHALT, AFL, 6, null,
+    { ordnerFehlt: false, dateien: [],
+      uploadMeldung: { typ: 'ok', text: 'Hochgeladen als AFL-001_export.mbz',
+        url: 'http://unsicher.example/x' } });
+  assert.ok(httpHtml.indexOf('Im Word') < 0, 'auch reines http:// (kein https) darf keinen Link erzeugen');
+
+  const okHtml = ansichten.einSchritt(INHALT, AFL, 6, null,
+    { ordnerFehlt: false, dateien: [],
+      uploadMeldung: { typ: 'ok', text: 'Hochgeladen als AFL-001_export.mbz',
+        url: 'https://bbz.sharepoint.com/x' } });
+  assert.ok(okHtml.indexOf('Im Word') >= 0, 'eine echte https-URL haette den Link erzeugen sollen');
+  assert.ok(/href="https:\/\/bbz\.sharepoint\.com\/x"/.test(okHtml), 'href fehlt oder ist falsch escaped');
+  assert.ok(/target="_blank"/.test(okHtml), 'target="_blank" fehlt');
+  assert.ok(/rel="noopener"/.test(okHtml), 'rel="noopener" fehlt');
 });

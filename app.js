@@ -2275,7 +2275,17 @@
                 knopf.textContent = anteil >= 1 ? 'wird abgeschlossen …'
                                                 : 'lädt … ' + Math.round(anteil * 100) + '%';
               });
-            }).then(function () { return ziel; });
+            }).then(function (antwort) {
+              /* K3: die webUrl des Hauptartefakts (hier die Einzeldatei selbst)
+                 fuer den "Im Word oeffnen"-Link — an ziel gehaengt, damit sie
+                 durch die folgenden .then()-Stufen (Stand setzen, Erfolgs-
+                 meldung) mitwandert, ohne eine zweite Promise-Kette zu
+                 brauchen. graph.hochladen liefert die Graph-Antwort bereits
+                 zurueck (webUrl enthalten, gemessen bei beiden Uebertragungs-
+                 wegen) — fehlt sie in der Antwort, bleibt ziel.webUrl undefined. */
+              ziel.webUrl = antwort && antwort.webUrl;
+              return ziel;
+            });
           })
           .then(function (ziel) {
             var neu = graph.standNachAblage(k, +n);
@@ -2292,8 +2302,12 @@
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
               /* B9-F3: dieselbe persistente Meldung wie bei einer Abweisung
                  (klemmtSichtbar), nur mit typ 'ok' — derselbe Text wie
-                 state.hinweis, damit oben und im Block dasselbe steht. */
-              state.data.uploadMeldung = { typ: 'ok', text: erfolgstext };
+                 state.hinweis, damit oben und im Block dasselbe steht.
+                 K3: url NUR gesetzt, wenn Graph tatsaechlich eine webUrl
+                 geliefert hat — kein erfundener Link, keine leere url. */
+              var meldungOk = { typ: 'ok', text: erfolgstext };
+              if (ziel.webUrl) meldungOk.url = ziel.webUrl;
+              state.data.uploadMeldung = meldungOk;
               state.hinweis = erfolgstext;
               controller.render();
             });
@@ -2441,7 +2455,14 @@
                 .then(function () {
                   return graph.hochladen(k.kursId, ziel.ordner, ziel.datei, new Blob([docxBytes]));
                 })
-                .then(function () { geschafft.push(ziel.ordner + '/' + ziel.datei); })
+                .then(function (antwort) {
+                  /* K3: die webUrl des HAUPTARTEFAKTS (das gebaute docx —
+                     NICHT die Blockdatei oder ein Bild) fuer den "Im Word
+                     oeffnen"-Link, an ziel gehaengt (Muster weiterMitUpload
+                     oben). */
+                  ziel.webUrl = antwort && antwort.webUrl;
+                  geschafft.push(ziel.ordner + '/' + ziel.datei);
+                })
                 .then(function () {
                   /* Fix-Runde 1: echtes Blob statt des rohen (evtl. Pseudo-)
                      Datei-Objekts — s. Kommentar an der Aufrufstelle oben. */
@@ -2475,8 +2496,13 @@
               var erfolgstext = 'Hochgeladen als ' + ergebnis.ziel.datei + ' (+ ' + ergebnis.blocksName +
                 ', ' + bz + ' Bild' + (bz === 1 ? '' : 'er') + ')' +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
-              /* B9-F3: dieselbe persistente Meldung wie im xlsx-/mbz-Pfad oben. */
-              state.data.uploadMeldung = { typ: 'ok', text: erfolgstext };
+              /* B9-F3: dieselbe persistente Meldung wie im xlsx-/mbz-Pfad oben.
+                 K3: url zeigt auf das docx (ergebnis.ziel), nicht auf blocks
+                 oder ein Bild — nur gesetzt, wenn Graph tatsaechlich eine
+                 webUrl fuer das docx geliefert hat. */
+              var meldungOk = { typ: 'ok', text: erfolgstext };
+              if (ergebnis.ziel.webUrl) meldungOk.url = ergebnis.ziel.webUrl;
+              state.data.uploadMeldung = meldungOk;
               state.hinweis = erfolgstext;
               controller.render();
             });

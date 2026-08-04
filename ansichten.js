@@ -971,7 +971,19 @@
          Blocks — das waere hier eine Doppelung derselben Aussage. */
       if (ablageDaten.uploadMeldung && ablageDaten.uploadMeldung.text) {
         var uploadMeldungKlasse = ablageDaten.uploadMeldung.typ === 'ok' ? 'hinweis' : 'klemmt';
-        h += '<p class="' + uploadMeldungKlasse + '">' + esc(ablageDaten.uploadMeldung.text) + '</p>';
+        h += '<p class="' + uploadMeldungKlasse + '">' + esc(ablageDaten.uploadMeldung.text);
+        /* K3: "Im Word oeffnen" hinter dem Meldungstext, NUR bei einer echten
+           https-URL (Guard gegen ein manipuliertes/fremdes Feld) — Fehler-
+           meldungen tragen nie eine url (app.js setzt sie ausschliesslich im
+           Erfolgspfad). Bestehende .oeffnen-Klasse wiederverwendet
+           (Konvention 5, s. Kette/Kursansicht), href durch esc() (Konvention
+           4: jeder Fremdwert). */
+        if (typeof ablageDaten.uploadMeldung.url === 'string' &&
+            /^https:\/\//.test(ablageDaten.uploadMeldung.url)) {
+          h += ' <a class="oeffnen" href="' + esc(ablageDaten.uploadMeldung.url) +
+            '" target="_blank" rel="noopener">Im Word &ouml;ffnen &#8599;</a>';
+        }
+        h += '</p>';
       }
 
       h +=

@@ -3896,3 +3896,74 @@ Wege korrekt sein"). Nach dem Fix (Blob-Konvertierung in `weiterMitSkriptBau`):
 
 **Offen:** keine Live-Probe im Browser (ein echtes `File`-Objekt statt Pseudo-Datei-Mock) — wie
 bei den meisten vorangegangenen B-/K-Tasks Sache einer späteren Abnahme-Runde.
+
+## Task K3: „Im Word öffnen"-Link in der Upload-Meldung
+
+Nach einem erfolgreichen Upload musste man das gebaute Word (oder die hochgeladene xlsx/mbz) von
+Hand in SharePoint suchen — `graph.hochladen` liefert die Graph-Antwort (inkl. `webUrl`, gemessen
+bei beiden Übertragungswegen — einfacher PUT und Ladesitzung) seit jeher zurück, die Aufrufer
+haben sie bislang schlicht verworfen.
+
+**`state.data.uploadMeldung` trägt seither optional ein drittes Feld `url`, NUR im Erfolgsfall.**
+In `weiterMitUpload` (xlsx/mbz-Einzeldatei) wird die Antwort von `graph.hochladen` jetzt
+aufgefangen und als `ziel.webUrl` an dasselbe `ziel`-Objekt gehängt, das ohnehin durch die
+folgenden `.then()`-Stufen wandert (Stand setzen, Erfolgsmeldung) — keine zweite Promise-Kette
+nötig. In `weiterMitSkriptBau` (Blockweg, B5) geschieht dasselbe an der ERSTEN Ablage
+(`graph.hochladen` für das gebaute docx) — die Blockdatei und die Diagramm-/Illustrations-Bilder,
+die danach folgen, liefern ihre eigenen `webUrl`s nie an `uploadMeldung`: das docx ist das
+Hauptartefakt, der Link zeigt nie auf `.blocks` oder ein `.png`. In beiden Erfolgspfaden wird
+`url` am `uploadMeldung`-Objekt nur gesetzt, wenn `ziel.webUrl` (bzw. `ergebnis.ziel.webUrl`)
+tatsächlich einen Wert trägt — fehlt `webUrl` in der Graph-Antwort (z. B. ein abweichendes
+Graph-Antwortformat), bleibt der Schlüssel `url` schlicht weg, kein erfundener Link, kein Crash.
+`klemmtSichtbar` (jeder Abweisungspfad, Konvention 9) setzt `url` nie — Fehlermeldungen tragen
+grundsätzlich keinen Link.
+
+**`ansichten.js` rendert den Link NUR bei `uploadMeldung.url` UND einer echten `https://`-URL**
+(`/^https:\/\//.test(...)`, Guard gegen ein manipuliertes oder unerwartetes Feld — dieselbe
+Vorsicht wie bei jedem SharePoint-Wert, Konvention 4) — hinter dem Meldungstext, im selben
+`<p>` wie bisher: „Im Word öffnen ↗", `href` durch `esc()`, `target="_blank" rel="noopener"`.
+Die bestehende `.oeffnen`-Klasse (Kette/Kursansicht: derselbe externe-Link-Stil, Konvention 5,
+keine Ad-hoc-Farbe) wird wiederverwendet statt einer neuen CSS-Klasse. Der obere Meldungsblock
+(`state.hinweis`) bleibt unverändert ohne Link — nur der lokale Block am Hochladen-Knopf bekommt
+ihn, dort steht die Person gerade.
+
+**Die B9-F3-Lösch-Auslöser (neuer Klick, neue Dateiauswahl, Navigation weg von Kurs/Schritt)
+fassen `uploadMeldung` unverändert als Ganzes an** — `url` lebt und stirbt mit der Meldung, kein
+neuer, eigener Mechanismus dafür nötig.
+
+**Tests (`test/hochladen.test.js`, fünf neue Fälle „K3"):** (a) Erfolg xlsx-Weg — `graph.hochladen`
+liefert eine `webUrl`, `state.data.uploadMeldung.url` trägt sie unverändert; (b) Erfolg Blockweg —
+`graph.hochladen` liefert für docx/blocks/Bild DREI verschiedene `webUrl`s (Testhilfe
+`opts.webUrls`, indexiert je Aufruf), `uploadMeldung.url` trägt exakt die des docx, nie die von
+blocks oder dem Bild; (c) Fehler — `uploadMeldung.url` bleibt `undefined`, selbst wenn der
+Netz-Mock (irreführend) eine `webUrl` anböte, weil der Abweisungspfad sie nie liest; (d) `webUrl`
+fehlt in der Antwort (Mock liefert `{}` statt `{webUrl:...}`) — Erfolgsmeldung ohne `url`-Schlüssel
+(`deepStrictEqual` gegen `{typ:'ok', text}` ohne `url`), kein Crash; (e) der Renderer-Guard —
+`javascript:alert(1)` und reines `http://` erzeugen keinen Link UND der rohe Wert steht nirgends
+im HTML, eine echte `https://`-URL erzeugt den Link mit korrektem `href`/`target`/`rel`. Die
+Test-Mocks `hochladenLauf`/`hochladenLaufB5` bekommen dafür `opts.webUrl` bzw. `opts.webUrls` —
+beide Defaults (kein `opts.webUrl`/`opts.webUrls`) verhalten sich wie zuvor (Antwort ohne
+`webUrl`-Feld), alle bestehenden Tests (inkl. der `deepStrictEqual`-Tests aus B9-F3, die keinen
+`url`-Schlüssel erwarten) bleiben dadurch unverändert grün. **760 Tests grün** (Baseline 755 + 5
+neue).
+
+**Mutationsprobe (tatsächlich ausgeführt):** den https-Guard in `ansichten.js`
+(`/^https:\/\//.test(ablageDaten.uploadMeldung.url)`) durch `true` ersetzt, `node --test
+test/hochladen.test.js`:
+```
+ℹ tests 76
+ℹ pass 75
+ℹ fail 1
+
+✖ K3 (e): Nicht-https-Wert wird nicht als Link gerendert (Guard)
+  AssertionError [ERR_ASSERTION]: ein Nicht-https-Wert haette keinen Link erzeugen duerfen
+```
+Genau der eine Guard-Test fiel rot, alle anderen 75 (inklusive der übrigen vier neuen K3-Tests)
+blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` →
+**760/760 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** keine Live-Probe im Browser (ein echter Graph-Upload,
+der eine echte `webUrl` liefert) — wie bei den meisten vorangegangenen B-/K-Tasks Sache einer
+späteren Abnahme-Runde. Der obere Meldungsblock (`state.hinweis`) trägt bewusst keinen Link — eine
+Konsolidierung zu einer einzigen Anzeigestelle war schon bei B9-F3 kein Ziel und ist es hier auch
+nicht.
