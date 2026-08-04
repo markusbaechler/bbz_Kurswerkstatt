@@ -3829,3 +3829,70 @@ ist wie bei jedem Werkzeug-Text ein eigener, freigabepflichtiger Schritt (Muster
 Etappe-2-Task-8-Nachzug). Keine Grössenbegrenzung fürs ZIP selbst (Browser-Speicher ist die
 einzige faktische Grenze) — bei den bisherigen Kapitelgrössen (einstellige bis niedrige
 zweistellige Bilderzahl) kein praktisches Thema.
+
+### Fix-Runde 1 (Review, 1 Critical-Finding): der `.blocks`-Upload crashte am fehlenden Blob
+
+**Finding:** `weiterMitSkriptBau` reichte das rohe `blockDatei`-Objekt unverändert an
+`graph.hochladen(k.kursId, ziel.ordner, blocksName, blockDatei)` durch. `graph.hochladen`
+braucht aber ein echtes `Blob` — `datenBlob.size` entscheidet PUT vs. Chunk-Ladesitzung,
+`datenBlob.slice(von, bis)` liefert jedes Stück („Der Weg Hochladen" oben). Beim ZIP-Weg (K2)
+ist `blockDatei` das aus `zipEntpacken` gebaute Pseudo-Objekt `{ name, text(), arrayBuffer() }`
+— kein `.size`, kein `.slice()`. In Produktion: der docx-Upload gelingt zuerst (`geschafft`
+trägt ihn schon), danach `datenBlob.size <= GRENZE` wertet zu `false` (Vergleich mit
+`undefined`), Graph nimmt den Chunk-Pfad, `datenBlob.slice(...)` wirft `TypeError` — der
+`.blocks`-Upload scheitert, eine unvollständige `_vN` (docx ohne blocks) bleibt in SharePoint
+liegen, bei JEDEM ZIP-Upload. Die ursprüngliche Testsuite fing das nicht, weil `graph.hochladen`
+im Harness komplett gemockt war und `.size`/`.slice()` nie anfasste — der Mock akzeptierte jedes
+Objekt.
+
+**Fix, für BEIDE Wege gültig (Einzelauswahl UND ZIP):** `pruefeUndBaueBlock` merkt sich den
+bereits gelesenen Blocktext in einer eigenen Variable `blockText` (statt das `blockDatei`-Objekt
+weiterzureichen) — genau der Text, den `lesenBlock` ohnehin schon für `skriptLesen.lies(text)`
+gelesen hat, bei BEIDEN Wegen gleich. `weiterMitSkriptBau(gelesen, hinweise, blockText,
+pngKandidaten)` bekommt seither diesen String statt des Objekts; der Upload-Aufruf baut daraus
+unmittelbar ein echtes Blob: `new Blob([blockText], { type: 'text/plain;charset=utf-8' })` —
+Muster `new Blob([docxBytes])` direkt daneben im selben Ablage-Block. Ein rohes `File` (Browser,
+Mehrfachauswahl) ist damit kein Sonderfall mehr, es wird ohnehin nur noch als Text gelesen und
+neu verpackt — dieselbe Konvertierung greift unabhängig von der Herkunft der Blockdatei.
+
+**Tests (`test/hochladen.test.js`):** der geteilte Fake `graph.hochladen` in `hochladenLaufB5`
+prüft seither gezielt am `.blocks`-Upload (`/\.blocks$/i.test(datei)`) auf Blob-Fähigkeit
+(`typeof blob.size === 'number' && typeof blob.slice === 'function'`) und lehnt sonst mit einer
+klaren `TypeError` ab — bewusst NICHT an jedem `graph.hochladen`-Aufruf: der einfache
+T11-Upload-Pfad (`weiterMitUpload`, z. B. Test „B5 (l)") reicht im Testharness bewusst ein
+reines `{name}`-Pseudo-Objekt weiter (in Produktion dort immer ein echtes `File`/Blob aus dem
+Input) und ist nicht Gegenstand dieses Findings. Ein neuer Test „K2 Fix-Runde 1: der
+`.blocks`-Upload erhält ein echtes Blob-fähiges Objekt (ZIP-Weg)" baut ein ZIP-Paket mit genau
+einer Blockdatei über `zipSchreiben.baue()`, lässt es durch `hochladenLaufB5` laufen und prüft
+für ALLE drei Uploads (docx, blocks, Diagramm-Bild) `blob instanceof Blob` sowie `.size`/`.slice`
+— vor dem Fix schlug dieser Test fehl (der `.blocks`-Aufruf riss den gesamten Lauf über den
+Teilfehler-Pfad ab, `hochladenRufe.length` blieb bei 1 statt 3); ebenso schlugen mit dem
+verschärften Mock alle bereits bestehenden Tests fehl, die einen `.blocks`-Upload durchlaufen — der Mock fing den Fehler also
+nicht nur im neuen ZIP-spezifischen Fall, sondern bei jedem betroffenen Pfad (Einzelauswahl UND
+ZIP gleichermassen). **755 Tests grün** (Baseline 754 + 1 neuer Test).
+
+**Rot-vor-Grün (tatsächlich ausgeführt, TDD-Reihenfolge wie verlangt):**
+```
+$ node --test test/hochladen.test.js   (Mock verschärft, Fix noch NICHT angewandt)
+
+ℹ tests 71
+ℹ pass 64
+ℹ fail 7
+
+✖ B5 (a) sauber: docx + blocks + Diagramm-PNG in EINEM Lauf abgelegt, Hinweise angehängt
+✖ B5 (g') liegt die referenzierte Illustration im Upload, laeuft es durch
+✖ I3: docx gelingt, blocks scheitert — die Meldung nennt "naechste Version", nicht "ueberschreibt sicher"
+✖ K2 (1): ZIP mit 1 blocks + 2 PNGs entpackt und legt identisch zur Einzelauswahl ab
+✖ K2 (3): Unterordner-Pfade im ZIP werden auf den Basisnamen reduziert
+✖ K2 Fix-Runde 1: der .blocks-Upload erhaelt ein echtes Blob-faehiges Objekt (ZIP-Weg)
+✖ B9-F3 (b'): ein erfolgreicher B5-Upload traegt die Hinweise-Anhaenge in uploadMeldung
+```
+Genau die sieben Tests, die einen `.blocks`-Upload tatsächlich erreichen, fielen rot — bei
+Einzelauswahl (B5 (a)/(g'), I3, B9-F3 (b')) UND beim ZIP-Weg (K2 (1)/(3), der neue
+Fix-Runde-1-Test) gleichermassen, genau wie vom Review gefordert („die Lösung muss für BEIDE
+Wege korrekt sein"). Nach dem Fix (Blob-Konvertierung in `weiterMitSkriptBau`):
+`node --test test/hochladen.test.js` → **71/71 grün**, komplette Suite `node --test` →
+**755/755 grün**.
+
+**Offen:** keine Live-Probe im Browser (ein echtes `File`-Objekt statt Pseudo-Datei-Mock) — wie
+bei den meisten vorangegangenen B-/K-Tasks Sache einer späteren Abnahme-Runde.

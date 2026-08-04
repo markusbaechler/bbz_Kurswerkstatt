@@ -505,6 +505,25 @@ async function hochladenLaufB5(n, dateiListe, opts) {
     return Promise.resolve(opts.dateienImOrdner || []);
   };
   graph.hochladen = function (kursId, ordner, datei, blob) {
+    /* Fix-Runde 1 (Review-Finding, Critical): das ECHTE graph.hochladen
+       braucht ein Blob-faehiges Objekt (datenBlob.size fuer PUT-vs-Chunk,
+       datenBlob.slice() je Chunk) — vorher pruefte dieser Fake das nie, und
+       liess damit den ZIP-Weg (blockDatei als Pseudo-Objekt {name,text(),
+       arrayBuffer()}, kein .size/.slice) unbemerkt durch. Die Pruefung
+       greift gezielt am .blocks-Upload (genau der vom Finding benannte
+       Fall, im echten weiterMitSkriptBau IMMER ein neu gebautes Blob, egal
+       ob die Blockdatei aus einer Einzelauswahl oder einem entpackten ZIP
+       stammt) — NICHT an jedem Aufruf: der einfache T11-Upload-Pfad
+       (weiterMitUpload, z. B. Test B5 (l)) reicht in diesem Testharness
+       bewusst ein reines {name}-Pseudo-Objekt weiter (in Produktion dort
+       immer ein echtes File/Blob aus dem Input) — dieser Pfad ist nicht
+       Gegenstand dieses Findings. */
+    var istBlocksUpload = /\.blocks$/i.test(datei || '');
+    var blobFaehig = blob && typeof blob.size === 'number' && typeof blob.slice === 'function';
+    if (istBlocksUpload && !blobFaehig) {
+      return Promise.reject(new TypeError('graph.hochladen: "' + datei + '" ist kein Blob-' +
+        'faehiges Objekt (fehlt .size/.slice) — genau der K2-Fix-Runde-1-Befund.'));
+    }
     hochladenRufe.push({ ordner: ordner, datei: datei, blob: blob });
     /* I3-Testhilfe: ab dem N-ten Aufruf (1-basiert) schlaegt graph.hochladen
        fehl — damit laesst sich der Teilfehler-Pfad (geschafft.length > 0,
@@ -871,6 +890,33 @@ test('K2: Schritt 2 (kein Blockdatei-Gate) entpackt kein ZIP — bleibt bei der 
   const l = await hochladenLauf(2, { name: 'paket.zip' });
   assert.strictEqual(l.hochgeladenMit.datei, null);
   assert.match(l.meldung, /\.xlsx-Datei/);
+});
+
+/* K2 Fix-Runde 1 (Review, Critical): der ZIP-Weg reichte die aus dem Zip
+   entpackte Pseudo-Blockdatei ({name, text(), arrayBuffer()}) unveraendert
+   an graph.hochladen(...) durch — kein .size/.slice, also kein echtes Blob.
+   In Produktion crasht das beim .blocks-Upload NACH einem bereits
+   gelungenen docx-Upload (TypeError bei datenBlob.slice(...) im
+   Chunk-Pfad, weil datenBlob.size undefined ist) — eine unvollstaendige
+   _vN (docx ohne blocks) bleibt in SharePoint liegen, bei JEDEM
+   ZIP-Upload. Der Fake graph.hochladen prueft seither generell auf
+   Blob-Faehigkeit (s. hochladenLaufB5) — dieser Test faengt den Fall
+   konkret am ZIP-Weg ab und belegt zusaetzlich, dass ALLE drei Uploads
+   (docx, blocks, Diagramm-Bild) ein echtes Blob tragen. */
+test('K2 Fix-Runde 1: der .blocks-Upload erhaelt ein echtes Blob-faehiges Objekt (ZIP-Weg)', async () => {
+  const paket = zipDateiBauen('paket.zip', [
+    { name: 'egal.blocks', daten: blockText() }
+  ]);
+  const l = await hochladenLaufB5(3, [paket], { dossier: DOSSIER_OK });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochladenRufe.length, 3, 'docx + blocks + 1 Diagramm erwartet');
+  const blocksRuf = l.hochladenRufe.filter(function (r) { return /\.blocks$/i.test(r.datei); });
+  assert.strictEqual(blocksRuf.length, 1, 'genau ein .blocks-Upload erwartet');
+  l.hochladenRufe.forEach(function (r) {
+    assert.ok(r.blob instanceof Blob, r.datei + ': kein echtes Blob-Objekt uebergeben');
+    assert.strictEqual(typeof r.blob.size, 'number', r.datei + ': .size fehlt');
+    assert.strictEqual(typeof r.blob.slice, 'function', r.datei + ': .slice fehlt');
+  });
 });
 
 /* ---------- B9-F1: die Dateiauswahl ueberlebt keinen Render (Live-Befund) ----------

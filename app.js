@@ -2334,7 +2334,7 @@
          fuer alle drei Ablage-Schritte; die unvollstaendige Fassung bleibt
          liegen und gehoert von Hand in den SharePoint-Papierkorb, s. der
          Meldetext unten). */
-      function weiterMitSkriptBau(gelesen, hinweise, blockDatei, pngKandidaten) {
+      function weiterMitSkriptBau(gelesen, hinweise, blockText, pngKandidaten) {
         if (meld) meld.hidden = true;
         knopf.disabled = true; knopf.textContent = 'wird gebaut …';
 
@@ -2443,7 +2443,10 @@
                 })
                 .then(function () { geschafft.push(ziel.ordner + '/' + ziel.datei); })
                 .then(function () {
-                  return graph.hochladen(k.kursId, ziel.ordner, blocksName, blockDatei);
+                  /* Fix-Runde 1: echtes Blob statt des rohen (evtl. Pseudo-)
+                     Datei-Objekts — s. Kommentar an der Aufrufstelle oben. */
+                  return graph.hochladen(k.kursId, ziel.ordner, blocksName,
+                    new Blob([blockText], { type: 'text/plain;charset=utf-8' }));
                 })
                 .then(function () { geschafft.push(ziel.ordner + '/' + blocksName); })
                 .then(function () {
@@ -2679,8 +2682,23 @@
           ? blockDatei.text()
           : Promise.reject(new Error('Diese Datei kann nicht gelesen werden.'));
 
+        /* Fix-Runde 1 (Review-Finding, Critical): der Blocktext wird hier
+           gemerkt und NICHT das rohe blockDatei-Objekt weitergereicht —
+           beim ZIP-Weg (K2) ist das nur ein Pseudo-Objekt {name, text(),
+           arrayBuffer()} ohne .size/.slice, kein echtes Blob. graph.hochladen
+           braucht aber ein Blob (datenBlob.size fuer PUT-vs-Chunk,
+           datenBlob.slice() je Chunk) — ein rohes Pseudo-Objekt crasht dort
+           NACH einem bereits gelungenen docx-Upload (TypeError im
+           Chunk-Pfad), die unvollstaendige _vN bleibt liegen. Der bereits
+           gelesene Text wird deshalb unten (weiterMitSkriptBau) zu
+           `new Blob([blockText], {...})` — Muster `new Blob([docxBytes])`
+           direkt daneben, fuer BEIDE Wege (Einzelauswahl UND ZIP)
+           gleichermassen korrekt, weil beide ohnehin schon hier den Text
+           lesen, nie das Original-Objekt selbst hochladen. */
+        var blockText;
+
         lesenBlock
-          .then(function (text) { return root.skriptLesen.lies(text); })
+          .then(function (text) { blockText = text; return root.skriptLesen.lies(text); })
           .then(function (gelesen) {
             /* Pruefkette (Task-Brief): skriptLesen.lies() wirft bei
                ###SKRIPT fehlt — s. .catch unten. fehler[] nicht leer bricht
@@ -2734,7 +2752,7 @@
               return;
             }
 
-            weiterMitSkriptBau(gelesen, befund.hinweise, blockDatei, pngKandidaten);
+            weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten);
           })
           .catch(function (e) {
             klemmtSichtbar('Blockdatei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
