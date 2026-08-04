@@ -1971,7 +1971,25 @@
     },
 
     zu: function (aenderung) {
+      /* B9-F1 Fix-Runde 1 (Review-Finding): dateiAuswahl ist render-fest (s. o.),
+         aber navigations-fluechtig — sie darf einen Kurs-/Schrittwechsel nicht
+         ueberleben. Ohne diesen Reset zeigte eine SPAETERE Rueckkehr zur selben
+         Kurs/Schritt-Kombination "Gewaehlt: {alte Datei}" erneut an (der
+         Positions-Stempel passt ja wieder), und ein Klick haette eine laengst
+         vergessene Datei hochgeladen — ein Footgun im versionsstrengen
+         Ablage-System. Verglichen wird VOR der Mutation gegen die aktuelle
+         Position, in demselben Format wie der Stempel selbst (state.position.
+         kursId || null bzw. String(schrittId)) — nur kursId/schrittId zaehlen:
+         ein reiner Varianten-/Weg-Wechsel (zu({variante:..})/zu({weg:..})) und
+         ein erneuter Aufruf mit unveraenderter Position loeschen nichts. */
+      var kursVorher = state.position.kursId || null;
+      var schrittVorher = state.position.schrittId != null ? String(state.position.schrittId) : null;
       Object.keys(aenderung).forEach(function (k) { state.position[k] = aenderung[k]; });
+      var kursNachher = state.position.kursId || null;
+      var schrittNachher = state.position.schrittId != null ? String(state.position.schrittId) : null;
+      if (kursVorher !== kursNachher || schrittVorher !== schrittNachher) {
+        state.data.dateiAuswahl = null;
+      }
       controller.render();
       /* Hart nach oben, nicht sanft: das Dokument ist eine Zeile vorher komplett
          ausgetauscht worden, und eine laufende Animation landet dann irgendwo. */

@@ -3190,14 +3190,17 @@ hätte Veraltetes erneut hochgeladen. Bei Abbruch/Fehler bleibt die Auswahl bewu
 Person will nachbessern und erneut klicken; wählt sie eine andere Datei, ersetzt der
 `change`-Handler die Auswahl ohnehin.
 
-**Fremd-Kurs-Schutz ohne aktives Aufräumen:** `state.data.dateiAuswahl` ist EIN Objekt (kein
-Verzeichnis je Kurs — es ist immer nur eine Hochladen-Fläche gleichzeitig sichtbar). Ein
-Kurs-/Schrittwechsel macht eine bestehende Auswahl automatisch unbrauchbar, weil sowohl
-`controller.render()` (beim Durchreichen an `ansichten.einSchritt`) als auch
-`controller.hochladen` den Stempel gegen `state.position` bzw. den aktuellen Kurs/Schritt
-prüfen — dieselbe Technik wie beim Formular-Erhalt, nur ohne den generischen
-`_formularSnapshot`-Mechanismus (der deckt DOM-Felder ab, hier gibt es nach dem Neuaufbau gar
-kein Feld mehr, das etwas enthalten könnte).
+**Fremd-Kurs-Schutz beim RENDER, aktives Löschen bei der NAVIGATION** (Stand nach Fix-Runde 1,
+s. u.)**:** `state.data.dateiAuswahl` ist EIN Objekt (kein Verzeichnis je Kurs — es ist immer nur
+eine Hochladen-Fläche gleichzeitig sichtbar). `controller.render()` (beim Durchreichen an
+`ansichten.einSchritt`) und `controller.hochladen` prüfen den Stempel gegen `state.position` bzw.
+den aktuellen Kurs/Schritt, bevor sie die Auswahl verwenden — dieselbe Technik wie beim
+Formular-Erhalt, nur ohne den generischen `_formularSnapshot`-Mechanismus (der deckt DOM-Felder
+ab, hier gibt es nach dem Neuaufbau gar kein Feld mehr, das etwas enthalten könnte). Das reicht
+für den Render-Fall (Auswahl bleibt fürs AKTUELLE Kurs/Schritt gültig), aber NICHT für eine
+Rückkehr zur selben Kombination nach einem Umweg — der Stempel passt dann wieder. Deshalb löscht
+`controller.zu()` (der Navigations-Handler) die Auswahl zusätzlich AKTIV, sobald kursId oder
+schrittId die aktuelle Position verlässt — s. „Fix-Runde 1" unten.
 
 **Ansicht (`ansichten.js`, Hochladen-Block):** direkt unter dem `<input type="file" id="datei">`
 steht, sobald `ablageDaten.dateiAuswahl` ein nichtleeres Array ist, eine Zeile „Gewählt: {Name}
@@ -3244,6 +3247,54 @@ erneut geprüft: `node --test` → **722/722 grün**.
 angefordert bzw. selbst übernommen (die Testdateien `_tmp-test.blocks`/`_tmp-illu.png` lagen im
 Repo-Root bereit, wurden für diese Task nicht committet). Der Beweis für den reproduzierten
 Befund ist Test (2) — exakt der gemeldete Fall.
+
+### Fix-Runde 1 (Review, 1 Important-Finding): dateiAuswahl überlebte einen Kurs-/Schrittwechsel
+
+**Finding:** `controller.zu()` (der Navigations-Handler) fasste `state.data.dateiAuswahl`
+nirgends an — der einzige Reset sass in den beiden Erfolgspfaden von `controller.hochladen`.
+Szenario: Datei gewählt, Upload scheitert (Netz), Person navigiert weg, kommt SPÄTER zur
+selben Kurs/Schritt-Kombination zurück → der Positions-Stempel passt wieder, „Gewählt: {alte
+Datei}" erscheint erneut, ein Klick lädt die womöglich längst vergessene Datei hoch. Der
+Render-Fremd-Kurs-Schutz (Stempelvergleich in `render()`/`hochladen`) schützt nur gegen die
+falsche Ansicht WÄHREND eines Umwegs, nicht gegen das Wiederauftauchen NACH der Rückkehr zur
+gleichen Kombination — im versionsstrengen Ablage-System ein echter Footgun. Die ursprüngliche
+CLAUDE.md-Behauptung „Kurs-/Schrittwechsel macht die Auswahl automatisch unbrauchbar" war damit
+zu weit gefasst (jetzt oben korrigiert).
+
+**Fix:** `controller.zu(aenderung)` vergleicht `kursId`/`schrittId` (im selben Format wie der
+Stempel: `state.position.kursId || null` bzw. `String(schrittId)`) VOR und NACH der
+Positions-Mutation. Verlässt einer der beiden Werte die aktuelle Position, wird
+`state.data.dateiAuswahl = null` gesetzt — VOR `controller.render()`, damit ein danach folgender
+Neuaufbau die gelöschte Auswahl nie mehr sieht. Bewusst NICHT bei jedem `zu()`-Aufruf: ein
+erneuter Aufruf mit unveränderter Position (z. B. ein zweiter Klick auf denselben Schritt) sowie
+ein reiner Varianten-/Weg-Wechsel innerhalb des Schritts (`zu({variante:…})`/`zu({weg:…})`)
+berühren weder `kursId` noch `schrittId` und löschen deshalb nichts — die Semantik lautet: die
+Auswahl lebt render-fest, aber navigations-flüchtig, genau so lange, wie die Person Kurs UND
+Schritt nicht verlässt.
+
+**Tests (`test/hochladen.test.js`, drei neue Fälle, Abschnitt „B9-F1 Fix-Runde 1"):** (a) der
+Revisit-Fall — wählen auf AFL-001/Schritt 3, `zu({kursId:'DBS-001', schrittId:null})` (Auswahl
+weg), zurück zu `zu({kursId:'AFL-001', schrittId:'3'})` — die alte Auswahl bleibt weg, statt
+wieder aufzutauchen; (a') derselbe Befund für einen reinen Schrittwechsel innerhalb desselben
+Kurses (`zu({schrittId:'6'})`); (b) Gegenprobe — ein erneuter `zu()`-Aufruf mit unveränderter
+Position sowie ein Varianten- bzw. Wegwechsel (`zu({variante:'claude'})`, `zu({weg:'chat'})`)
+behalten die Auswahl. **728/728 Tests grün** (nach der parallel gelandeten Fixwave B9-F2, die die
+Basiszahl bereits von 722 auf 725 angehoben hatte, plus die 3 neuen dieser Fix-Runde).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die Löschbedingung in `controller.zu()` auf
+`if (false && (kursVorher !== kursNachher || schrittVorher !== schrittNachher))` gesetzt,
+`node --test test/hochladen.test.js`:
+```
+ℹ tests 51
+ℹ pass 49
+ℹ fail 2
+
+✖ B9-F1 Fix-Runde 1 (a): Kurswechsel und Rueckkehr zur selben Kombination loescht die alte Auswahl
+✖ B9-F1 Fix-Runde 1 (a'): Schrittwechsel innerhalb desselben Kurses loescht die Auswahl ebenso
+```
+Genau die zwei von der Mutation betroffenen Tests fielen rot, alle anderen 49 (inklusive der
+Gegenprobe (b)) blieben grün; danach wiederhergestellt, komplette Suite erneut geprüft:
+`node --test` → **728/728 grün**.
 
 ## Fix-Task B9-F2: Bild-Extents auf den Satzspiegel der Vorlage gedeckelt
 

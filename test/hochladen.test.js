@@ -883,3 +883,62 @@ test('B9-F1 (5): ohne State-Auswahl bleibt feld.files der Weg — Regressionsbel
   assert.strictEqual(l.meldung, '', 'kein Upload-Fehler erwartet: ' + l.meldung);
   assert.strictEqual(l.hochgeladenMit.datei, 'AFL-001_export.mbz');
 });
+
+/* ---------- B9-F1 Fix-Runde 1 (Review-Finding): dateiAuswahl ist navigations-fluechtig ----------
+   Der urspruengliche Fix (s. o.) loeschte state.data.dateiAuswahl nur in den Erfolgspfaden von
+   controller.hochladen — controller.zu() (der Navigations-Handler) fasste sie nirgends an.
+   Szenario: Datei gewaehlt, Upload scheitert (Netz), Person navigiert weg, kommt SPAETER zur
+   selben Kurs/Schritt-Kombination zurueck — der Positions-Stempel passt wieder, "Gewaehlt:
+   {alte Datei}" erscheint erneut, ein Klick laedt die laengst vergessene Datei hoch. Fix:
+   controller.zu() vergleicht kursId/schrittId VOR und NACH der Positions-Mutation — verlaesst
+   einer der beiden die aktuelle Position, wird die Auswahl geloescht; ein erneuter Aufruf mit
+   unveraenderter Position sowie ein reiner Varianten-/Weg-Wechsel (beide beruehren weder kursId
+   noch schrittId) loeschen nichts. */
+
+test('B9-F1 Fix-Runde 1 (a): Kurswechsel und Rueckkehr zur selben Kombination loescht die alte Auswahl', () => {
+  controller.render = function () {};
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '3', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  controller.dateiGewaehlt({ files: [{ name: 'alt.blocks' }] });
+  assert.ok(state.data.dateiAuswahl, 'Testvoraussetzung: die Auswahl wurde gesetzt');
+
+  controller.zu({ kursId: 'DBS-001', schrittId: null });
+  assert.strictEqual(state.data.dateiAuswahl, null,
+    'beim Wegnavigieren zu einem anderen Kurs haette die Auswahl geloescht werden muessen');
+
+  controller.zu({ kursId: 'AFL-001', schrittId: '3' });
+  assert.strictEqual(state.data.dateiAuswahl, null,
+    'nach der Rueckkehr zur selben Kurs/Schritt-Kombination darf die alte Datei nicht wieder auftauchen');
+});
+
+test('B9-F1 Fix-Runde 1 (a\'): Schrittwechsel innerhalb desselben Kurses loescht die Auswahl ebenso', () => {
+  controller.render = function () {};
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '3', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  controller.dateiGewaehlt({ files: [{ name: 'alt.blocks' }] });
+  assert.ok(state.data.dateiAuswahl, 'Testvoraussetzung: die Auswahl wurde gesetzt');
+
+  controller.zu({ schrittId: '6' });
+  assert.strictEqual(state.data.dateiAuswahl, null,
+    'ein reiner Schrittwechsel (derselbe Kurs) haette die Auswahl ebenfalls loeschen muessen');
+});
+
+test('B9-F1 Fix-Runde 1 (b) Gegenprobe: unveraenderte Position sowie Varianten-/Weg-Wechsel behalten die Auswahl', () => {
+  controller.render = function () {};
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '3', werkzeugId: null,
+                     werk: null, variante: null, weg: null };
+  controller.dateiGewaehlt({ files: [{ name: 'egal.blocks' }] });
+  assert.ok(state.data.dateiAuswahl, 'Testvoraussetzung: die Auswahl wurde gesetzt');
+
+  controller.zu({ schrittId: '3' });
+  assert.ok(state.data.dateiAuswahl,
+    'ein erneuter Aufruf mit unveraenderter Position haette nichts loeschen duerfen');
+
+  controller.zu({ variante: 'claude' });
+  assert.ok(state.data.dateiAuswahl,
+    'ein Variantenwechsel innerhalb des Schritts haette nichts loeschen duerfen');
+
+  controller.zu({ weg: 'chat' });
+  assert.ok(state.data.dateiAuswahl,
+    'ein Wegwechsel innerhalb des Schritts haette nichts loeschen duerfen');
+});
