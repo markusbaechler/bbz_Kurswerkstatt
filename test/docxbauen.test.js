@@ -204,6 +204,20 @@ test('baue(): Listenabsatz in einem Kasten behaelt den Kasten-pStyle (Politur-Fi
   assert.ok(xml.indexOf('- Erster Punkt') === -1, 'roher Bindestrich-Praefix haette ersetzt werden muessen');
 });
 
+test('baue(): VALIDIERUNG-Steuerdaten werden NICHT als Fliesstext gerendert (Loop-Skip, V1)', async () => {
+  const { buffer } = vorlageBauen();
+  const textMitValidierung = BLOCKTEXT.replace('###HERO',
+    '###VALIDIERUNG\nherkunft: bestaetigt\ndivergenz: keine\n###HERO');
+  const gelesen = skriptLesen.lies(textMitValidierung);
+  assert.deepStrictEqual(gelesen.fehler, []);
+  assert.deepStrictEqual(gelesen.kapitel[0].validierung,
+    { herkunft: 'bestaetigt', beleg: '', divergenz: 'keine', begruendung: '' });
+  const out = await docxBauen.baue(buffer, gelesen, bilderFixture());
+  const xml = await docXmlAus(out);
+  assert.strictEqual(xml.indexOf('herkunft:'), -1);
+  assert.strictEqual(xml.indexOf('divergenz:'), -1);
+});
+
 test('baue(): sectPr der Vorlage wird uebernommen', async () => {
   const { buffer } = vorlageBauen();
   const out = await docxBauen.baue(buffer, gelesenFixture(), bilderFixture());

@@ -3967,3 +3967,108 @@ der eine echte `webUrl` liefert) — wie bei den meisten vorangegangenen B-/K-Ta
 späteren Abnahme-Runde. Der obere Meldungsblock (`state.hinweis`) trägt bewusst keinen Link — eine
 Konsolidierung zu einer einzigen Anzeigestelle war schon bei B9-F3 kein Ziel und ist es hier auch
 nicht.
+
+## Etappe 4 / Task V1: `###VALIDIERUNG` — Blockgrammatik-Erweiterung (beide Bäume + Parity)
+
+Schritt 4 (Validierung) braucht in der Blockgrammatik des Selbstlernskripts einen neuen Baustein,
+der je Kapitel festhält, wie es zum Altmaterial (Contract/Lernziele) steht — Herkunft, Beleg,
+Divergenz. V1 liefert dafür ausschliesslich Schema und Parser, mechanisch in BEIDEN Bäumen
+(Tools `skript-schema.cjs`/`skript-lesen.cjs`, App `skript-schema.js`/`skript-lesen.js`, Muster
+Task B2/B6) — die schrittspezifische Prüfung (ob der Block vorhanden sein muss/darf) folgt mit
+V2, die Review-Ansicht mit V5.
+
+**`{ block: 'VALIDIERUNG', stil: null, pflicht: false }` steht als NEUER ERSTER Eintrag der
+`SCHEMA.bausteine`-Liste, vor HERO/ILLUSTRATION** — „direkt nach dem Kapitelkopf-Baustein"
+(der Kapitelkopf ist die `###KAPITEL`-Zeile selbst, kein eigener Baustein). `stil: null` heisst
+wie bei ILLUSTRATION: kein Text-Kasten im gebauten Word, sondern maschinenlesbare Steuerdaten.
+`pflichtBausteine()` bleibt unverändert (VALIDIERUNG ist dort nicht drin, wie ILLUSTRATION) —
+vierzehn Bausteine, weiterhin zwölf davon Pflicht.
+
+**Zwei neue geschlossene Kataloge im `SCHEMA`-Objekt selbst** (damit der Parity-`deepStrictEqual`
+sie automatisch mitvergleicht, Muster `varianten`): `validierungHerkunft: ['bestaetigt',
+'korrigiert', 'ergaenzt', 'offen']` und `validierungDivergenz: ['keine', 'entschieden', 'offen']`.
+
+**Felder (Attribut-Zeilen im Blocktext, Muster ILLUSTRATION `datei:`/`szene:`):** `herkunft:`
+(Pflicht, geschlossener Katalog) · `beleg:` (Freitext, Pflicht bei `herkunft: korrigiert` oder
+`ergaenzt`) · `divergenz:` (optional, geschlossener Katalog) · `begruendung:` (Freitext, Pflicht
+bei `divergenz: entschieden`). `skript-lesen.{cjs,js}` prüft im VALIDIERUNG-Zweig NUR die innere
+Konsistenz dieser vier Felder — genau wie bei ILLUSTRATION entscheidet NICHT der Parser, ob der
+Block überhaupt stehen darf/muss (das ist V2). Fehler-Wortlaute: fehlende `herkunft:`-Zeile →
+„Kapitel {ek}: Validierung ohne Feld herkunft"; unbekannter Katalogwert → „Kapitel {ek}:
+Validierung: unbekannte herkunft/divergenz "{wert}""; `beleg:` leer bei `herkunft: korrigiert`
+oder `ergaenzt` → **wörtlich aus dem Brief** „Kapitel {ek}: beleg fehlt — laut Altmaterial ist
+keine Fundstelle"; `begruendung:` leer bei `divergenz: entschieden` → „Kapitel {ek}: begruendung
+fehlt — divergenz "entschieden" verlangt eine Begruendung" (kein Brief-Wortlaut vorgegeben, aber
+Parity-relevant — dieselbe Zeichenkette in beiden Bäumen, sonst würde ausgerechnet ein
+Fehlerlisten-Parity-Test sie auseinanderziehen).
+
+**KEIN `continue`** — VALIDIERUNG fällt wie ILLUSTRATION in die generische Mehrfach-Prüfung/
+Textablage durch: der Rohtext landet unverändert in `kapitel.teile.VALIDIERUNG` (Duplikat-Check
+„kommt mehrfach vor" inklusive). **Zusätzlich, NEU gegenüber ILLUSTRATION:** jedes Kapitel trägt
+seit V1 `kapitel.validierung = { herkunft, beleg, divergenz, begruendung }` — `null`, solange
+kein VALIDIERUNG-Block vorkam (Default bei der `###KAPITEL`-Zeile), sonst die geparsten,
+getrimmten Werte des ERSTEN Vorkommens (ein zweites Vorkommen überschreibt `kapitel.validierung`
+nicht mehr — dieselbe „erster Treffer zählt"-Regel wie beim generischen Duplikat-Check, der die
+zweite Textablage ja ebenfalls verwirft). Diese strukturierte Form ist der Grund, warum V1 mehr
+als ein reiner ILLUSTRATION-Klon ist: V2 (schrittspezifische Prüfung) und V5 (Review-Ansicht)
+lesen `kapitel.validierung` direkt, ohne den Rohtext ein zweites Mal zu parsen.
+
+**Loop-Skip in BEIDEN Bauern, obwohl V1 nur Schema/Parser liefern sollte** — notwendige
+Konsequenz, kein Scope-Zuwachs: `docx-bauen.js::kapitelAbsaetze` und `skript-bauen.cjs::markdown`
+iterieren über `SCHEMA.bausteine`; sobald VALIDIERUNG dort ein Eintrag mit `stil: null` ist,
+würde die generische Bausteine-Behandlung (Zweig „kein Kasten", wie DEFINITION/ERKLAERUNG) die
+ROHE Feldsyntax (`herkunft:`/`beleg:`/`divergenz:`/`begruendung:`) als sichtbaren Fliesstext ins
+Leserdokument setzen — ein bestehender „kein `###`/keine Feldsyntax im Output"-Invariant (Muster
+ILLUSTRATION-Loop-Skip aus B6) wäre sonst gebrochen. Fix identisch zum ILLUSTRATION-Muster:
+`if (b.block === 'VALIDIERUNG') return;` (App) bzw. `continue;` (Tools), VOR dem generischen
+Zweig. Ein eigener Absatz für VALIDIERUNG im gebauten Word ist nicht Teil von V1 (falls
+überhaupt je nötig, eine spätere Etappe) — hier zählt nur, dass die Steuerdaten nicht
+durchrutschen.
+
+**Tests:** Tools `test/skript-schema.test.js` (Reihenfolge inkl. VALIDIERUNG als erster Eintrag,
+zwölf von vierzehn Pflicht, VALIDIERUNG-Stileigenschaften, die beiden neuen Kataloge),
+`test/skript-lesen.test.js` (13 neue Fälle: optional/null, sauber gelesen inkl. `teile`- UND
+`validierung`-Feld, fehlende herkunft, kaputter Katalogwert je herkunft/divergenz, beleg-Pflicht
+bei korrigiert/ergaenzt je mit/ohne Beleg, bestaetigt/offen brauchen keinen Beleg,
+begruendung-Pflicht bei entschieden je mit/ohne, keine/offen brauchen keine Begründung, Mehrfach-
+Abweisung), `test/skript-bauen.test.js` (1 neuer Loop-Skip-Test: rohe Feldsyntax landet nie im
+Markdown), `test/app-parity.test.js` (7 neue VALIDIERUNG-Fixtures — sauber/sauber-mit-allen-
+Feldern/zwei kaputte Katalogwerte/zwei fehlende Pflichtfelder/fehlende herkunft — Ergebnis-
+`deepStrictEqual`, Muster ILLUSTRATION-Fixtures). App `test/skriptlesen-app.test.js` (5 neue
+Kernfälle, volle Abdeckung bleibt bei der Tools-Suite plus dem Parity-Wächter, Muster
+ILLUSTRATION-Abschnitt dort), `test/docxbauen.test.js` (1 neuer Loop-Skip-Test: rohe Feldsyntax
+landet nie im `document.xml`). **Tools: 347 grün** (Baseline 324 + 23: 2 Schema, 13 Lesen, 7
+Parity, 1 skript-bauen). **App: 766 grün** (Baseline 760 + 6: 5 skriptlesen-app, 1 docxbauen).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** die Beleg-Pflicht-Zeile NUR
+in der App-Fassung (`bbz_Kurswerkstatt/skript-lesen.js`) auskommentiert, `node --test
+test/app-parity.test.js` im TOOLS-Baum:
+```
+ℹ tests 32
+ℹ suites 0
+ℹ pass 31
+ℹ fail 1
+
+✖ Parity: VALIDIERUNG-Fixture "kaputt (herkunft korrigiert ohne beleg)" ergibt in beiden Fassungen dasselbe Ergebnisobjekt
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+    {
+  +   fehler: [
+  +     'Kapitel VL-001-EK-003: beleg fehlt — laut Altmaterial ist keine Fundstelle'
+  +   ],
+  -   fehler: [],
+```
+Genau der eine betroffene Parity-Test fiel rot (die Tools-Fassung meldete den Fehler weiterhin,
+die App-Fassung nicht mehr — die Listen liefen auseinander), alle anderen 31 blieben grün;
+danach wiederhergestellt, beide Suiten komplett erneut geprüft: Tools `node --test
+test/*.test.js` → **347/347 grün**, App `node --test` → **766/766 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** das reale `ablage-kontrakt.json`/`schritte.json` in
+SharePoint führen für Schritt 4 weder `pruefung: 'validierung'` noch `quelle: 'blocks'` noch
+`ext: 'docx'` (Weg B, wie bei jedem vorangegangenen A-/B-Task) — diese Task ändert nur die beiden
+Baum-Module, ihre Tests und `test/fixture.js` bleibt unverändert (V1 führt kein neues
+Kontraktfeld ein, das bräuchte erst V2/V9). Kein eigener Absatz für VALIDIERUNG im gebauten Word
+(s. o.) und keine `skript-abnahme.cjs`-Prüfung dafür — beides ausserhalb des V1-Scopes. Die
+Review-Ansicht (V5) und die schrittspezifische Pflicht/Verbots-Prüfung (V2, „darf/muss der Block
+in Schritt 3 vs. Schritt 4 stehen") lesen `kapitel.validierung` in einer späteren Task.

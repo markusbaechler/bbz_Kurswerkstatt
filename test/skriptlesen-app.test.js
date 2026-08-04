@@ -112,6 +112,53 @@ test('eine datei: mit unzulaessigen Zeichen wird abgewiesen (Ledger-Hinweis aus 
   assert.ok(r.fehler.some((f) => /unzulaessige Zeichen/.test(f)), r.fehler.join(' | '));
 });
 
+/* --- V1: ###VALIDIERUNG — nur die Kernfaelle, volle Abdeckung in der
+   Tools-Suite (test/skript-lesen.test.js) plus der Parity-Waechter. --- */
+
+function musterKapitelMitValidierung(ek, validierungZeilen) {
+  return musterKapitel(ek).replace(
+    '###HERO',
+    '###VALIDIERUNG\n' + validierungZeilen.join('\n') + '\n###HERO'
+  );
+}
+
+test('VALIDIERUNG ist optional — ein Kapitel ganz ohne diesen Block bleibt gueltig, validierung ist null', () => {
+  const r = skriptLesen.lies([RAHMEN, musterKapitel('VL-001-EK-003'), SCHLUSS].join('\n'));
+  assert.deepStrictEqual(r.fehler, []);
+  assert.strictEqual(r.kapitel[0].validierung, null);
+});
+
+test('eine saubere VALIDIERUNG wird gelesen — Rohtext in teile UND strukturiert in kapitel.validierung', () => {
+  const r = skriptLesen.lies([RAHMEN,
+    musterKapitelMitValidierung('VL-001-EK-003', ['herkunft: bestaetigt', 'divergenz: keine']),
+    SCHLUSS].join('\n'));
+  assert.deepStrictEqual(r.fehler, []);
+  assert.deepStrictEqual(r.kapitel[0].validierung,
+    { herkunft: 'bestaetigt', beleg: '', divergenz: 'keine', begruendung: '' });
+});
+
+test('ein unbekannter herkunft-Wert (kaputter Katalogwert) wird abgewiesen', () => {
+  const r = skriptLesen.lies([RAHMEN,
+    musterKapitelMitValidierung('VL-001-EK-003', ['herkunft: erfunden']),
+    SCHLUSS].join('\n'));
+  assert.ok(r.fehler.some((f) => /unbekannte herkunft "erfunden"/.test(f)), r.fehler.join(' | '));
+});
+
+test('herkunft: korrigiert ohne beleg wird abgewiesen — genauer Wortlaut', () => {
+  const r = skriptLesen.lies([RAHMEN,
+    musterKapitelMitValidierung('VL-001-EK-003', ['herkunft: korrigiert']),
+    SCHLUSS].join('\n'));
+  assert.ok(r.fehler.some((f) => f === 'Kapitel VL-001-EK-003: beleg fehlt — laut Altmaterial ist keine Fundstelle'),
+    r.fehler.join(' | '));
+});
+
+test('divergenz: entschieden ohne begruendung wird abgewiesen', () => {
+  const r = skriptLesen.lies([RAHMEN,
+    musterKapitelMitValidierung('VL-001-EK-003', ['herkunft: bestaetigt', 'divergenz: entschieden']),
+    SCHLUSS].join('\n'));
+  assert.ok(r.fehler.some((f) => /begruendung fehlt/.test(f)), r.fehler.join(' | '));
+});
+
 /* Ledger-Hinweis aus B2: gesehen-EKs muessen ueber ein echtes Set laufen,
    nicht ueber ein Plain-Object — sonst kollidiert ek="constructor" mit dem
    geerbten Object.prototype.constructor (wahrheitswertig, ohne je gesetzt

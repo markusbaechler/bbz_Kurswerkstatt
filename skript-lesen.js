@@ -133,7 +133,7 @@
         kapitel = {
           nr: bl.attr.nr || '', ek: bl.attr.ek || '', titel: bl.attr.titel || '',
           bloom: bl.attr.bloom || '', richtzeit: bl.attr.richtzeit || '',
-          teile: {}, abbildungen: []
+          teile: {}, abbildungen: [], validierung: null
         };
         if (!kapitel.ek) fehler.push('###KAPITEL ohne ek=');
         else if (gesehen.has(kapitel.ek)) fehler.push('Kompetenz doppelt: ' + kapitel.ek);
@@ -157,6 +157,36 @@
 
       /* ab hier: Bausteine innerhalb eines Kapitels */
       if (!kapitel) { fehler.push('###' + bl.name + ' steht ausserhalb eines Kapitels'); continue; }
+      if (bl.name === 'VALIDIERUNG') {
+        var fVal = felder(bl);
+        var herkunft = (fVal.herkunft || '').trim();
+        var beleg = (fVal.beleg || '').trim();
+        var divergenz = (fVal.divergenz || '').trim();
+        var begruendung = (fVal.begruendung || '').trim();
+        if (!herkunft) {
+          fehler.push('Kapitel ' + kapitel.ek + ': Validierung ohne Feld herkunft');
+        } else if (S().SCHEMA.validierungHerkunft.indexOf(herkunft) < 0) {
+          fehler.push('Kapitel ' + kapitel.ek + ': Validierung: unbekannte herkunft "' + herkunft + '"');
+        }
+        if (divergenz && S().SCHEMA.validierungDivergenz.indexOf(divergenz) < 0) {
+          fehler.push('Kapitel ' + kapitel.ek + ': Validierung: unbekannte divergenz "' + divergenz + '"');
+        }
+        if ((herkunft === 'korrigiert' || herkunft === 'ergaenzt') && !beleg) {
+          fehler.push('Kapitel ' + kapitel.ek + ': beleg fehlt — laut Altmaterial ist keine Fundstelle');
+        }
+        if (divergenz === 'entschieden' && !begruendung) {
+          fehler.push('Kapitel ' + kapitel.ek + ': begruendung fehlt — divergenz "entschieden" verlangt eine Begruendung');
+        }
+        if (kapitel.validierung === null) {
+          kapitel.validierung = { herkunft: herkunft, beleg: beleg, divergenz: divergenz, begruendung: begruendung };
+        }
+        /* KEIN continue - faellt in die generische Mehrfach-Pruefung/Ablage
+           unten durch: VALIDIERUNG ist "einfach" (nicht mehrfach) und
+           speichert seinen Rohtext wie ILLUSTRATION/DEFINITION in
+           kapitel.teile.VALIDIERUNG - die strukturierte Form liegt
+           zusaetzlich in kapitel.validierung fuer V2 (schrittspezifische
+           Pruefung) und V5 (Review-Ansicht). */
+      }
       if (bl.name === 'ABBILDUNG') {
         var typ = bl.attr.typ || '';
         if (!S().istDiagrammtyp(typ)) {

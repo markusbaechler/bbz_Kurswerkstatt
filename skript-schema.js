@@ -10,6 +10,18 @@
      eigener Block, damit die Abnahme sie zaehlen kann, steht im Satz aber
      hinter der Erklaerung, zu der sie gehoert.
 
+     VALIDIERUNG (V1, Etappe 4): optional, kein stil (kein Text-Kasten -
+     maschinenlesbare Steuerdaten, nie Fliesstext im Leserdokument). Direkt
+     nach dem Kapitelkopf, vor HERO/ILLUSTRATION - Schritt 4 (Validierung)
+     traegt hier Herkunft/Beleg/Divergenz je Kapitel. Felder (Feldzeilen wie
+     ILLUSTRATION): herkunft: (Pflicht, geschlossener Katalog
+     VALIDIERUNG_HERKUNFT) · beleg: (Freitext, Pflicht bei herkunft:
+     korrigiert|ergaenzt) · divergenz: (optional, geschlossener Katalog
+     VALIDIERUNG_DIVERGENZ) · begruendung: (Freitext, Pflicht bei divergenz:
+     entschieden). skript-lesen.js prueft nur die INNERE Konsistenz - ob der
+     Block vorhanden sein muss/darf, entscheidet die schritt-spezifische
+     Pruefung (V2), nicht der Parser.
+
      ILLUSTRATION (B6, Etappe 3b): optional, kein stil (kein Text-Kasten,
      sondern ein Bild an der Hero-Position - vor dem Hero-Kasten selbst, s.
      docx-bauen.js::illustrationAbsatz). Variante C (Entscheid Markus
@@ -20,6 +32,7 @@
      eine Ziffernfolge >2 in szene: ab (eiserne Regel "Illustrationen tragen
      nie Fakten"). */
   var BAUSTEINE = [
+    { block: 'VALIDIERUNG',     stil: null, pflicht: false },
     { block: 'HERO',            stil: 'Hero' },
     { block: 'ILLUSTRATION',    stil: null, pflicht: false },
     { block: 'STORY',           stil: 'Story' },
@@ -66,6 +79,13 @@
   var VARIANTEN = ['claude', 'chatgpt'];
   function istVariante(name) { return VARIANTEN.indexOf(name) >= 0; }
 
+  /* V1 (Etappe 4): geschlossene Kataloge fuer die Felder herkunft:/
+     divergenz: des VALIDIERUNG-Bausteins. herkunft nennt, wie ein Kapitel
+     zum Altmaterial (Contract/Lernziele) steht; divergenz, ob eine
+     fachliche Abweichung besteht und ob sie schon entschieden ist. */
+  var VALIDIERUNG_HERKUNFT = ['bestaetigt', 'korrigiert', 'ergaenzt', 'offen'];
+  var VALIDIERUNG_DIVERGENZ = ['keine', 'entschieden', 'offen'];
+
   function baustein(name) {
     for (var i = 0; i < BAUSTEINE.length; i++) if (BAUSTEINE[i].block === name) return BAUSTEINE[i];
     return null;
@@ -84,7 +104,8 @@
   var skriptSchema = {
     SCHEMA: {
       bausteine: BAUSTEINE, rahmen: RAHMEN, diagrammtypen: DIAGRAMMTYPEN, budget: BUDGET,
-      varianten: VARIANTEN
+      varianten: VARIANTEN, validierungHerkunft: VALIDIERUNG_HERKUNFT,
+      validierungDivergenz: VALIDIERUNG_DIVERGENZ
     },
     baustein: baustein,
     istBaustein: istBaustein,

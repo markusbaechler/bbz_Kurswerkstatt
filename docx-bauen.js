@@ -463,6 +463,16 @@
          datei:) ein zweites Mal als sichtbaren Fliesstext ins Dokument
          setzen. */
       if (b.block === 'ILLUSTRATION') return;
+      /* VALIDIERUNG (V1, Etappe 4): b.stil ist ebenfalls null, ohne diese
+         Ausnahme wuerde die generische bausteinAbsaetze()-Behandlung die
+         ROHE Feldsyntax (herkunft:/beleg:/divergenz:/begruendung:) als
+         sichtbaren Fliesstext ins Leserdokument setzen — VALIDIERUNG sind
+         maschinenlesbare Steuerdaten (kapitel.validierung,
+         skript-lesen.js), kein Baustein mit eigenem Absatz im Word. Das
+         Rendern eines Validierungs-Bausteins im Wort selbst ist nicht Teil
+         von V1 (spaetere Etappe, falls ueberhaupt) — hier zaehlt nur, dass
+         die Steuerdaten nicht als Text durchrutschen (Muster ILLUSTRATION). */
+      if (b.block === 'VALIDIERUNG') return;
       if (b.block === 'ABBILDUNG') {
         (k.abbildungen || []).forEach(function (a) {
           var typ = S().diagrammTyp(a.typ);
