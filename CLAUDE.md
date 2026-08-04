@@ -3180,6 +3180,23 @@ für Schritt 3 UND 4), `specs-konsistenz.cjs` → „Alles konsistent".
 Code liest das Feld (grep leer), reine Daten-Angleichung, damit V9 die Inkonsistenz
 nicht nach SharePoint zurückgespiegelt hätte. **863/863 Tests grün** (unverändert).
 
+## L1-Fix (Etappe 4): DEFINITION/ERKLAERUNG — fester Zwischentitel statt Erste-Zeile-als-H2
+
+**Live-Befund Markus im Layout-Loop (2026-08-04, „H2 als Textblock funktioniert nicht"):**
+`docx-bauen.js` `bausteinAbsaetze()` machte bei Fliesstext-Bausteinen (`stil === null`,
+DEFINITION/ERKLAERUNG) die ERSTE Inhaltszeile pauschal zur Überschrift2 — schreibt der Chat
+dort einen ganzen Absatz (der Normalfall am echten VL-002-Skript), stand der KOMPLETTE
+Absatz in der Titelschrift (Space Grotesk, 13pt). Die Referenz (`markdown()` in
+`IT_Architektur_bbz/output/tools/skript-bauen.cjs`, Zeile ~114) machte es von jeher anders:
+**fester Zwischentitel** `## Definition` / `## Erklärung`, der gesamte Inhalt ist
+Fliesstext. Der B4-Baubericht behauptete fälschlich, die Erste-Zeile-Regel folge der
+Referenz — tat sie nie. Fix: die App setzt jetzt exakt das Referenzverhalten
+(`H2_LABEL = { DEFINITION: 'Definition', ERKLAERUNG: 'Erklärung' }` als Überschrift2, alle
+Inhaltszeilen ohne pStyle) — keine Heuristik, kein Inhalt in Titelschrift, egal was in der
+ersten Zeile steht. Pin-Test in `test/docxbauen.test.js` (Labels als H2 vorhanden, die
+Inhaltszeile ausdrücklich NICHT als H2); Mutationsprobe (Erste-Zeile-Regel zurückgedreht):
+genau der eine neue Test fiel rot (28/29), danach wiederhergestellt, **864/864 grün**.
+
 ## Fix-Task B9-F1: die Dateiauswahl überlebt keinen Render
 
 **Live-Befund aus der Abnahme (Etappe 3b):** der Weg Hochladen wirkte „tot". Ursache:

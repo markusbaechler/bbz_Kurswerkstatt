@@ -128,8 +128,19 @@
     var zeilen = String(inhalt).split('\n').filter(function (z) { return z.trim() !== ''; });
     if (!zeilen.length) return '';
     if (b.stil === null) {
-      var out = pAbsatz(zeilenText(zeilen[0]), STYLE_H2);
-      for (var i = 1; i < zeilen.length; i++) out += pAbsatz(zeilenText(zeilen[i]), null);
+      /* L1-Fix (Live-Befund Markus, 2026-08-04, „H2 als Textblock funktioniert
+         nicht"): die alte Regel machte die ERSTE Zeile des Teils pauschal zur
+         Überschrift2 — schreibt der Chat dort einen ganzen Absatz, stand der
+         KOMPLETTE Absatz in der Titelschrift (der Riesen-Text-Befund am
+         VL-002-Kapitel 1). Die Referenz (markdown() in
+         IT_Architektur_bbz/output/tools/skript-bauen.cjs, Zeile ~114) macht es
+         von jeher anders: FESTER Zwischentitel „Definition"/„Erklärung", der
+         gesamte Inhalt ist Fliesstext. Genau daran ist die App jetzt
+         angeglichen — keine Heuristik, kein Inhalt in Titelschrift, egal was
+         der Chat in die erste Zeile schreibt. */
+      var H2_LABEL = { DEFINITION: 'Definition', ERKLAERUNG: 'Erklärung' };
+      var out = pAbsatz(H2_LABEL[b.block] || b.block, STYLE_H2);
+      for (var i = 0; i < zeilen.length; i++) out += pAbsatz(zeilenText(zeilen[i]), null);
       return out;
     }
     var out2 = '';

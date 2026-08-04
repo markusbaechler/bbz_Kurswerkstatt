@@ -161,6 +161,26 @@ test('baue(): pStyle je Baustein steht im document.xml', async () => {
   }
 });
 
+test('baue(): DEFINITION/ERKLAERUNG — fester Zwischentitel, Inhalt NIE in der Titelschrift (L1-Fix 2026-08-04)', async () => {
+  /* Live-Befund Markus („H2 als Textblock funktioniert nicht"): die alte Regel
+     machte die erste Inhaltszeile pauschal zur Überschrift2 — ein ganzer
+     Absatz landete in der Titelschrift. Referenz ist markdown() in
+     skript-bauen.cjs: FESTES Label als H2, aller Inhalt Fliesstext. */
+  const { buffer } = vorlageBauen();
+  const out = await docxBauen.baue(buffer, gelesenFixture(), bilderFixture());
+  const xml = await docXmlAus(out);
+  // die festen Labels stehen als Überschrift2
+  assert.ok(xml.indexOf('<w:pStyle w:val="berschrift2"/></w:pPr><w:r><w:t xml:space="preserve">Definition</w:t>') >= 0,
+    'festes Label "Definition" fehlt als Überschrift2');
+  assert.ok(xml.indexOf('<w:pStyle w:val="berschrift2"/></w:pPr><w:r><w:t xml:space="preserve">Erklärung</w:t>') >= 0,
+    'festes Label "Erklärung" fehlt als Überschrift2');
+  // die ERSTE Inhaltszeile der DEFINITION ist normaler Fliesstext, KEIN H2
+  assert.ok(xml.indexOf('Kurzdefinition.') >= 0, 'Inhaltszeile fehlt ganz');
+  assert.strictEqual(
+    /<w:pStyle w:val="berschrift2"\/><\/w:pPr><w:r><w:t xml:space="preserve">Kurzdefinition\./.test(xml),
+    false, 'Inhaltszeile steht faelschlich als Überschrift2 (Titelschrift)');
+});
+
 test('baue(): WISSENSCHECK wird formatgleich zum Tools-Bauer gerendert (Finding 2) — keine rohe Feldsyntax im Text', async () => {
   const { buffer } = vorlageBauen();
   const out = await docxBauen.baue(buffer, gelesenFixture(), bilderFixture());
