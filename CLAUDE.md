@@ -3158,6 +3158,28 @@ Der Illustrations-Katalog (B7) bleibt ungebaut; sobald er existiert, braucht der
 neuen, eigenen Abschnitt dafür — kein Wiederaufleben von `katalog:` im aktuellen Wortlaut ohne
 diesen Schritt.
 
+## Task V9 (Etappe 4): SharePoint-Nachzug Schritt 4 — die Blockwelt ist live geschaltet
+
+**2026-08-04, mit Freigabe Markus, über die angemeldete Browser-Sitzung geschrieben und
+zurückgelesen:** `ablage-kontrakt.json` `schritte['4']` trägt seither `ext: 'docx'`,
+`format: 'word'`, `quelle: 'blocks'`, `pruefung: 'validierung'` und `wege:
+['chat','claude-code','hochladen']`; das Feld `fassungen` (`["md","docx"]`,
+Drei-Fassungen-Konzept von 2026-07-26) ist ENTFERNT. `werkzeuge.json`: `prompt-content`
+(beide Fassungen) und `guide-2b` durch die V8-generierten Fassungen ersetzt
+(byte-identisch zum Generat verifiziert). `schritte.json` Schritt 4: `wege` + `hochladen`,
+`lief`/`taet`/`abl` auf Blockdatei+Word/Review-Ansicht umgestellt. Rückwege:
+`_zentral/_verlauf-2026-08-04/*_vor-etappe4.json`. Damit greifen T-V2/V4/V5/V6 live —
+die Schritt-4-Strecke (ZIP-Upload, Prüfung, Baustrecke, Review-Ansicht, Sign-off) ist
+für jeden Kurs sichtbar. Spec-Nachträge datiert in Prozess-Spec §Schritt 4,
+Ablage-Kontrakt §2/§3.5 und Meta-Spec §6.3/§8; `zentral-export.json` auf 2026-08-04
+aufgefrischt (`_zentral-export-bauen.js`: Zeile 4 docx/hochladen, `pruefung`/`quelle`
+für Schritt 3 UND 4), `specs-konsistenz.cjs` → „Alles konsistent".
+
+**Fixture-Angleichung (M-3 der Whole-Branch-Review):** `test/fixture.js` `schritte['4']`
+`format: 'html'` → `'word'` — die Fixture spiegelt jetzt exakt den Live-Kontrakt; kein
+Code liest das Feld (grep leer), reine Daten-Angleichung, damit V9 die Inkonsistenz
+nicht nach SharePoint zurückgespiegelt hätte. **863/863 Tests grün** (unverändert).
+
 ## Fix-Task B9-F1: die Dateiauswahl überlebt keinen Render
 
 **Live-Befund aus der Abnahme (Etappe 3b):** der Weg Hochladen wirkte „tot". Ursache:
