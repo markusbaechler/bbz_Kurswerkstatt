@@ -3540,3 +3540,20 @@ Genau der eine Umbruch-Test (mit dem 89-Zeichen-Fixture) fiel rot. Die EK-005-Pa
 allein der dedizierte Umbruch-Test mit dem 89-Zeichen-Label prüft `umbrich()` selbst. Danach die
 Zeile wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **322/322 grün**
 (Tools), `node --test` → **740/740 grün** (App).
+
+## Stand 2026-08-04 — Etappe 3b abgeschlossen und abgenommen
+
+Die Kurswerkstatt setzt selbst: Upload in Schritt 3 nimmt die Blockdatei + Illustrations-PNGs
+(EIN Vorgang), prueft (Grammatik/Positivliste/Marker/Wortbudget/Kurs- und Varianten-Guards),
+rendert die Diagramme im Canvas, baut das Word gegen `_zentral/vorlagen/reference.docx`
+(Graph, gecacht — nur Erfolg wird gecacht) und legt docx+blocks+Bilder ab. Neue Module:
+`zip-schreiben.js` · `skript-schema.js`/`skript-lesen.js`/`diagramm-zeichnen.js`
+(UMD-Zwillinge der Tools-Fassungen, Parity-Waechter `output/tools/test/app-parity.test.js`
+im Werkzeug-Baum) · `docx-bauen.js` (+ `zipLesen.liesBytes`). Vier B9-Livebefunde als
+Systemaenderungen behoben (F1 Dateiauswahl im State, navigations-fluechtig · F2
+Extent-Deckel auf den Satzspiegel · F3 persistente `uploadMeldung` am Hochladen-Block, inkl.
+xlsx/mbz-Nachzug · F4 zeitachse vertikal mit tspan-Umbruch). **740 Tests gruen** (Werkzeuge
+322). Abnahme Markus am kompletten VL-002-Skript (13 Kapitel, v4); Vorbehalt
+Layout-Feinschliff -> Etappe 4. Protokoll:
+`../IT_Architektur_bbz/output/2026-08-04-etappe-3b-ausfuehrungsprotokoll.md` · geparkte
+Punkte: `.superpowers/sdd/2026-08-03-etappe-3b-plan/progress.md`.
