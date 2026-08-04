@@ -212,6 +212,9 @@
   var FALLBACK_PGSZ_TWIPS = 11906;
   var FALLBACK_MARGIN_TWIPS = 1417;
   var TWIPS_ALS_EMU = 635; /* 1 Twip = 1/20 Punkt = 635 EMU */
+  var ILLUSTRATION_BREITENANTEIL = 0.62; /* L1: Illustrationen schmaler als der
+     Satzspiegel (zentriert, s. drawingAbsatz) — vollbreite quadratische
+     KI-Bilder dominierten die Seite und wirkten unruhig (Befund Markus). */
 
   /* Liest Seitenbreite minus linken/rechten Rand aus dem sectPr der Vorlage
      und liefert die Textbreite in EMU — dieselbe sectPr-Zeichenkette, die
@@ -286,7 +289,11 @@
      (extentEmuGedeckelt) — diese Funktion selbst kennt beide Herkuenfte
      nicht mehr, sie setzt nur noch das XML. */
   function drawingAbsatz(rid, dateiname, cx, cy, docPrId) {
-    return '<w:p><w:r><w:drawing>' +
+    /* L1 (Live-Befund Markus 2026-08-04, „Platzierung der Grafiken wirkt
+       unruhig"): jedes Bild steht ZENTRIERT mit festem Abstand davor/danach —
+       vorher linksbuendig ohne Abstand, direkt am vorangehenden Absatz. */
+    return '<w:p><w:pPr><w:jc w:val="center"/>' +
+      '<w:spacing w:before="120" w:after="160"/></w:pPr><w:r><w:drawing>' +
       '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
       '<wp:extent cx="' + cx + '" cy="' + cy + '"/>' +
       '<wp:docPr id="' + docPrId + '" name="' + esc(dateiname) + '"/>' +
@@ -312,7 +319,7 @@
      traegt, s. o.). ctx.textbreiteEmu deckelt danach BEIDE Quellen gleich
      (extentEmuGedeckelt, B9-F2) — der Deckel sitzt NACH der Massbestimmung,
      unabhaengig davon, woher breite/hoehe kamen. */
-  function bildAbsatzAusEintrag(dateiname, eintrag, ctx) {
+  function bildAbsatzAusEintrag(dateiname, eintrag, ctx, breitenAnteil) {
     var rid = ctx.relIds[dateiname];
     if (!rid) {
       rid = 'rId' + ctx.naechsteRid;
@@ -324,7 +331,14 @@
     var masse = (eintrag.breite && eintrag.hoehe)
       ? { breite: eintrag.breite, hoehe: eintrag.hoehe }
       : pngMasse(eintrag.bytes);
-    var extent = extentEmuGedeckelt(masse.breite, masse.hoehe, ctx.textbreiteEmu);
+    /* L1: breitenAnteil (0..1, optional) verengt den Deckel auf einen Anteil
+       des Satzspiegels — Illustrationen (0.62) stehen schmaler und ruhiger im
+       Text als die vollbreiten Diagramme; ohne Anteil gilt die volle
+       Textbreite wie bisher (Diagramme, B9-F2 unveraendert). */
+    var deckel = (breitenAnteil > 0 && breitenAnteil < 1)
+      ? Math.round(ctx.textbreiteEmu * breitenAnteil)
+      : ctx.textbreiteEmu;
+    var extent = extentEmuGedeckelt(masse.breite, masse.hoehe, deckel);
     return drawingAbsatz(rid, dateiname, extent.cx, extent.cy, ctx.docPrZaehler);
   }
 
@@ -414,7 +428,7 @@
     if (!dateiname) return '';
     var eintrag = ctx.bilder[dateiname];
     if (!eintrag || !eintrag.bytes) return '';
-    return bildAbsatzAusEintrag(dateiname, eintrag, ctx);
+    return bildAbsatzAusEintrag(dateiname, eintrag, ctx, ILLUSTRATION_BREITENANTEIL);
   }
 
   /* ---------- Titelkopf, Kapitel, Anhang ---------- */

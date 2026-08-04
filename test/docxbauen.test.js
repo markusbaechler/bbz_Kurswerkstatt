@@ -349,6 +349,28 @@ test('baue(): der Deckel greift auch im IHDR-Rueckfall (F2-Kernfall — Faktor-2
   assert.ok(xml.indexOf('<wp:extent cx="5760720" cy="2752344"/>') >= 0);
 });
 
+test('baue(): Bilder stehen zentriert mit Abstand, Illustrationen auf 62% des Satzspiegels (L1)', async () => {
+  const { buffer } = vorlageBauen(); // Default-sectPr, Textbreite 5760720 EMU
+  const gelesen = gelesenFixture();
+  // ILLUSTRATION-Teil mit datei: nachruesten (Muster des Vorgriff-Tests unten)
+  gelesen.kapitel[0].teile.ILLUSTRATION = 'datei: illu-l1.png\nszene: Beratungsszene ohne Zahlen';
+  const bilder = Object.assign({}, bilderFixture(), {
+    // das Diagramm ebenfalls auf 900x300 heben, damit BEIDE Deckel messbar sind
+    [docxBauen.bildDateiname('BX-001', 'claude', 1)]: { breite: 900, hoehe: 300, bytes: fakePng(900, 300) },
+    'illu-l1.png': { breite: 900, hoehe: 300, bytes: fakePng(900, 300) }
+  });
+  const out = await docxBauen.baue(buffer, gelesen, bilder);
+  const xml = await docXmlAus(out);
+  // jedes Bild zentriert mit Abstand (drawingAbsatz)
+  assert.ok(xml.indexOf('<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:before="120" w:after="160"/></w:pPr><w:r><w:drawing>') >= 0,
+    'Bild-Absatz ist nicht zentriert mit Abstand');
+  // die Illustration (900x300, roh 8572500 EMU) deckelt auf 62% der Textbreite:
+  // round(5760720*0.62) = 3571646; cy proportional gerundet
+  assert.ok(xml.indexOf('cx="3571646"') >= 0, 'Illustration nicht auf 62% des Satzspiegels gedeckelt');
+  // das Diagramm derselben Groesse deckelt weiterhin auf die VOLLE Textbreite (B9-F2 unveraendert)
+  assert.ok(xml.indexOf('cx="5760720"') >= 0, 'Diagramm-Deckel (volle Textbreite) verloren');
+});
+
 test('baue(): vergleichstabelle wird eine w:tbl, keine Abbildung', async () => {
   const { buffer } = vorlageBauen();
   const out = await docxBauen.baue(buffer, gelesenFixture(), bilderFixture());
