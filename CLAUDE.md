@@ -3478,3 +3478,65 @@ danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **7
 angefordert. Der obere Meldungsblock bleibt bewusst bestehen (Doppel-Anzeige gewollt, s. o.) —
 eine Konsolidierung zu einer einzigen Anzeigestelle ist kein Ziel dieser Task und würde den
 Verlauf-Charakter des oberen Blocks aufgeben.
+
+## Fix-Task B9-F4: `zeitachse` neu vertikal — lange Beschriftungen ohne Zeichensalat
+
+**Live-Befund aus der Vollskript-Abnahme:** der Diagrammtyp `zeitachse` verteilte die
+`schritte:`-Einträge als Punkte auf einer horizontalen Linie und setzte jede Beschriftung als
+eine Textzeile daneben — bei 6–8 Schritten mit langen deutschen Texten überlagerten sich die
+Labels vollständig, 7 von 13 Diagrammen der Abnahme waren betroffen.
+
+**Fix: `zeitachse` zeichnet seither VERTIKAL.** Eine senkrechte Linie links (`x=90` fest), je
+Schritt ein Punkt darauf (Farben unverändert alternierend aus `PALETTE`), rechts daneben die
+Beschriftung MEHRZEILIG per `<tspan>` — Wortumbruch auf ~72 Zeichen je Zeile über eine neue,
+eigene Hilfsfunktion `umbrich(text, max)` (Wortgrenzen, keine Silbentrennung, identisch in
+beiden Fassungen). Zeilenhöhe 22px; der vertikale Abstand je Schritt ergibt sich aus dessen
+Zeilenzahl plus Polster (26px) — dieselbe Idee wie bei `schema()`, dort ist die Höhe schon
+dynamisch über `ebenen.length`. Die SVG-Höhe wächst entsprechend mit statt fix bei 220 zu
+bleiben; Breite bleibt 900, `rahmen()`/`mitTitel`-Verhalten und das Fehlerverhalten bei leeren
+`schritte` sind unverändert.
+
+**Portierung wie immer mechanisch in beide Bäume** — `IT_Architektur_bbz/output/tools/
+diagramm-rendern.cjs` (Original) und `bbz_Kurswerkstatt/diagramm-zeichnen.js` (UMD-Portierung),
+Zeile für Zeile dieselbe Logik, gehalten vom Parity-Wächter (`output/tools/test/
+app-parity.test.js`), der `svg()` beider Fassungen byte-identisch vergleicht.
+
+**Fixture: das echte `###ABBILDUNG typ=zeitachse`-Kapitel VL-002-EK-005** (acht Schritte,
+„Jahreslohn" … „Jährliche Altersrente", mit Umlauten) — genau der Fall aus der Abnahme, jetzt
+acht sauber getrennte Punkte statt eines Zeichensalats. **Befund beim Bauen:** der längste
+Schritt dieses konkreten Kapitels ist „Altersgutschrift nach Altersklasse" (35 Zeichen) — unter
+dem 72-Zeichen-Umbruch, dieses eine Fixture wickelt sich also gar nicht mehrzeilig ab. Das
+Redesign behebt die Überlagerung trotzdem vollständig, weil sie aus dem HORIZONTALEN Layout kam
+(feste Beschriftungsbreite auf zu wenig Achsenraum verteilt), nicht aus fehlendem Umbruch — die
+vertikale Anordnung allein reicht hier schon. Für den tatsächlichen Umbruch-Beweis dient ein
+zweites, aus einem anderen Kapitel desselben Skripts entnommenes Fixture mit einem 89 Zeichen
+langen Schritt („Ohne Meldung: Stiftung Auffangeinrichtung nach sechs Monaten, spätestens nach
+zwei Jahren").
+
+**Tests** (`test/diagramm-rendern.test.js` im Tools-Baum, `test/diagrammzeichnen.test.js` in der
+App, mechanisch dieselben Fälle): das EK-005-Fixture — acht Punkte, kein `<tspan>`-Inhalt über
+76 Zeichen, SVG-Höhe wächst über 430 (dynamisch, statt der alten festen 220), zwei beliebige
+`<tspan>`-Y-Positionen fallen nie exakt zusammen (Grobcheck gegen Kollision); das lange
+Zusatz-Fixture — mindestens zwei Zeilen, kein Wort geht beim Umbruch verloren
+(`texte.join(' ') === Originaltext`). `test/app-parity.test.js` bekommt das EK-005-Fixture als
+zusätzlichen Eintrag in `DIAGRAMM_FIXTURES` (läuft automatisch auch durch die
+`mitTitel:false`-Zusatzprobe). **Tools-Baum: 322/322 grün** (Baseline 318 + 4: zwei neue
+Zeitachse-Tests, zwei neue Parity-Fälle mit/ohne Titel). **App: 740/740 grün** (Baseline 738 +
+2 neue Zeitachse-Tests).
+
+**Mutationsprobe (tatsächlich ausgeführt):** den `umbrich(s, MAX_ZEICHEN)`-Aufruf in der
+Tools-Fassung durch `[s]` ersetzt (Label bleibt einzeilig), `node --test`:
+```
+ℹ tests 322
+ℹ pass 321
+ℹ fail 1
+
+✖ Zeitachse (B9-F4): eine lange Beschriftung wird auf mehrere Zeilen umgebrochen, an Wortgrenzen
+  AssertionError [ERR_ASSERTION]: die lange Beschriftung haette mindestens zwei Zeilen ergeben muessen
+```
+Genau der eine Umbruch-Test (mit dem 89-Zeichen-Fixture) fiel rot. Die EK-005-Parity- und
+-Höhentests blieben GRÜN — konsistent mit dem Befund oben: das reale EK-005-Fixture wickelt bei
+72 Zeichen ohnehin nicht mehrzeilig ab, also ändert sich sein Output durch die Mutation nicht;
+allein der dedizierte Umbruch-Test mit dem 89-Zeichen-Label prüft `umbrich()` selbst. Danach die
+Zeile wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **322/322 grün**
+(Tools), `node --test` → **740/740 grün** (App).

@@ -211,19 +211,58 @@
     return rahmen(B, H, a.titel, innen + achse + legende, opts && opts.mitTitel);
   }
 
+  /* Wortweiser Zeilenumbruch ohne Silbentrennung, Zielbreite `max` Zeichen je
+     Zeile. Ein einzelnes Wort laenger als `max` bleibt als eigene, laengere
+     Zeile stehen — Silbentrennung ist bewusst nicht Teil dieser Funktion. */
+  function umbrich(text, max) {
+    var woerter = String(text == null ? '' : text).split(/\s+/).filter(Boolean);
+    var zeilen = [];
+    var aktuell = '';
+    woerter.forEach(function (w) {
+      var kandidat = aktuell ? aktuell + ' ' + w : w;
+      if (kandidat.length > max && aktuell) {
+        zeilen.push(aktuell);
+        aktuell = w;
+      } else {
+        aktuell = kandidat;
+      }
+    });
+    if (aktuell) zeilen.push(aktuell);
+    if (zeilen.length === 0) zeilen.push('');
+    return zeilen;
+  }
+
+  /* B9-F4 (2026-08-04): vorher lief die Zeitachse horizontal — ein Punkt je
+     Schritt auf einer Linie, die Beschriftung als eine Textzeile daneben.
+     Bei realen Kursdaten (6-8 Schritte, 20-90 Zeichen lange deutsche
+     Beschriftungen) ueberlagerten sich die Labels vollstaendig (Live-Befund
+     Vollskript-Abnahme, 7 von 13 Diagrammen betroffen). Neu: eine SENKRECHTE
+     Linie links, je Schritt ein Punkt darauf, die Beschriftung rechts daneben
+     MEHRZEILIG per <tspan> (umbrich(), ~72 Zeichen/Zeile). Der vertikale
+     Abstand je Schritt ergibt sich aus seiner Zeilenzahl — dieselbe Idee wie
+     bei `schema()`, dort ist die Hoehe schon dynamisch ueber ebenen.length. */
   function zeitachse(a, opts) {
     var schritte = zeilenListe(a.felder.schritte);
     if (schritte.length === 0) throw new Error('zeitachse: keine Schritte vorhanden');
-    var B = 900, H = 220, y = 130, L = 60, R2 = 60;
-    var n = Math.max(schritte.length, 2);
-    var innen = '<line x1="' + L + '" y1="' + y + '" x2="' + (B - R2) + '" y2="' + y +
+    var B = 900, L = 90, textX = L + 30, oben = 70, zeilenHoehe = 22, polster = 26, MAX_ZEICHEN = 72, UNTEN = 40;
+    var zeilenJeSchritt = schritte.map(function (s) { return umbrich(s, MAX_ZEICHEN); });
+    var ys = [];
+    var y = oben;
+    zeilenJeSchritt.forEach(function (zeilen, i) {
+      ys.push(y);
+      y += zeilen.length * zeilenHoehe + polster;
+    });
+    var letzte = zeilenJeSchritt.length - 1;
+    var H = ys[letzte] + zeilenJeSchritt[letzte].length * zeilenHoehe + UNTEN;
+    var innen = '<line x1="' + L + '" y1="' + ys[0] + '" x2="' + L + '" y2="' + ys[letzte] +
       '" style="stroke:' + GRAU + ';stroke-width:2"/>';
     schritte.forEach(function (s, i) {
-      var x = L + (i / (n - 1)) * (B - L - R2);
-      innen += '<circle cx="' + x.toFixed(1) + '" cy="' + y + '" r="11" style="fill:' +
-        PALETTE[i % PALETTE.length] + '"/>' +
-        '<text x="' + x.toFixed(1) + '" y="' + (y - 26) + '" text-anchor="middle" style="fill:' +
-        TEXT + ';font:400 15px ' + SCHRIFT + '">' + esc(s) + '</text>';
+      innen += '<circle cx="' + L + '" cy="' + ys[i] + '" r="11" style="fill:' +
+        PALETTE[i % PALETTE.length] + '"/><text style="fill:' + TEXT + ';font:400 15px ' + SCHRIFT + '">';
+      zeilenJeSchritt[i].forEach(function (zeile, li) {
+        innen += '<tspan x="' + textX + '" y="' + (ys[i] + 5 + li * zeilenHoehe) + '">' + esc(zeile) + '</tspan>';
+      });
+      innen += '</text>';
     });
     return rahmen(B, H, a.titel, innen, opts && opts.mitTitel);
   }

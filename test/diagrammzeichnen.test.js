@@ -52,6 +52,46 @@ test('die Zeitachse zeichnet einen Punkt je Schritt', () => {
   assert.ok(s.includes('Auszahlung'));
 });
 
+/* B9-F4 (2026-08-04): das Redesign auf vertikal mit Zeilenumbruch — mechanische
+   Portierung der Tools-Tests (test/diagramm-rendern.test.js). Echtes Fixture
+   aus der VL-002-Lieferung, Kapitel EK-005. */
+const EK005_SCHRITTE = 'Jahreslohn | Eintrittsschwelle prüfen | Koordinationsabzug | Versicherter Lohn | ' +
+  'Altersgutschrift nach Altersklasse | Altersguthaben samt Zins | Umwandlungssatz | Jährliche Altersrente';
+
+function tspanTexte(s) {
+  return Array.from(s.matchAll(/<tspan[^>]*>([^<]*)<\/tspan>/g)).map(m => m[1]);
+}
+function tspanYs(s) {
+  return Array.from(s.matchAll(/<tspan x="[\d.]+" y="([\d.]+)"/g)).map(m => Number(m[1]));
+}
+
+test('Zeitachse (B9-F4, echtes EK-005-Fixture): ein Punkt je Schritt, kein Label ueber ~76 Zeichen, ' +
+  'Hoehe waechst dynamisch, keine zwei tspan-Y-Positionen fallen zusammen', () => {
+  const s = D.svg({ typ: 'zeitachse', titel: 'Die Rechenkette der beruflichen Vorsorge',
+    felder: { schritte: EK005_SCHRITTE } });
+  assert.strictEqual((s.match(/<circle/g) || []).length, 8, 'acht Schritte, acht Punkte');
+  const texte = tspanTexte(s);
+  assert.ok(texte.length > 0);
+  for (const t of texte) {
+    assert.ok(t.length <= 76, 'Zeile laenger als der Umbruch erlaubt: "' + t + '" (' + t.length + ')');
+  }
+  const hoehe = Number(s.match(/height="(\d+)"/)[1]);
+  assert.ok(hoehe > 430, 'SVG-Hoehe haette dynamisch ueber 430 wachsen sollen, ist ' + hoehe);
+  const ys = tspanYs(s);
+  assert.strictEqual(new Set(ys).size, ys.length, 'zwei tspan-Y-Positionen fallen exakt zusammen');
+});
+
+test('Zeitachse (B9-F4): eine lange Beschriftung wird auf mehrere Zeilen umgebrochen, an Wortgrenzen', () => {
+  const lang = 'Ohne Meldung: Stiftung Auffangeinrichtung nach sechs Monaten, spätestens nach zwei Jahren';
+  const s = D.svg({ typ: 'zeitachse', titel: 't', felder: { schritte: lang + ' | Kurz' } });
+  const texte = tspanTexte(s);
+  assert.ok(texte.length >= 3, 'die lange Beschriftung haette mindestens zwei Zeilen ergeben muessen');
+  for (const t of texte) {
+    assert.ok(t.length <= 76, 'Zeile laenger als der Umbruch erlaubt: "' + t + '"');
+  }
+  assert.strictEqual(texte.join(' '), lang + ' Kurz', 'kein Wort darf beim Umbruch verlorengehen');
+});
+
 test('das Payoff-Diagramm zeichnet den Verlauf und die Nulllinie', () => {
   const s = D.svg({ typ: 'payoff', titel: 'Auszahlung',
     felder: { punkte: '0,-10 | 90,-10 | 110,10 | 150,50' } });
