@@ -746,6 +746,96 @@
      sich aus Sicherheitsgruenden nicht programmatisch wiederbefuellen. */
   var QUELLEN_FORMULAR_IDS = ['quelle-titel', 'quelle-herausgeber', 'quelle-stand', 'quelle-url'];
 
+  /* ---------- V6 (Etappe 4): Gate-Klick — Stamm-Umbenennung + Offen-Speisung ----------
+     Schritt 4 (Sign-off) legt docx UND blocks unter demselben _vN-Versionsstamm ab (B5) —
+     der Gate-Klick muss beim Freigeben BEIDE auf _final drehen, sonst bliebe die
+     .blocks-Fassung als Altlast bei _vN stehen, waehrend das docx schon final heisst.
+     Generisch ueber den Dateinamen implementiert (Stamm = Name ohne Endung), KEIN
+     Sonderfall fuer docx/blocks — Schritt 2/7 (je eine Datei je Stamm) verhalten sich
+     dadurch exakt wie bisher: die Geschwister-Suche findet dort nie mehr als die eine
+     bekannte Datei (Rueckwaertskompatibilitaets-Beleg: die bestehenden Gate-Tests
+     bleiben unveraendert gruen). */
+  function gateStamm(name) { return String(name || '').replace(/\.[A-Za-z0-9]+$/, ''); }
+  function gateEndung(name) {
+    var m = /\.([A-Za-z0-9]+)$/.exec(String(name || ''));
+    return m ? m[1] : '';
+  }
+
+  /* Voller Durchlauf (Fall c): alle Dateien im frisch gelesenen Ordner, die denselben
+     Versionsstamm wie die GEWAEHLTE Fassung tragen (andere Endung), OHNE die gewaehlte
+     Datei selbst — die wird bereits an ihrer eigenen Stelle umbenannt. */
+  function gateGeschwister(dateien, gewaehlt) {
+    var stamm = gateStamm(gewaehlt);
+    return (dateien || []).filter(function (x) {
+      return x.name !== gewaehlt && gateStamm(x.name) === stamm;
+    });
+  }
+
+  /* Wiedereinstiegsfall (a)/(b): 'gewaehlt' (die urspruenglich gewaehlte _vN-Fassung)
+     ist hier nicht mehr bekannt — nur die _final-Datei der Haupt-Endung liegt bereits
+     vor. Welche konkrete Version einer ANDEREN Endung (z. B. .blocks neben einem
+     bereits final gesetzten .docx) urspruenglich gewaehlt war, ist daraus nicht mehr
+     eindeutig rekonstruierbar (CLAUDE.md, Task V6). Pragmatische Regel: fehlt fuer eine
+     Endung noch die _final-Umbenennung, wird die HOECHSTE noch vorhandene _vN-Fassung
+     dieser Endung nachgezogen. */
+  function gateNachzugBeiFinal(dateien, kursId, lief) {
+    var prefixV = kursId + '_' + lief + '_v';
+    var prefixFinal = kursId + '_' + lief + '_final.';
+    var finals = {};
+    var beste = {};
+    (dateien || []).forEach(function (x) {
+      var n = x.name || '';
+      if (n.indexOf(prefixFinal) === 0) {
+        var fEndung = n.slice(prefixFinal.length);
+        if (/^[A-Za-z0-9]+$/.test(fEndung)) finals[fEndung.toLowerCase()] = true;
+        return;
+      }
+      if (n.indexOf(prefixV) === 0) {
+        var m = /^(\d+)\.([A-Za-z0-9]+)$/.exec(n.slice(prefixV.length));
+        if (!m) return;
+        var num = parseInt(m[1], 10);
+        var key = m[2].toLowerCase();
+        if (!beste[key] || num > beste[key].n) beste[key] = { n: num, name: n, ext: m[2] };
+      }
+    });
+    var nachzug = [];
+    Object.keys(beste).forEach(function (key) {
+      if (!finals[key]) {
+        nachzug.push({ von: beste[key].name, nach: kursId + '_' + lief + '_final.' + beste[key].ext });
+      }
+    });
+    return nachzug;
+  }
+
+  /* Renamt eine Liste {von, nach} sequenziell (je eigener graph.umbenennen-Aufruf) —
+     Graph nimmt keine Batch-Umbenennung, ein leerer Merker (Wiedereinstieg case (a)/(b)
+     ohne Nachzug, oder ein Schritt ohne Geschwister) durchlaeuft die Kette ohne
+     Netzzugriff. */
+  function gateUmbenennenListe(kursId, ordner, liste) {
+    return liste.reduce(function (p, x) {
+      return p.then(function () { return graph.umbenennen(kursId, ordner, x.von, x.nach); });
+    }, Promise.resolve());
+  }
+
+  /* Offen-Speisung (S4/R10): aus einer geparsten .blocks (skriptLesen.lies()) die
+     Punkte, die beim Sign-off automatisch als schritt-5-Punkte ins Dossier wandern —
+     jede ###OFFEN-Zeile plus je Kapitel mit Validierung.divergenz === 'offen' ein
+     eigener Punkt „Divergenz offen: {ek} · {titel}". */
+  function gateOffenePunkteAusGelesen(gelesen) {
+    var ergebnis = [];
+    if (!gelesen || typeof gelesen !== 'object') return ergebnis;
+    (gelesen.offen || []).forEach(function (zeile) {
+      var was = String(zeile || '').trim();
+      if (was) ergebnis.push(was);
+    });
+    (gelesen.kapitel || []).forEach(function (kap) {
+      if (kap && kap.validierung && kap.validierung.divergenz === 'offen') {
+        ergebnis.push('Divergenz offen: ' + (kap.ek || '') + ' · ' + (kap.titel || ''));
+      }
+    });
+    return ergebnis;
+  }
+
   /* ---------- controller ---------- */
   var controller = {
     setz: function (html) {
@@ -1913,6 +2003,11 @@
          in jedem Zweig (a/b/c) auf den tatsaechlichen _final-Namen gesetzt, bevor die
          Promise-Kette aufloest. */
       var nachName = null;
+      /* V6: Hinweis, wenn die Offen-Speisung (nur Schritt 4) die .blocks-Quelle
+         nicht lesen/parsen konnte — haengt sich an die Erfolgsmeldung an, bricht
+         das Gate selbst NIE ab (die Freigabe ist wichtiger als eine vollstaendige
+         Punkte-Uebernahme). */
+      var offenHinweis = null;
 
       /* F3 (Fix-Runde 1): der Lauf-Merker ist die ERSTE Pruefung, noch vor dem
          Dossier-Guard — ein zweiter, ueberlappender Klick darf unter keinen Umstaenden
@@ -1974,11 +2069,61 @@
         var final = root.inhalt.finalVorhanden(dateien, kursId, lief);
         var gateDateiName = root.inhalt.gateDatei(inh);
         var protokollDa = (dateien || []).some(function (x) { return x.name === gateDateiName; });
+        /* Fall (c) setzt das; in (a)/(b) bleibt sie unbekannt — s. gateNachzugBeiFinal. */
+        var gewaehlt = null;
 
-        function statusSchreiben() {
-          return controller.dossierSchreiben(kursId, function (kopie) {
-            root.dossier.statusSetzen(kopie, lief, 'final');
-            return kopie;
+        /* V6, Offen-Speisung (S4/R10) — NUR Schritt 4 (Sign-off). Quelle bevorzugt
+           der bereits geladene Review-Cache (V5: state.data.review[kursId].validiert);
+           ist er nie geladen worden UND ist die gewaehlte Fassung bekannt (Fall c),
+           wird ihre .blocks-Schwester EINMALIG frisch gelesen — das muss VOR jeder
+           Umbenennung passieren, solange die Datei noch unter ihrem _vN-Namen liegt.
+           Scheitert das Lesen/Parsen, wird die Speisung STILL uebersprungen (Hinweis
+           in der Erfolgsmeldung) — das Gate selbst bricht dafuer nie ab. Im
+           Wiedereinstiegsfall (a)/(b) ohne Cache und ohne bekannte gewaehlt-Datei gibt
+           es schlicht keine erreichbare Quelle mehr — dann bleibt die Liste leer. */
+        function offenePunkteQuelle() {
+          if (adressat !== 'sign-off') return Promise.resolve({ punkte: [], hinweis: null });
+          var cache = state.data.review[kursId];
+          if (cache && cache.validiert) {
+            return Promise.resolve({ punkte: gateOffenePunkteAusGelesen(cache.validiert), hinweis: null });
+          }
+          if (!gewaehlt) return Promise.resolve({ punkte: [], hinweis: null });
+          var blocksName = gateStamm(gewaehlt) + '.blocks';
+          return graph.dateiLesen(kursId, ablage.ordner, blocksName).then(function (text) {
+            if (!text) {
+              return { punkte: [], hinweis: 'Offene Punkte nicht übernommen — Blockdatei nicht lesbar.' };
+            }
+            try {
+              return { punkte: gateOffenePunkteAusGelesen(root.skriptLesen.lies(text)), hinweis: null };
+            } catch (e) {
+              return { punkte: [], hinweis: 'Offene Punkte nicht übernommen — Blockdatei nicht lesbar.' };
+            }
+          });
+        }
+
+        /* Ein Schreiben fuer Status UND (bei Schritt 4) die Offen-Speisung — im
+           SELBEN dossierSchreiben-Mutator, kein zweites Schreiben. Duplikate
+           (identisches "was" bereits in d.offen) werden uebersprungen — ein
+           zweiter Klick auf ein bereits final gesetztes Lieferobjekt darf keine
+           zweiten Punkte anlegen. quelleVorab ist optional: der volle Durchlauf
+           (Fall c) hat die Quelle bereits VOR der Umbenennung gelesen (s. u.) und
+           reicht sie fertig herein, statt sie hier — nach der Umbenennung, wenn
+           die .blocks-Schwester schon _final heisst — ein zweites Mal (und dann
+           zu spaet) zu suchen. */
+        function statusSchreiben(quelleVorab) {
+          var quellePromise = quelleVorab ? Promise.resolve(quelleVorab) : offenePunkteQuelle();
+          return quellePromise.then(function (quelle) {
+            offenHinweis = quelle.hinweis;
+            return controller.dossierSchreiben(kursId, function (kopie) {
+              root.dossier.statusSetzen(kopie, lief, 'final');
+              quelle.punkte.forEach(function (was) {
+                var vorhanden = (kopie.offen || []).some(function (e) { return e.was === was; });
+                if (!vorhanden) {
+                  root.dossier.offenNeu(kopie, { was: was, wo: nachName, fuer: 'schritt-5' });
+                }
+              });
+              return kopie;
+            });
           });
         }
 
@@ -1986,16 +2131,29 @@
           /* (b): Protokoll liegt bereits (der Normalfall unter dieser Reihenfolge, da es
              VOR dem Umbenennen entstand) -> nur noch der Status.
              (a, Randfall): Protokoll fehlt trotzdem — 'von' ist nicht mehr rekonstruierbar,
-             geltendeDatei() liefert ab hier nur noch final selbst zurueck. */
+             geltendeDatei() liefert ab hier nur noch final selbst zurueck.
+             V6: in BEIDEN Faellen kann eine ANDERE Endung (z. B. .blocks) noch bei
+             einer _vN-Fassung stehen — gateNachzugBeiFinal zieht sie pragmatisch nach,
+             BEVOR der Status geschrieben wird. */
           nachName = final;
-          if (protokollDa) return statusSchreiben();
+          var nachzug = gateNachzugBeiFinal(dateien, kursId, lief);
+          /* Wichtig: statusSchreiben() OHNE Argument aufrufen, sonst reicht .then()
+             automatisch den (fuer die Offen-Speisung bedeutungslosen) Rueckgabewert
+             der Umbenennung/Ablage als quelleVorab durch — quelle.punkte waere dann
+             undefined statt eines Arrays. */
+          if (protokollDa) {
+            return gateUmbenennenListe(kursId, ablage.ordner, nachzug)
+              .then(function () { return statusSchreiben(); });
+          }
           var mdRandfall = root.inhalt.gateProtokoll({
             gate: ablage.gate, kursId: kursId, von: 'unbekannt (Wiedereinstieg)', nach: final,
             datum: new Date().toISOString().slice(0, 10),
             person: (state.auth.account && state.auth.account.name) || '',
             zweitpruefung: freigabeDurch, geprueft: geprueft, offen: (d.offen || [])
           });
-          return graph.ablegen(kursId, ablage.ordner, gateDateiName, mdRandfall).then(statusSchreiben);
+          return graph.ablegen(kursId, ablage.ordner, gateDateiName, mdRandfall)
+            .then(function () { return gateUmbenennenListe(kursId, ablage.ordner, nachzug); })
+            .then(function () { return statusSchreiben(); });
         }
 
         /* Z9: die GEWAEHLTE Version (Radio name="gate-version", ansichten.gateFreigabe),
@@ -2003,7 +2161,6 @@
            ohne Mock) oder ohne angehaktes Radio bleibt gewaehlt null — derselbe Fehlerfall
            wie zuvor "keine versionierte Datei". */
         var radios = typeof document !== 'undefined' ? document.querySelectorAll('[name="gate-version"]') : [];
-        var gewaehlt = null;
         Array.prototype.forEach.call(radios, function (r) { if (r.checked) gewaehlt = r.value; });
         if (!gewaehlt) throw new Error('keine Fassung ausgewählt in ' + ablage.ordner);
         /* Fix-Runde Z9 (Review-Finding): gewaehlt kommt aus dem DOM, also aus dem Stand
@@ -2026,6 +2183,14 @@
           return ABGEBROCHEN;
         }
 
+        /* V6: alle Geschwister-Dateien (gleicher Versionsstamm, andere Endung) werden
+           mit umbenannt — Schritt 4 legt docx UND blocks unter demselben _vN-Stamm ab
+           (B5). Bei Schritten mit nur einer Datei je Stamm (2, 7) ist diese Liste
+           immer leer, das Verhalten bleibt exakt wie bisher. */
+        var geschwister = gateGeschwister(dateien, gewaehlt).map(function (x) {
+          return { von: x.name, nach: kursId + '_' + lief + '_final.' + gateEndung(x.name) };
+        });
+
         /* (c): das Protokoll wird IMMER frisch geschrieben (F2) — von ist bekannt, solange
            final noch fehlt, egal ob voller Durchlauf oder Wiedereinstieg. */
         var md = root.inhalt.gateProtokoll({
@@ -2035,8 +2200,17 @@
           zweitpruefung: freigabeDurch, geprueft: geprueft, offen: (d.offen || [])
         });
         return graph.ablegen(kursId, ablage.ordner, gateDateiName, md).then(function () {
-          return graph.umbenennen(kursId, ablage.ordner, gewaehlt, nach);
-        }).then(statusSchreiben);
+          /* Offen-Speisung liest die .blocks-Schwester ueber ihren NOCH GUELTIGEN
+             _vN-Namen — deshalb VOR jeder Umbenennung angestossen (der Aufruf selbst
+             ist ein reiner Lesezugriff, kein Schreiben, blockiert also nichts). */
+          return offenePunkteQuelle();
+        }).then(function (quelleVorab) {
+          return graph.umbenennen(kursId, ablage.ordner, gewaehlt, nach).then(function () {
+            return gateUmbenennenListe(kursId, ablage.ordner, geschwister);
+          }).then(function () {
+            return statusSchreiben(quelleVorab);
+          });
+        });
       }).then(function (ergebnis) {
         laufBeenden();
         if (ergebnis === ABGEBROCHEN) {
@@ -2050,7 +2224,7 @@
            veralteten Stand. Unconditional (nicht nur bei n === '4'): billig,
            kein zweiter Bedingungspfad noetig. */
         delete state.data.review[kursId];
-        state.hinweis = 'Als final bestätigt: ' + nachName + '.';
+        state.hinweis = 'Als final bestätigt: ' + nachName + '.' + (offenHinweis ? ' ' + offenHinweis : '');
         controller.render();
       }).catch(function (e) {
         laufBeenden();

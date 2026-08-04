@@ -4580,3 +4580,99 @@ V2/V4) — ohne das Feld greift auch die Review-Ansicht nirgends live (`ablage.p
 `entschieden[]` aus dieser Ansicht heraus (Leitsatz „die App verwaltet nichts") — die bestehenden
 `dossier.offenNeu`/`offenEntscheiden`/`offenVerschieben`-Funktionen und ihre Controller-Handler
 bleiben unverändert im Dossier, ohne UI-Anbindung an die Review-Ansicht.
+
+## Etappe 4 / Task V6: Gate-Klick — Stamm-Umbenennung + Offen-Speisung (Schritt 4)
+
+`controller.gateKlick` (`app.js`) bekommt zwei Erweiterungen, beide ausschliesslich generisch über
+den Ablage-Kontrakt/den Dateinamen abgeleitet — nichts an Schritt 4 hartkodiert:
+
+**Stamm-Umbenennung.** Schritt 4 legt seit B5/V4 docx UND blocks unter demselben
+`{K}_{lieferobjekt}_vN`-Versionsstamm ab — der Gate-Klick benannte bisher nur die eine, per Radio
+gewählte Datei auf `_final` um; die `.blocks`-Schwester blieb als Altlast bei `_vN` liegen, während
+das docx schon final hiess. Vier neue, private Helfer in `app.js` (Modulscope, vor `var controller =
+{`, Muster `quellenOrdner`): `gateStamm(name)`/`gateEndung(name)` (Dateiname ohne/nur Endung),
+`gateGeschwister(dateien, gewaehlt)` (alle Dateien im frisch gelesenen Ordner mit demselben Stamm
+wie die gewählte Fassung, OHNE sie selbst) und `gateUmbenennenListe(kursId, ordner, liste)` (eine
+`{von,nach}`-Liste sequenziell über `graph.umbenennen`, ein leeres Array durchläuft ohne
+Netzzugriff). Im vollen Durchlauf (Fall c) wird nach der Hauptdatei-Umbenennung
+`gateUmbenennenListe` mit den Geschwistern aufgerufen, Ziel je Geschwister `{K}_{lief}_final.{deren
+eigene Endung}`. **Generisch = rückwärtskompatibel:** Schritt 2/7 (je eine Datei je Stamm) finden
+in `gateGeschwister` nie mehr als die eine bekannte Datei — die komplette bestehende Gate-Testsuite
+blieb dabei unverändert grün, das ist der Beleg.
+
+**Wiedereinstiegsfall (a)/(b):** dort ist `gewaehlt` nicht mehr bekannt — nur die `_final`-Datei der
+Haupt-Endung liegt bereits vor, welche konkrete `_vN`-Version einer ANDEREN Endung (z. B. `.blocks`
+neben einem bereits final gesetzten `.docx`) ursprünglich gewählt war, ist daraus nicht mehr
+eindeutig rekonstruierbar. Pragmatische Regel in `gateNachzugBeiFinal(dateien, kursId, lief)`: fehlt
+für eine Endung noch die `_final`-Umbenennung, wird die HÖCHSTE noch vorhandene `_vN`-Fassung dieser
+Endung nachgezogen — läuft in BEIDEN Idempotenz-Fällen (a: Protokoll fehlt noch, b: Protokoll liegt
+schon), jeweils VOR dem Dossier-Status-Schreiben. Reihenfolge Protokoll-vor-Umbenennen und die
+Idempotenz-Fälle selbst (a/b/c) sind unverändert — der Nachzug ist zusätzlich, kein Ersatz für sie.
+
+**Offen-Speisung (S4/R10).** Nur bei `inhalt.gateAdressat(n) === 'sign-off'` (Schritt 4): die
+offenen Punkte der final werdenden Fassung wandern automatisch als `schritt-5`-Punkte ins Dossier —
+im SELBEN `dossierSchreiben`-Mutator wie `dossier.statusSetzen(kopie, lief, 'final')`, ein
+Schreiben, kein zweites. Quelle, in dieser Reihenfolge: (1) der bereits geladene Review-Cache
+(`state.data.review[kursId].validiert`, V5) — kostet keinen zusätzlichen Netzzugriff; (2) fehlt der
+Cache und ist die gewählte Fassung bekannt (Fall c), wird ihre `.blocks`-Schwester EINMALIG frisch
+gelesen (`graph.dateiLesen` + `root.skriptLesen.lies`) — **zwingend BEVOR irgendeine Umbenennung
+läuft**, solange die Datei noch unter ihrem `_vN`-Namen existiert (danach hiesse sie schon
+`_final.blocks` und wäre unter dem alten Namen nicht mehr lesbar). Scheitert das Lesen oder Parsen,
+wird die Speisung STILL übersprungen — ein Hinweis „Offene Punkte nicht übernommen — Blockdatei
+nicht lesbar." hängt sich an die Erfolgsmeldung an, das Gate selbst bricht dafür NIE ab (die
+Freigabe ist wichtiger als eine vollständige Punkte-Übernahme). Im Wiedereinstiegsfall (a)/(b) ohne
+Cache und ohne bekannte `gewaehlt`-Datei bleibt die Liste schlicht leer, ohne Hinweis — dort gibt es
+keine erreichbare Quelle mehr, das ist kein Lese-/Parse-Fehler.
+
+`gateOffenePunkteAusGelesen(gelesen)` extrahiert aus einem geparsten `skriptLesen.lies()`-Ergebnis
+zwei Sorten Punkte: jede `###OFFEN`-Zeile wörtlich, plus je Kapitel mit
+`validierung.divergenz === 'offen'` ein eigener Punkt „Divergenz offen: {ek} · {titel}". Geschrieben
+wird über `dossier.offenNeu(kopie, {was, wo, fuer:'schritt-5'})` — `wo` ist der Dateiname der final
+werdenden Fassung (`nachName`, die docx-Hauptendung). **Duplikate:** vor jedem `offenNeu`-Aufruf
+prüft der Mutator, ob `kopie.offen` bereits einen Eintrag mit identischem `was` trägt — ein zweiter
+Klick auf ein bereits final gesetztes Lieferobjekt (derselbe Review-Cache-Inhalt erneut geladen)
+legt dieselben Punkte nicht doppelt an. Die bestehende S2-Sperre (`root.dossier.offenFuer(d,
+adressat).length`, ganz am Anfang von `gateKlick`) bleibt unberührt — sie prüft Punkte, die bereits
+AN dieses Gate (`sign-off`) adressiert sind; die neu gespeisten Punkte adressieren `schritt-5` und
+kollidieren damit nie mit sich selbst.
+
+**Eine Falle bewusst vermieden:** `statusSchreiben(quelleVorab)` nimmt die vorab gelesene Quelle als
+optionales Argument entgegen — `.then(statusSchreiben)` (ohne eigenen Wrapper) hätte den
+Rückgabewert der VORHERIGEN Promise (z. B. den Dateinamen von `graph.umbenennen`) automatisch als
+`quelleVorab` durchgereicht, ein String statt `{punkte,hinweis}` hätte `quelle.punkte.forEach`
+mit einem `TypeError` zum Absturz gebracht. Deshalb rufen alle Aufrufer ohne vorab gelesene Quelle
+`statusSchreiben` explizit ohne Argument (`.then(function () { return statusSchreiben(); })`), nur
+der volle Durchlauf (Fall c) reicht die vorab gelesene `quelleVorab` bewusst durch.
+
+**Tests (`test/gate.test.js`, 5 neue Fälle):** voller Durchlauf Schritt 4 benennt docx UND blocks
+gemeinsam um; Schritt-2-Fixture mit einer fremden Zweitdatei im selben Ordner bleibt bei genau einer
+Umbenennung (Rückwärtskompatibilitäts-Beleg, ergänzend zur unverändert grünen Bestandssuite);
+Wiedereinstieg „docx bereits final, blocks noch nicht" zieht nur die blocks-Datei nach, kein
+zweites Protokoll; Offen-Speisung schreibt zwei Punkte (`###OFFEN`-Zeile + Divergenz-offen-Kapitel)
+mit `fuer:'schritt-5'` und `wo` = docx-Zielname, ein zweiter Klick mit demselben Review-Cache legt
+sie nicht doppelt an; Schritt 2 (nicht `sign-off`) ruft `graph.dateiLesen` nie und schreibt keine
+`schritt-5`-Punkte. **826 Tests grün** (Baseline 821 + 5 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** die Geschwister-Umbenennung im
+vollen Durchlauf auf ein festes leeres Array zurückgedreht (`gateUmbenennenListe(kursId,
+ablage.ordner, /* MUTATIONSPROBE */ [])` statt `geschwister`), `node --test test/gate.test.js`:
+```
+ℹ tests 27
+ℹ pass 26
+ℹ fail 1
+
+✖ V6: voller Durchlauf Schritt 4 benennt docx UND blocks (gleicher Versionsstamm) gemeinsam auf _final um
+  AssertionError [ERR_ASSERTION]: erwartet: docx UND blocks umbenannt — [{"von":"DBS-001_content_v3.docx","nach":"DBS-001_content_final.docx"}]
+  1 !== 2
+```
+Genau der eine Stamm-Umbenennungs-Test fiel rot (docx wurde weiterhin umbenannt, blocks nicht mehr),
+alle anderen 26 blieben grün — inklusive der Wiedereinstiegs- und Offen-Speisungs-Tests, die über
+`gateNachzugBeiFinal` bzw. den Review-Cache-Pfad laufen und von dieser Mutation unberührt sind;
+danach wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **826/826 grün**.
+
+**Offen / bewusst nicht Teil dieser Task:** Registerschreiben beim Gate (an derselben Stelle
+verdrahtet) folgt mit V7. Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint führen für
+Schritt 4 weiterhin nicht `pruefung: 'validierung'` (Weg B, unverändert seit V2/V4/V5) — ohne das
+Feld erreicht `controller.gateKlick` den Sign-off-Zweig für Schritt 4 dort nicht anders als heute
+schon (die Stamm-Umbenennung selbst hängt an keinem Kontraktfeld, nur an tatsächlich vorhandenen
+Geschwisterdateien — sie greift auch ohne `pruefung`, sobald Schritt 4 überhaupt ein Gate hat).

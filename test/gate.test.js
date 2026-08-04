@@ -681,3 +681,219 @@ test('offenVerschieben setzt neues Ziel und Begruendung am richtigen Eintrag', a
   assert.match(state.hinweis || '', /Verschoben/);
   delete global.document;
 });
+
+/* ---------- V6 (Etappe 4): gateKlick Schritt 4 — Stamm-Umbenennung + Offen-Speisung ----------
+   Schritt 4 des Fixture-Kontrakts (04_validierung, Lieferobjekt 'content', ext docx,
+   gate 'Sign-off' -> inhalt.gateAdressat('4') === 'sign-off') legt docx UND blocks unter
+   demselben _vN-Versionsstamm ab (B5) — der Gate-Klick muss beim Freigeben BEIDE auf
+   _final drehen (Stamm-Umbenennung) und speist bei diesem Gate zusaetzlich die offenen
+   Punkte der final werdenden Fassung als schritt-5-Punkte ins Dossier (Offen-Speisung). */
+
+test('V6: voller Durchlauf Schritt 4 benennt docx UND blocks (gleicher Versionsstamm) gemeinsam auf _final um', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  /* Review-Cache liegt vor, aber ohne offene Punkte — dieser Test prueft nur die
+     Stamm-Umbenennung, nicht die Offen-Speisung (die hat einen eigenen Test unten). */
+  state.data.review = { 'DBS-001': { validiert: { offen: [], kapitel: [] }, claude: null, chatgpt: null } };
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_content_v3.docx'));
+  controller._bestaetige = function () { return true; };
+  const umbenennungen = [];
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_v3.docx' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) {
+    umbenennungen.push({ von: von, nach: nach });
+    return Promise.resolve(nach);
+  };
+  graph.ablegen = function () { return Promise.resolve({ eTag: 'W/"1"' }); };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.strictEqual(umbenennungen.length, 2,
+    'erwartet: docx UND blocks umbenannt — ' + JSON.stringify(umbenennungen));
+  assert.deepStrictEqual(umbenennungen.map(function (u) { return u.von; }).sort(),
+    ['DBS-001_content_v3.blocks', 'DBS-001_content_v3.docx']);
+  assert.deepStrictEqual(umbenennungen.map(function (u) { return u.nach; }).sort(),
+    ['DBS-001_content_final.blocks', 'DBS-001_content_final.docx']);
+  assert.match(state.hinweis || '', /Als final best.tigt.*DBS-001_content_final\.docx/);
+  delete global.document;
+});
+
+test('V6: Schritt-2-Fixture (eine Datei je Stamm) bleibt Rueckwaertskompatibel — keine Geschwister-Umbenennung', async () => {
+  /* Kein neuer Test noetig fuer den Beleg selbst (die bestehenden Gate-Tests oben
+     bleiben unveraendert gruen), aber dieser Test macht die Aussage aus dem Brief
+     ("Schritt-2-Fixture (eine Datei) -> Verhalten byte-identisch zu heute")
+     ausdruecklich sichtbar: mit einer zweiten, NICHT verwandten Datei im selben Ordner
+     (anderes Lieferobjekt) darf trotzdem nur die gewaehlte Datei selbst umbenannt werden. */
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};
+  state.hinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v3.xlsx'));
+  controller._bestaetige = function () { return true; };
+  const umbenennungen = [];
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_lernziele-drehbuch_v3.xlsx' },
+      { name: 'DBS-001_irgendein-anderes-lieferobjekt_v1.md' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) {
+    umbenennungen.push({ von: von, nach: nach });
+    return Promise.resolve(nach);
+  };
+  graph.ablegen = function () { return Promise.resolve({ eTag: 'W/"1"' }); };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(umbenennungen.length, 1, 'nur die gewaehlte Datei selbst — ' + JSON.stringify(umbenennungen));
+  assert.strictEqual(umbenennungen[0].von, 'DBS-001_lernziele-drehbuch_v3.xlsx');
+  assert.strictEqual(umbenennungen[0].nach, 'DBS-001_lernziele-drehbuch_final.xlsx');
+  delete global.document;
+});
+
+test('V6: Wiedereinstieg Schritt 4 — docx bereits final, blocks noch nicht: nur blocks wird nachgezogen, kein zweites Protokoll', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};
+  state.hinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  const umbenennungen = [];
+  const ablagen = [];
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_final.docx' },
+      { name: '_gate.md' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) {
+    umbenennungen.push({ von: von, nach: nach });
+    return Promise.resolve(nach);
+  };
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    ablagen.push({ ordner: ordner, datei: datei, text: text });
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.strictEqual(umbenennungen.length, 1,
+    'erwartet: nur die noch fehlende blocks-Umbenennung — ' + JSON.stringify(umbenennungen));
+  assert.strictEqual(umbenennungen[0].von, 'DBS-001_content_v3.blocks');
+  assert.strictEqual(umbenennungen[0].nach, 'DBS-001_content_final.blocks');
+  const gateProtokolle = ablagen.filter(function (a) { return a.datei === '_gate.md'; });
+  assert.strictEqual(gateProtokolle.length, 0, 'kein zweites Protokoll — es liegt bereits eins (' + JSON.stringify(ablagen) + ')');
+  const dossierSchreibversuche = ablagen.filter(function (a) { return a.ordner === ''; });
+  assert.strictEqual(dossierSchreibversuche.length, 1);
+  delete global.document;
+});
+
+test('V6: Offen-Speisung — offene Punkte der final werdenden Fassung landen mit fuer="schritt-5" im Dossier-Mutator, beim zweiten Klick nicht doppelt', async () => {
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  const gelesen = {
+    offen: ['Rechtsstand fuer Kapitel 3 pruefen'],
+    kapitel: [
+      { ek: 'AFL-001-EK-002', titel: 'Freizuegigkeit', validierung: { herkunft: 'bestaetigt', divergenz: 'offen' } },
+      { ek: 'AFL-001-EK-003', titel: 'Vorbezug', validierung: { herkunft: 'bestaetigt', divergenz: 'keine' } }
+    ]
+  };
+  state.data.review = { 'DBS-001': { validiert: gelesen, claude: null, chatgpt: null } };
+  state.hinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_content_v3.docx'));
+  controller._bestaetige = function () { return true; };
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_v3.docx' },
+      { name: 'DBS-001_content_v3.blocks' }
+    ]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) { return Promise.resolve(nach); };
+  let dossierText = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    if (ordner === '') dossierText = text;
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.ok(dossierText, 'der Dossier-Schreiber wurde nicht aufgerufen');
+  const d1 = JSON.parse(dossierText);
+  assert.strictEqual(d1.offen.length, 2, JSON.stringify(d1.offen));
+  assert.deepStrictEqual(d1.offen[0],
+    { was: 'Rechtsstand fuer Kapitel 3 pruefen', wo: 'DBS-001_content_final.docx', fuer: 'schritt-5' });
+  assert.deepStrictEqual(d1.offen[1],
+    { was: 'Divergenz offen: AFL-001-EK-002 · Freizuegigkeit', wo: 'DBS-001_content_final.docx', fuer: 'schritt-5' });
+  assert.strictEqual(d1.status.content, 'final');
+  assert.strictEqual(state.data.dossier['DBS-001'].offen.length, 2,
+    'der State wurde nach dem Schreiben nicht aktualisiert');
+
+  /* Zweiter Klick: die Fassung ist jetzt final, das Dossier traegt die beiden Punkte
+     bereits (state.data.dossier wurde nach dem ersten Schreiben aktualisiert) — der
+     Review-Cache (neu geladen, wie es die echte Review-Ansicht taete) liefert dieselben
+     zwei Punkte erneut, sie duerfen NICHT doppelt entstehen. */
+  state.data.review = { 'DBS-001': { validiert: gelesen, claude: null, chatgpt: null } };
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } });
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([
+      { name: 'DBS-001_content_final.docx' },
+      { name: '_gate.md' },
+      { name: 'DBS-001_content_final.blocks' }
+    ]);
+  };
+  let dossierText2 = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    if (ordner === '') dossierText2 = text;
+    return Promise.resolve({ eTag: 'W/"3"' });
+  };
+
+  await controller.gateKlick('4', { disabled: false });
+
+  assert.ok(dossierText2, 'der Dossier-Schreiber wurde beim zweiten Klick nicht aufgerufen');
+  const d2 = JSON.parse(dossierText2);
+  assert.strictEqual(d2.offen.length, 2,
+    'beim zweiten Klick duerfen keine Duplikate entstehen — ' + JSON.stringify(d2.offen));
+  delete global.document;
+});
+
+test('V6: ohne Review-Cache und ohne S2-Sperre (Schritt 2) bleibt die Offen-Speisung stumm — kein graph.dateiLesen-Aufruf', async () => {
+  /* gateAdressat('2') === 'gate-1', nicht 'sign-off' — offenePunkteQuelle() darf fuer
+     Schritt 2 gar nicht erst versuchen, eine .blocks-Datei zu lesen (die es dort auch
+     gar nicht gibt). */
+  setzeKursMitInhalt();
+  state.data.dossier = { 'DBS-001': dossierMit([]) };
+  state.data.dossierETag = {};
+  state.data.review = {};
+  state.hinweis = null;
+  elsGate({ 'gate-zweitpruefung': { value: 'N. N.' } }, radioGewaehlt('DBS-001_lernziele-drehbuch_v3.xlsx'));
+  controller._bestaetige = function () { return true; };
+  let dateiLesenGerufen = false;
+  graph.dateiLesen = function () { dateiLesenGerufen = true; return Promise.resolve(null); };
+  graph.ordnerInhalt = function () {
+    return Promise.resolve([{ name: 'DBS-001_lernziele-drehbuch_v3.xlsx' }]);
+  };
+  graph.umbenennen = function (kursId, ordner, von, nach) { return Promise.resolve(nach); };
+  let dossierText = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    if (ordner === '') dossierText = text;
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.gateKlick('2', { disabled: false });
+
+  assert.strictEqual(dateiLesenGerufen, false, 'Schritt 2 haette nie versuchen duerfen, eine .blocks-Datei zu lesen');
+  assert.ok(dossierText, 'der Dossier-Schreiber wurde nicht aufgerufen');
+  const d = JSON.parse(dossierText);
+  assert.strictEqual((d.offen || []).length, 0, 'Schritt 2 darf keine schritt-5-Punkte anlegen');
+  delete global.document;
+});
