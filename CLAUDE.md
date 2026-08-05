@@ -4993,6 +4993,27 @@ der Rückfall-Pfad (die dokumentweite Leseliste) — kein reales Fixture/kein re
 befüllt `###ZUORDNUNG` bisher mit Q-IDs statt einem freien „wie Contract"-Text; `qIdsFuerEk` ist
 darauf vorbereitet, sobald sich das ändert, ohne dass register.js selbst angepasst werden müsste.
 
+## Stand 2026-08-05 — Etappe 4 abgeschlossen und abgenommen
+
+**Abnahme (Meta §7) erfüllt am 2026-08-05 durch Markus an VL-002:** Sign-off-Klick auf die
+validierte Fassung v4 an der Review-Ansicht — per Graph zurückgelesen: `_final.docx` +
+`_final.blocks` (Stamm-Umbenennung V6), `_gate.md`, Dossier `status.content=final`, **32
+offene Punkte als Daten ins Dossier gespeist (`fuer: schritt-5`)**, Register
+`_zentral/register.json` mit 13 VL-002-Zeilen auf `final`, KWKurse auf Schritt 5. Die
+validierte Fassung entstand über den **Claude-Code-Weg** (bauspec, Prüfung gegen die 18
+Altmaterial-PDFs; drei substanzielle Zahlen-Korrekturen, 1 offene Divergenz EK-002, 9
+belegte [NEU]-Ergänzungen, `content-abnahme.cjs` Exit 0); die GPT-Fassungen v1/v2 liegen
+als Doppelprobe daneben. Layout: `reference.docx` = Kandidat G (L1). **865 Tests grün**
+(Werkzeuge 377). Protokoll:
+`../IT_Architektur_bbz/output/2026-08-04-etappe-4-ausfuehrungsprotokoll.md`.
+
+**Offen nach Etappe 4 (Kern):** Debug-Task Livebefund 3 — drei von vier Schritt-4-Uploads
+schrieben `status.content`/Register STILL nicht (nicht deterministisch; Zustand von Hand
+konsistent nachgeführt; Ursache offen) · Gate-/Schritt-4-Bedienführung („wirr"-Feedback
+Markus; leises Pflichtfeld-Feedback am Gate — B9-F3-Klasse) · Batch-Regelwechsel im
+content-Prompt fertig+getestet, SharePoint-Publish wartet auf Freigabe · guide-2b:
+Altmaterial-Handgriff prominenter (GPT validierte ohne Altmaterial im Projekt).
+
 ## Fixwave nach dem Etappe-4-Gesamt-Review (2026-08-04): I-1, I-2, I-3, M-1, M-2
 
 Ein unabhängiger Review der ganzen Etappe 4 (beide Bäume) fand drei Important-Findings plus zwei
