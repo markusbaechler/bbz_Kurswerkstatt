@@ -1398,6 +1398,22 @@
         punkteSchritt5.forEach(function (e) { z.push('- ' + e.was); });
         z.push('Übernimm jeden Punkt GENAU in ###PUNKTE und versieh ihn mit entscheid: ODER ' +
                'verschieben: + begruendung: — lass keinen aus, erfinde keinen dazu.');
+        /* F1 (Etappe 6, Livebefund 2026-08-06): 25x stand ein Prosa-Ziel
+           ("Schritt 7 (Gate 2 · Fach-Review)") statt des Slugs gate-2 in
+           verschieben: — die 25x-Lehre: was die KI schreiben soll, steht
+           AUFGEZAEHLT im Prompt, nicht nur abgewiesen im Gate. Die Liste
+           kommt als Daten herein (extras.ziele = dossier.ZIELE, befuellt
+           vom kopieren-Handler in app.js — inhalt.js kennt dossier.js
+           nicht, dieselbe Konvention wie extras.palette). schritt-5 selbst
+           ist kein gueltiges Ziel (didaktikPruefe R3) und wird deshalb aus
+           der Aufzaehlung gefiltert; der ausser-Zusatz sagt es zusaetzlich
+           ausdruecklich. Ohne extras.ziele bleibt die Zeile weg — die
+           Funktion raet nie (T13-Muster). */
+        if (Array.isArray(extras.ziele) && extras.ziele.length) {
+          z.push('Gültige verschieben:-Ziele (GENAU diese Slugs, nichts anderes): ' +
+                 extras.ziele.filter(function (s) { return s !== 'schritt-5'; }).join(', ') +
+                 ' — ausser schritt-5 selbst.');
+        }
       }
 
       z.push('');

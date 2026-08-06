@@ -5901,3 +5901,79 @@ blieb im Environment-Gate — nach der Störung neu anstossen; bis dahin servier
 Contract — Anzeige-Bug, Daten vollständig) · UI-Task Bedienführung (vierter Fall der
 „wirkt erledigt, ist es aber nicht"-Klasse: Datei wählen ≠ hochladen) · I-1 (R3-Meldung
 „bereits behandelt?") · D1-Minor Folgezeilen-Regel. Details im Ledger und im Protokoll.
+
+## Etappe 6 / Fast-Follow F1: Verschiebe-Ziel-Aufzählung — die Slugs stehen jetzt im Prompt
+
+**Livebefund 2026-08-06 (Etappe-5-Abnahme, 25×):** die erste Contracts-Lieferung trug in
+`###PUNKTE` 25-mal dasselbe Formproblem — das `verschieben:`-Ziel als Prosa („Schritt 7 (Gate 2
+· Fach-Review)") statt des Slugs `gate-2`. Die Abnahme wies das korrekt ab (R3), aber kein
+Prompt-Baustein hatte die gültigen Ziele je AUFGEZÄHLT — die 25×-Lehre: alles, was die KI
+schreiben soll, muss im Prompt aufgezählt sein, nicht nur im Gate abgewiesen (dieselbe Klasse
+wie F1/Etappe 3b: `skriptPruefe` verlangte, was kein Prompt einforderte).
+
+**App: `inhalt.didaktikPromptKopf` — neue Zeile im PUNKTE-Block, `extras.ziele` additiv.**
+Direkt nach der Übernahme-Anweisung steht seither „Gültige verschieben:-Ziele (GENAU diese
+Slugs, nichts anderes): gate-1, sign-off, gate-2, schritt-3, schritt-4, schritt-6, schritt-7,
+schritt-8 — ausser schritt-5 selbst." Die Liste kommt als **Daten** herein (`extras.ziele`,
+Muster `extras.palette` — `inhalt.js` kennt `dossier.js` nicht): der `kopieren`-Handler in
+`app.js` (Schritt-5-Zweig) befüllt sie aus `root.dossier.ZIELE`, der einen Quelle.
+`schritt-5` selbst wird aus der Aufzählung GEFILTERT (ein Punkt kann nicht an sich selbst
+verschoben werden — dieselbe Regel wie `didaktikPruefe` R3); der ausser-Zusatz sagt es
+zusätzlich ausdrücklich. Ohne `extras.ziele` bleibt die Zeile weg (die Funktion rät nie,
+T13-Muster); ohne `schritt-5`-Punkte gibt es ohnehin keinen PUNKTE-Block, also auch keine
+Ziel-Zeile.
+
+**Werkzeug-Baum (kein Git — `_verlauf`-Kopie
+`_verlauf/didaktik-inhaltskontrakt_vor-etappe6-f1.txt` vor der Änderung angelegt):** der
+`--- PUNKTE ---`-Abschnitt von `didaktik-inhaltskontrakt.txt` zählt dieselben Slugs wörtlich
+auf, inklusive des Prosa-Ziel-Verbots mit dem echten Livebefund als Negativbeispiel („nie ein
+Prosa-Ziel wie „Schritt 7 (Gate 2 · Fach-Review)""); die `verschieben:`-Gerüstzeile verweist
+auf die Liste statt nur auf „ein gültiges Ziel". **`build-didaktik.cjs` bekommt einen
+Selbstprüfungs-Wächter** (Muster `katalog:`-Wächter/Batch-Regel): fehlt die Slug-Aufzählung
+oder die ausser-schritt-5-Klausel in einer generierten Chat-Fassung ODER der Bauspec → Befund,
+nichts geschrieben. Kanonische Quelle der Slugs ist `require('./didaktik-abnahme.cjs').ZIELE`
+(die dort gepinnte `dossier.ZIELE`-Kopie), nie von Hand nachgezählt; verglichen wird
+whitespace-normalisiert (die Quelldatei bricht bei ~100 Zeichen um, Muster `BATCH_MARKER`).
+Generator produktiv gelaufen, alle drei Fassungen gegengelesen (Aufzählung in
+claude/chatgpt/bauspec vorhanden, Dateigrössen 14816/14630/14546/33999 B).
+
+**Tests:** `test/didaktikkopf.test.js` (App, 1 neuer Fall) — mit `extras.ziele =
+dossier.ZIELE` steht die Aufzählung wörtlich (ohne `schritt-5` in der Liste), ohne
+`extras.ziele` fehlt sie, ohne `schritt-5`-Punkte fehlt sie ebenfalls.
+`test/build-didaktik.test.js` (Werkzeuge, 1 neuer Fall) — beide Chat-Fassungen UND die Bauspec
+tragen die Aufzählung (aus `didaktik-abnahme.cjs` gelesen, `deepStrictEqual`-Pin auf den
+Wortlaut der Liste), die ausser-Klausel und das Prosa-Ziel-Verbot. **App: 918 Tests grün**
+(Baseline 917 + 1). **Werkzeuge: 457 Tests grün** (Baseline 456 + 1).
+
+**Mutationsprobe App (tatsächlich ausgeführt):** die neue Aufzählungs-Zeile in
+`didaktikPromptKopf` auf `if (/* MUTATIONSPROBE */ false && …)` gesetzt, `node --test
+test/didaktikkopf.test.js`:
+```
+ℹ pass 4
+ℹ fail 1
+✖ F1 (Etappe 6): mit extras.ziele zaehlt der PUNKTE-Block die gueltigen verschieben:-Ziele
+  als Slugs woertlich auf — ohne extras.ziele fehlt die Zeile
+```
+Genau der eine neue Test fiel rot, die vier anderen blieben grün; danach wiederhergestellt,
+komplette Suite: `node --test` → **918/918 grün**.
+
+**Mutationsprobe Werkzeuge (tatsächlich ausgeführt):** die Aufzählung probeweise aus der
+Quelldatei entfernt, `node build-didaktik.cjs`:
+```
+BEFUNDE — nichts geschrieben:
+  claude: die Verschiebe-Ziel-Slug-Aufzaehlung ("gate-1, sign-off, gate-2, schritt-3,
+  schritt-4, schritt-6, schritt-7, schritt-8") fehlt (F1)
+  claude: die ausser-schritt-5-Klausel der Verschiebe-Ziele fehlt (F1)
+  chatgpt: … (dieselben zwei Befunde)
+  bauspec: die Verschiebe-Ziel-Slug-Aufzaehlung fehlt (F1)
+```
+Der Generator brach mit Exit 1 ab, nichts wurde geschrieben; danach die Quelldatei aus der
+Sicherung wiederhergestellt (diff leer, byte-identisch), Generator erneut produktiv gelaufen
+(identische Dateigrössen), Tools-Suite: `node --test test/*.test.js` → **457/457 grün**.
+
+**Offen / bewusst nicht Teil von F1:** die generierten `prompt-didaktik`-Fassungen und
+`guide-3` liegen auch LIVE in SharePoint (`werkzeuge.json`, seit D8) — das Publizieren der
+neuen Fassungen ist ein separater, freigabepflichtiger Schritt (Freigabe Markus, Muster
+Etappe-2-Task-8-Nachzug) und nicht Teil dieser Task. Bis dahin trägt der GESETZT-Kopf der
+Kurswerkstatt (App-seitig, sofort mit dem nächsten Deploy) die Aufzählung bereits — der
+Masterprompt in SharePoint zieht mit der Publikation nach.

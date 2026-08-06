@@ -4139,6 +4139,13 @@
             if (root.didaktikSchema && Array.isArray(root.didaktikSchema.PALETTE)) {
               extras6.palette = root.didaktikSchema.PALETTE;
             }
+            /* ziele: root.dossier.ZIELE — dieselbe Daten-statt-Modul-Konvention
+               wie palette direkt darueber (F1, Etappe 6): der PUNKTE-Block
+               zaehlt die gueltigen verschieben:-Ziele als Slugs woertlich auf
+               (25x-Lehre, Livebefund 2026-08-06 — Prosa-Ziel statt gate-2). */
+            if (root.dossier && Array.isArray(root.dossier.ZIELE)) {
+              extras6.ziele = root.dossier.ZIELE;
+            }
             text2 = root.inhalt.didaktikPromptKopf(kurs6, d6, extras6) + text2;
           }
         }

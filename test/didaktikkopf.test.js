@@ -90,6 +90,35 @@ test('ohne Dossier gibt es keinen Kopf', () => {
   }), '');
 });
 
+test('F1 (Etappe 6): mit extras.ziele zaehlt der PUNKTE-Block die gueltigen verschieben:-Ziele ' +
+     'als Slugs woertlich auf — ohne extras.ziele fehlt die Zeile', () => {
+  const d = dossier.neu('AFL-001');
+  d.regulatorik = { stand: '1.1.2026' };
+  dossier.offenNeu(d, { was: 'EK-002: Zahl pruefen', wo: 'x', fuer: 'schritt-5' });
+  const kurs = { kursId: 'AFL-001' };
+
+  /* Die Liste kommt woertlich aus dossier.ZIELE (die eine Quelle) — schritt-5
+     selbst ist kein gueltiges Verschiebe-Ziel (didaktikPruefe R3) und darf in
+     der Aufzaehlung nicht stehen. */
+  const mit = inhalt.didaktikPromptKopf(kurs, d, { ziele: dossier.ZIELE });
+  assert.ok(mit.includes('Gültige verschieben:-Ziele (GENAU diese Slugs, nichts anderes): ' +
+    'gate-1, sign-off, gate-2, schritt-3, schritt-4, schritt-6, schritt-7, schritt-8 — ' +
+    'ausser schritt-5 selbst.'),
+    'die Slug-Aufzaehlung fehlt woertlich (oder schritt-5 steht in der Liste)');
+
+  const ohne = inhalt.didaktikPromptKopf(kurs, d, {});
+  assert.ok(!ohne.includes('Gültige verschieben:-Ziele'),
+    'ohne extras.ziele darf die Zeile nicht stehen — die Funktion raet nie');
+
+  /* Ohne schritt-5-Punkte gibt es keinen PUNKTE-Block — auch die Ziel-Zeile
+     bleibt dann weg, selbst wenn ziele mitkommen. */
+  const d2 = dossier.neu('AFL-001');
+  d2.regulatorik = { stand: '1.1.2026' };
+  const ohnePunkte = inhalt.didaktikPromptKopf(kurs, d2, { ziele: dossier.ZIELE });
+  assert.ok(!ohnePunkte.includes('Gültige verschieben:-Ziele'),
+    'ohne PUNKTE-Block keine Ziel-Zeile');
+});
+
 test('ohne schritt-5-Punkte fehlt der PUNKTE-Block ganz', () => {
   const d = dossier.neu('AFL-001');
   d.regulatorik = { stand: '1.1.2026' };
