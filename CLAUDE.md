@@ -5873,3 +5873,31 @@ SharePoint führen für Schritt 5 weiterhin nicht `pruefung: 'interaktion'`/`ext
 unverändert seit D2) — ohne diese Felder war der C-1-Bug dort ohnehin nie live erreichbar; diese
 Fixwave schliesst die Lücke trotzdem jetzt, bevor D7/D8 den Kontrakt nachziehen. D7 (Tools-Baum)
 und D8 (SharePoint-Nachzug, Freigabe Markus) bleiben unverändert offen, s. o.
+**[Nachtrag noch am 2026-08-06: D8 ist ausgeführt — der Absatz oben beschreibt den Stand VOR dem
+Nachzug; seit D8 führt SharePoint die Felder live, s. „Stand 2026-08-06" unten.]**
+
+## Stand 2026-08-06 — Etappe 5 abgeschlossen und abgenommen
+
+**Abnahme (Meta §7 „Contracts maschinell lesbar; Schritt-6-Probe liest sie ohne Rückfrage")
+erfüllt am 2026-08-06 durch Markus an VL-002:** regulärer Datei-Upload durch die Werkstatt,
+per Graph frisch zurückgelesen — `05_didaktik/VL-002_umsetzung_v2.blocks` (geltend, 13
+Interaktions-Contracts über alle 13 EK, Typ-Streuung ohne eine einzige fliesstext-Ausnahme),
+**alle 32 offenen Dossier-Punkte zurückgeschrieben** (7 entschieden mit Entscheid-Text,
+`wer` aus dem echten MSAL-Konto; 25 begründet an `gate-2` verschoben; `offen[schritt-5]` = 0),
+KWKurse Schritt 5/inArbeit; `node didaktik-lesen.cjs` auf der geltenden Fassung Exit 0, 0
+Fehler, keine Rückfrage. Die ungeprüfte v1 (Text-Feld-Weg, s. u.) liegt mit Freigabe im
+Papierkorb. **917 Tests grün** (Werkzeuge 456). D8-SharePoint-Nachzug live (Kontrakt S5:
+`ext blocks` · `pruefung interaktion` · `wege +hochladen`; `prompt-didaktik`/`guide-3` neu,
+`tpl-baustein` raus; Rückwege `_zentral/_verlauf-2026-08-06/*_vor-etappe5.json`). Protokoll:
+`../IT_Architektur_bbz/output/2026-08-06-etappe-5-ausfuehrungsprotokoll.md` · Ledger:
+`.superpowers/sdd/2026-08-06-etappe-5-plan/progress.md`.
+
+**Offene Fast-Follows nach Etappe 5:** Deploy `10b8bc9` (Fixwave inkl. C-1) hängt an einer
+GitHub-Grossstörung (Actions+Pages major outage; Push-Läufe wurden nicht erzeugt, Dispatch
+blieb im Environment-Gate — nach der Störung neu anstossen; bis dahin serviert Pages
+`0ca72bc` MIT sichtbarem Text-Feld auf Schritt 5) · Verschiebe-Ziel-Aufzählung in
+`didaktik-inhaltskontrakt.txt` + `didaktikPromptKopf` (Livebefund: 25× Prosa-Ziel statt
+`gate-2`-Slug) · Contracts-Ansicht zeigt die Feldwerte nicht (8 leere Aufzählungspunkte je
+Contract — Anzeige-Bug, Daten vollständig) · UI-Task Bedienführung (vierter Fall der
+„wirkt erledigt, ist es aber nicht"-Klasse: Datei wählen ≠ hochladen) · I-1 (R3-Meldung
+„bereits behandelt?") · D1-Minor Folgezeilen-Regel. Details im Ledger und im Protokoll.
