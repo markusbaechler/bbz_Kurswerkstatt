@@ -427,6 +427,47 @@ test('Schritt 4 zeigt den Kasten, wenn beide Varianten liegen, der Contract aber
   assert.match(html, /Schritt 4 braucht beide Skript-Varianten/);
 });
 
+/* ---------- D4, Etappe 5: Schritt 5 startet erst nach dem Sign-off (Schritt 4) ---------- */
+
+test('Schritt 5 zeigt den Kasten, solange die _final-Fassung des Contents (Schritt 4) fehlt', () => {
+  const lieferobjekt4 = INHALT['ablage-kontrakt'].schritte['4'].lieferobjekt;
+  const props = {
+    dossier: {
+      dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+      quellen: [], status: {}, offen: [], entschieden: []
+    },
+    dateien04: [{ name: `DBS-001_${lieferobjekt4}_v3.docx` }]  /* kein _final */
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /Kein freigegebener Content/);
+  assert.match(html, /class="box achtung"/, 'dieselbe Kasten-Optik wie die Schritt-2\/3\/4-Kaltstart-Hinweise fehlt');
+  assert.match(html, /Sign-off \(Schritt 4\)/);
+});
+
+test('Schritt 5 zeigt KEINEN Kasten, wenn die _final-Fassung des Contents (Schritt 4) vorliegt', () => {
+  const lieferobjekt4 = INHALT['ablage-kontrakt'].schritte['4'].lieferobjekt;
+  const props = {
+    dossier: {
+      dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+      quellen: [], status: {}, offen: [], entschieden: []
+    },
+    dateien04: [{ name: `DBS-001_${lieferobjekt4}_final.docx` }]
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.doesNotMatch(html, /Kein freigegebener Content/);
+});
+
+test('Schritt 5 zeigt den Kasten, wenn dateien04 gar nicht geladen ist (undefined)', () => {
+  const props = {
+    dossier: {
+      dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+      quellen: [], status: {}, offen: [], entschieden: []
+    }
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /Kein freigegebener Content/);
+});
+
 test('die Anleitung steht ausgeklappt da, nicht als Klappe', () => {
   const h = ansichten.einSchritt(INHALT, DBS, 3, null);
   assert.ok(/So gehst du vor/.test(h));

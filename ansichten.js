@@ -1034,6 +1034,29 @@
       }
     }
 
+    /* D4, Etappe 5: Schritt 5 (Didaktik/Interaktions-Contracts) startet erst
+       NACH dem Sign-off aus Schritt 4 — ohne die _final-Fassung des Contents
+       gibt es nichts zu uebersetzen. Datei-basiert wie der V3-Contract-Kasten
+       oben (finalVorhanden auf dem 04_validierung-Cache), NICHT ueber den
+       Dossier-Status (derselbe Grund wie bei Schritt 4: Schritt 4 hat zwar
+       ein Gate, aber die Kasten-Logik der Etappe bleibt einheitlich
+       datei-basiert). KEIN Disable der Knoepfe (Muster A3/V3: Altkurse/
+       laufende Migrationen muessen weiterarbeiten koennen). Lieferobjekt
+       kommt aus ablageVon('4', ...) — nie 'content' hartkodiert, sonst
+       veraltet der Kasten, sobald der Kontrakt das Lieferobjekt umbenennt. */
+    if (String(schrittId) === '5') {
+      var kursId5 = kurs ? kurs.kursId : '<Kurs>';
+      var ablage4Fuer5 = I().ablageVon(inh, '4', kursId5);
+      var lieferobjekt4Fuer5 = ablage4Fuer5 ? ablage4Fuer5.lieferobjekt : null;
+      var dateien04Kasten = Array.isArray(ablageDaten.dateien04) ? ablageDaten.dateien04 : null;
+      var contentFinal5 = !!(lieferobjekt4Fuer5 && dateien04Kasten &&
+        I().finalVorhanden(dateien04Kasten, kursId5, lieferobjekt4Fuer5));
+      if (!contentFinal5) {
+        h += '<div class="box achtung"><span class="bt">Kein freigegebener Content</span>' +
+             'Schritt 5 braucht die <code>_final</code>-Fassung aus dem Sign-off (Schritt 4).</div>';
+      }
+    }
+
     /* Das Werkzeug steht direkt nach der Anleitung, die es erwaehnt —
        nicht hinter den Leitplanken. Der Masterprompt zuerst. */
     if (hilfsmittel.length) {

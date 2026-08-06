@@ -1208,6 +1208,13 @@
         var ab2Fuer4 = (k && String(p.schrittId) === '4') ? root.inhalt.ablageVon(inh, '2', k.kursId) : null;
         var dateien03Fuer4 = ab3Fuer4 ? state.data.dateien[k.kursId + '/' + ab3Fuer4.ordner] : null;
         var dateien02Fuer4 = ab2Fuer4 ? state.data.dateien[k.kursId + '/' + ab2Fuer4.ordner] : null;
+        /* D4, Etappe 5: Schritt 5 braucht zusaetzlich die Dateiliste aus
+           Schritt 4 (04_validierung) — fuer den Kaltstart-Kasten
+           (ansichten.js) UND den kopieren-Handler-Zweig unten. Ordner kommt
+           aus ablageVon, nichts hartkodiert (Muster ab3Fuer4/ab2Fuer4 oben).
+           Nur berechnet, wenn Schritt 5 aktiv ist. */
+        var ab4Fuer5 = (k && String(p.schrittId) === '5') ? root.inhalt.ablageVon(inh, '4', k.kursId) : null;
+        var dateien04Fuer5 = ab4Fuer5 ? state.data.dateien[k.kursId + '/' + ab4Fuer5.ordner] : null;
         controller.setz(meldung + root.ansichten.einSchritt(inh, k, p.schrittId, p.werkzeugId, {
           basisUrl: ordn ? ordn.webUrl : null,
           dateien: schl ? state.data.dateien[schl] : null,
@@ -1243,6 +1250,9 @@
              Kasten in ansichten.js prueft beide Caches. */
           dateien03: dateien03Fuer4,
           dateien02: dateien02Fuer4,
+          /* D4, Etappe 5: nur auf Schritt 5 gefuellt (s. o.) — der
+             Kaltstart-Kasten in ansichten.js prueft finalVorhanden darauf. */
+          dateien04: dateien04Fuer5,
           /* V5, Etappe 4: die geparsten .blocks fuer die Review-Ansicht (nur
              Schritt 4 relevant, s. controller.reviewNachladen unten). */
           review: k ? (state.data.review[k.kursId] || null) : null
@@ -1264,6 +1274,13 @@
         if (k && String(p.schrittId) === '4') {
           if (ab3Fuer4) controller.ordnerNachladen(k.kursId, ab3Fuer4.ordner);
           if (ab2Fuer4) controller.ordnerNachladen(k.kursId, ab2Fuer4.ordner);
+        }
+        /* D4, Etappe 5: Schritt 5 erbt aus Schritt 4 (der freigegebene
+           Content) — dieselbe Begruendung wie beim Schritt-3-/Schritt-4-
+           Nachladen oben, hier nur ein Ordner (Schritt 4 fuehrt kein
+           Varianten-Paar wie Schritt 3). */
+        if (k && String(p.schrittId) === '5') {
+          if (ab4Fuer5) controller.ordnerNachladen(k.kursId, ab4Fuer5.ordner);
         }
         /* V5, Etappe 4: Schritt 4 zeigt die Review-Ansicht — sie braucht die
            geparsten .blocks aus 04_validierung UND 03_content (beide
@@ -1291,9 +1308,14 @@
            kopieren-Handler stellt lernzielePromptKopf voran — beides ohne
            geladenes Dossier unmoeglich. Schritt 4 (V3, Etappe 4) ebenso: der
            kopieren-Handler stellt contentPromptKopf voran, und ohne Dossier
-           gibt es keinen Kopf (contentPromptKopf liefert dann ''). */
+           gibt es keinen Kopf (contentPromptKopf liefert dann ''). Schritt 5
+           (D4, Etappe 5) ebenso: der kopieren-Handler stellt
+           didaktikPromptKopf voran, und ohne Dossier gibt es keinen Kopf
+           (didaktikPromptKopf liefert dann '', ebenso fehlen die
+           regulatorikZeilen UND die an schritt-5 adressierten Punkte). */
         if (k && (String(p.schrittId) === '1' || String(p.schrittId) === '2' ||
-                  String(p.schrittId) === '3' || String(p.schrittId) === '4') &&
+                  String(p.schrittId) === '3' || String(p.schrittId) === '4' ||
+                  String(p.schrittId) === '5') &&
             state.data.ordner[k.kursId]) {
           controller.dossierNachladen(k.kursId);
         }
@@ -3747,6 +3769,58 @@
               }
             }
             text2 = root.inhalt.contentPromptKopf(kurs5, d5, extras5) + text2;
+          }
+        }
+        /* Schritt 5 (D4, Etappe 5): Titel/Kompetenzfeld/Rechtsstand wie
+           Schritt 2/3/4 — zusaetzlich die geltende content_final.blocks aus
+           dem Sign-off (Schritt 4), Version/Zielname des eigenen
+           Lieferobjekts und die Interaktionstyp-Palette (root.didaktikSchema,
+           die eine Quelle — inhalt.js bekommt sie als Daten hereingereicht,
+           kennt didaktik-schema.js selbst nicht). T13/A3/V3-Muster: jedes
+           Extra kommt aus einem bereits geladenen Cache (ordnerNachladen
+           fuer 04_validierung, s. controller.render()), nichts wird geraten. */
+        if (String(state.position.schrittId) === '5' && w.type === 'prompt') {
+          var kurs6 = nav.kurs();
+          var d6 = kurs6 ? state.data.dossier[kurs6.kursId] : null;
+          if (d6 && typeof d6 === 'object') {
+            var inh6 = state.data.inhalt;
+            var extras6 = {};
+            /* basiertAuf: die geltende content_final.blocks — geltende .docx
+               (geltendeDatei), aber NUR wenn finalVorhanden (Schritt 5 darf
+               nur gegen den freigegebenen Sign-off-Stand starten, nie gegen
+               einen blossen Entwurf); Endung getauscht (B5-Invariante: docx
+               und blocks teilen denselben Stamm). */
+            var ab4Kopieren6 = root.inhalt.ablageVon(inh6, '4', kurs6.kursId);
+            if (ab4Kopieren6 && ab4Kopieren6.lieferobjekt) {
+              var dateien4Kopieren6 = state.data.dateien[kurs6.kursId + '/' + ab4Kopieren6.ordner];
+              if (Array.isArray(dateien4Kopieren6) &&
+                  root.inhalt.finalVorhanden(dateien4Kopieren6, kurs6.kursId, ab4Kopieren6.lieferobjekt)) {
+                var docx4Kopieren6 = root.inhalt.geltendeDatei(dateien4Kopieren6, kurs6.kursId, ab4Kopieren6.lieferobjekt);
+                if (docx4Kopieren6) extras6.basiertAuf = docx4Kopieren6.replace(/\.[a-z0-9]+$/i, '.blocks');
+              }
+            }
+            /* version/zielname: das eigene Schritt-5-Lieferobjekt im
+               05_didaktik-Ordner — der Zielname traegt bereits die
+               .blocks-Endung ueber den Kontrakt (ext: 'blocks'), kein
+               Endungstausch noetig (anders als bei Schritt 3/4, wo das
+               GEBAUTE Ablageformat docx bleibt und der Prompt-Name die
+               Endung tauscht). */
+            var ab5Kopieren6 = root.inhalt.ablageVon(inh6, '5', kurs6.kursId);
+            if (ab5Kopieren6 && ab5Kopieren6.lieferobjekt) {
+              var dateien5Kopieren6 = state.data.dateien[kurs6.kursId + '/' + ab5Kopieren6.ordner];
+              if (Array.isArray(dateien5Kopieren6)) {
+                extras6.version = root.inhalt.naechsteVersion(dateien5Kopieren6, kurs6.kursId, ab5Kopieren6.lieferobjekt);
+                var ziel6 = root.inhalt.hochladeZiel(inh6, '5', kurs6.kursId, dateien5Kopieren6);
+                if (ziel6) extras6.zielname = ziel6.datei;
+              }
+            }
+            /* palette: root.didaktikSchema.PALETTE — die eine Quelle
+               (Konvention: Daten statt Modul-Import, s. Funktionskopf von
+               inhalt.didaktikPromptKopf). */
+            if (root.didaktikSchema && Array.isArray(root.didaktikSchema.PALETTE)) {
+              extras6.palette = root.didaktikSchema.PALETTE;
+            }
+            text2 = root.inhalt.didaktikPromptKopf(kurs6, d6, extras6) + text2;
           }
         }
         kopieren(text2, t);

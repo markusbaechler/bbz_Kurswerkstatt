@@ -1313,6 +1313,102 @@
       return z.join('\n');
     },
 
+    /* Prompt-Kopf fuer Schritt 5 (Didaktik/Interaktions-Contracts), D4
+       Etappe 5 — dasselbe Prinzip wie briefingPromptKopf/lernzielePromptKopf/
+       skriptPromptKopf/contentPromptKopf: was die App schon weiss, muss der
+       Chat nicht erfragen. Schritt 5 uebersetzt den freigegebenen Content
+       (Sign-off, Schritt 4) in Interaktions-Contracts — dieser Kopf ist der
+       GESETZTE Teil, den didaktikPruefe (D2) beim Pruefen voraussetzt: die
+       Interaktionstyp-Palette ist geschlossen, und die an schritt-5
+       adressierten Dossier-Punkte muessen GENAU (wortgleich) in ###PUNKTE
+       wiederkehren (didaktikPruefe Regel 3).
+
+       Kein FACHQUELLEN-/PROJEKT-WISSEN-Block hier (anders als bei den drei
+       vorigen Koepfen) — Schritt 5 arbeitet gegen den bereits freigegebenen
+       Content, nicht mehr gegen die Rohquellen; ein GENAU-Quellenabgleich
+       waere hier redundant zur Regel "Fakten sind final".
+
+       extras = { basiertAuf, version, zielname, palette } — reine
+       Anzeigewerte, von app.js aus bereits geladenen dateien-Caches
+       berechnet (T13/A3/V3-Muster: inhalt.geltendeDatei/finalVorhanden/
+       naechsteVersion/hochladeZiel — nichts wird hier neu erfunden). Fehlt
+       ein Feld, fehlt seine Zeile: die Funktion raet nie.
+       - basiertAuf: die geltende content_final.blocks (Sign-off Schritt 4,
+         Endung von .docx auf .blocks getauscht — B5-Invariante).
+       - version/zielname: Version und Zielname des Schritt-5-Lieferobjekts
+         selbst (naechsteVersion/hochladeZiel im 05_didaktik-Ordner; der
+         Zielname traegt bereits die .blocks-Endung ueber den Kontrakt,
+         kein Endungstausch noetig).
+       - palette: root.didaktikSchema.PALETTE, als DATEN hereingereicht
+         (inhalt.js kennt kein anderes Modul, Konvention: Daten statt
+         Modul-Import, Muster ziele bei didaktikPruefe).
+
+       Die an schritt-5 adressierten Dossier-Punkte (d.offen gefiltert auf
+       fuer === 'schritt-5' — direkt wie in didaktikPruefe Regel 3: inhalt.js
+       kennt dossier.offenFuer() nicht, Muster Daten-statt-Modul-Import)
+       werden GENAU (wortgleich) aufgezaehlt, mit der Anweisung, jeden Punkt
+       in ###PUNKTE zu uebernehmen und mit entscheid:/verschieben:+begruendung:
+       zu versehen — exakt das, was didaktikPruefe Regel 3 danach prueft.
+       Keine an schritt-5 adressierten Punkte: kein Block, kein leerer
+       Rahmen.
+
+       Drei feste Regeln, UNCONDITIONAL sobald d vorliegt (kein extras-Wert
+       dahinter — Muster die Kurs-ID/Rechtsstand-Sichtbarkeits-Zeile in
+       skriptPromptKopf F1, die Altmaterial-/Leseliste-Regeln in
+       contentPromptKopf): Fakten sind final, du erfindest nicht ·
+       Interaktion ist der Standard, typ fliesstext nur mit begruendung ·
+       jede Eingangskompetenz braucht mindestens einen Interaktions-Contract
+       (genau das, was didaktikPruefe Regel 1 danach prueft). */
+    didaktikPromptKopf: function (kurs, d, extras) {
+      if (!d) return '';
+      extras = extras || {};
+      var z = [];
+      z.push('=== ANGABEN AUS DER KURSWERKSTATT ===');
+      z.push('Diese Werte sind gesetzt. Übernimm sie. Frage sie NICHT erneut ab, rechne sie');
+      z.push('nicht um und bewerte sie nicht.');
+      z.push('');
+      z.push('Kurs: ' + (kurs && kurs.kursId || '?') + ' — ' + (kurs && kurs.kurstitel || '?'));
+      z.push('Kompetenzfeld: ' + (kurs && kurs.kompetenzfeld || '?'));
+      z.push.apply(z, regulatorikZeilen(d));
+
+      if (extras.basiertAuf) {
+        z.push('');
+        z.push('Basis: ' + extras.basiertAuf);
+      }
+      if (typeof extras.version === 'number') {
+        z.push('');
+        z.push('Version des Lieferobjekts: ' + extras.version + '.');
+      }
+      if (Array.isArray(extras.palette) && extras.palette.length) {
+        z.push('');
+        z.push('Interaktionstypen (GENAU diese, nichts anderes): ' + extras.palette.join(', '));
+      }
+
+      var punkteSchritt5 = ((d.offen && Array.isArray(d.offen)) ? d.offen : [])
+        .filter(function (e) { return e && e.fuer === 'schritt-5'; });
+      if (punkteSchritt5.length) {
+        z.push('');
+        z.push('PUNKTE AUS SCHRITT 4 (GENAU diese, wortgleich):');
+        punkteSchritt5.forEach(function (e) { z.push('- ' + e.was); });
+        z.push('Übernimm jeden Punkt GENAU in ###PUNKTE und versieh ihn mit entscheid: ODER ' +
+               'verschieben: + begruendung: — lass keinen aus, erfinde keinen dazu.');
+      }
+
+      z.push('');
+      z.push('Fakten sind final — du übersetzt den freigegebenen Content, du erfindest nicht.');
+      z.push('Interaktion ist der Standard — typ fliesstext nur mit begruendung.');
+      z.push('Jede Eingangskompetenz braucht mindestens einen Interaktions-Contract.');
+
+      if (extras.zielname) {
+        z.push('');
+        z.push('Liefere in Phase 2 DIREKT die Blockdatei ' + extras.zielname + ' zum Herunterladen.');
+      }
+      z.push('');
+      z.push('=== ENDE DER ANGABEN ===');
+      z.push('');
+      return z.join('\n');
+    },
+
     /* Bricht zu lange Zeilen an Wortgrenzen um. Vorhandene Zeilenenden bleiben
        stehen; eine Aufzaehlung behaelt ihre Einrueckung, damit die Fortsetzung
        nicht wie ein neuer Punkt aussieht. Ein einzelnes Wort, das laenger ist

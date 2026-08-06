@@ -5443,3 +5443,94 @@ Z9). Task D5 baut die echte Rückschreibung über einen eigenen Mutator auf. Das
 `ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 5 weiterhin nicht
 `pruefung: 'interaktion'` (Weg B) — diese Task ändert nur `dossier.js` und die Test-Fixture;
 live greift nichts, bis D5+ nachzieht.
+
+## Etappe 5 / Task D4: `inhalt.didaktikPromptKopf` + Kaltstart-Kasten Schritt 5 + kopieren-Handler
+
+Der GESETZT-Prompt-Kopf für Schritt 5 (Didaktik/Interaktions-Contracts) — dasselbe Prinzip wie
+`briefingPromptKopf`/`lernzielePromptKopf`/`skriptPromptKopf`/`contentPromptKopf`: was die App
+schon weiss, muss der Chat nicht erfragen. Dieser Kopf ist der GESETZTE Teil, den `didaktikPruefe`
+(D2) beim Prüfen voraussetzt — die Interaktionstyp-Palette ist geschlossen, und die an `schritt-5`
+adressierten Dossier-Punkte (D3) müssen GENAU (wortgleich) in `###PUNKTE` wiederkehren.
+
+**`inhalt.didaktikPromptKopf(kurs, d, extras) -> string`, `''` ohne `d`** (Muster
+`contentPromptKopf`). Zeilen: Kurs/Titel/Kompetenzfeld · `regulatorikZeilen(d)` (fünfter Aufrufer)
+· `Basis: {extras.basiertAuf}` · `Version des Lieferobjekts: {extras.version}` ·
+`Interaktionstypen (GENAU diese, nichts anderes): {extras.palette.join(', ')}` · **PUNKTE-Block**:
+nur wenn mindestens ein an `schritt-5` adressierter Punkt vorliegt (`d.offen` gefiltert auf
+`fuer === 'schritt-5'`, direkt wie in `didaktikPruefe` Regel 3 — `inhalt.js` kennt
+`dossier.offenFuer()` nicht, Konvention Daten-statt-Modul-Import) — Kopfzeile, jeder Punkt
+wortwörtlich als `- {was}`-Zeile, danach die Übernahme-Anweisung „Übernimm jeden Punkt GENAU in
+###PUNKTE und versieh ihn mit entscheid: ODER verschieben: + begruendung: — lass keinen aus,
+erfinde keinen dazu." · drei feste Regeln, UNCONDITIONAL sobald `d` vorliegt (kein `extras`-Wert
+dahinter — Muster die Kurs-ID/Rechtsstand-Sichtbarkeits-Zeile in `skriptPromptKopf` F1, die
+Altmaterial-/Leseliste-Regeln in `contentPromptKopf`): „Fakten sind final — du übersetzt den
+freigegebenen Content, du erfindest nicht." · „Interaktion ist der Standard — typ fliesstext nur
+mit begruendung." · „Jede Eingangskompetenz braucht mindestens einen Interaktions-Contract." ·
+Schluss-Satz „Liefere in Phase 2 DIREKT die Blockdatei {extras.zielname} zum Herunterladen." Jede
+`extras`-Zeile nur, wenn gesetzt — die Funktion rät nie (T13-Muster). **Kein FACHQUELLEN-/
+PROJEKT-WISSEN-Block** (anders als bei den drei vorigen Köpfen) — Schritt 5 arbeitet gegen den
+bereits freigegebenen Content, nicht mehr gegen die Rohquellen.
+
+**`extras = { basiertAuf, version, zielname, palette }` — berechnet in `app.js` (`kopieren`-
+Handler, Schritt-5-Zweig), T13/A3/V3-Muster, jedes Extra aus einem bereits geladenen Cache, nichts
+wird geraten:**
+- `basiertAuf` — die geltende `content_final.blocks`: `geltendeDatei(dateien04, kursId,
+  lieferobjekt4)`, Endung von `.docx` auf `.blocks` getauscht (B5-Invariante, docx und blocks
+  teilen den Stamm), **NUR wenn `finalVorhanden(...)`** — Schritt 5 darf nur gegen den
+  freigegebenen Sign-off-Stand starten, nie gegen einen blossen Entwurf.
+- `version`/`zielname` — über `naechsteVersion`/`hochladeZiel` am 05_didaktik-Cache. Der Zielname
+  trägt bereits die `.blocks`-Endung über den Kontrakt (`ext: 'blocks'`) — anders als bei
+  Schritt 3/4 (dort bleibt das GEBAUTE Ablageformat `docx`, der Prompt-Name tauscht die Endung)
+  ist hier **kein** Endungstausch nötig.
+- `palette` — `root.didaktikSchema.PALETTE`, als DATEN hereingereicht (`inhalt.js` kennt kein
+  anderes Modul, Konvention: Daten statt Modul-Import, Muster `ziele` bei `didaktikPruefe`).
+
+**`ansichten.einSchritt`, Schritt 5 — Kaltstart-Kasten „Kein freigegebener Content", solange NICHT
+`finalVorhanden(dateien04, kursId, lieferobjekt4)`** — Datei-basiert wie der V3-Contract-Kasten
+(Schritt 4), NICHT über den Dossier-Status (Schritt 4 hat zwar ein Gate, aber die Kasten-Logik der
+Etappe bleibt einheitlich datei-basiert, Muster der Schritt-3/4-Kästen). Lieferobjekt kommt aus
+`ablageVon(inh, '4', kursId).lieferobjekt` — nie `'content'` hartkodiert, sonst veraltet der
+Kasten, sobald der Kontrakt das Lieferobjekt umbenennt. Text: „Schritt 5 braucht die `_final`-
+Fassung aus dem Sign-off (Schritt 4)." Knöpfe bleiben aktiv (Muster A3/V3: Altkurse/laufende
+Migrationen müssen weiterarbeiten können).
+
+**`app.js` (`render()`):** Schritt 5 lädt zusätzlich den Schritt-4-Ordner nach
+(`ordnerNachladen`, Ordner aus `ablageVon(inh, '4', kursId)`, nichts hartkodiert — Muster
+A3/V3-Nachladen) und reicht die Dateiliste als `ablageDaten.dateien04` an die Ansicht durch (nur
+auf Schritt 5 gefüllt, analog `dateien03`/`dateien02` bei Schritt 4). Der `dossierNachladen`-
+Trigger läuft seither auch auf Schritt 5 — ohne Dossier liefert `didaktikPromptKopf` `''`, und der
+kopieren-Handler stellt sonst nichts voran.
+
+**Tests (`test/didaktikkopf.test.js`, neu, 4 Fälle):** voller Kopf mit allen `extras` (Basis,
+Version, Palette wörtlich, beide Punkte-Zeilen wörtlich — die Aufzählung UND die Anweisung —, alle
+drei festen Regeln, Schluss-Satz; ein Punkt an ein ANDERES Ziel als `schritt-5` rutscht nicht mit);
+ohne `extras` (und mit leerem `{}`) fehlen genau Basis/Version/Palette/Schluss-Satz, der Rest
+bleibt; ohne `d` `''`; ohne `schritt-5`-Punkte fehlt der PUNKTE-Block ganz (auch mit einem Punkt an
+ein anderes Ziel). `test/ansichten.test.js` (3 neue Fälle): Kasten ohne `_final` in `dateien04`,
+kein Kasten mit `_final`, Kasten auch wenn `dateien04` gar nicht geladen ist (`undefined`).
+**892 Tests grün** (Baseline 885 + 7: 4 in `didaktikkopf.test.js`, 3 in `ansichten.test.js`).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** die beiden PUNKTE-GENAU-Zeilen
+in `didaktikPromptKopf` auskommentiert (die `- {was}`-Aufzählung UND die Übernahme-Anweisung),
+`node --test test/didaktikkopf.test.js`:
+```
+ℹ tests 4
+ℹ pass 3
+ℹ fail 1
+
+✖ voller Kopf mit allen extras traegt Kurs/Kompetenzfeld/Rechtsstand, Basis, Version, Palette
+  wörtlich, beide Punkte-Zeilen wörtlich, die drei festen Regeln und den Schluss-Satz
+  AssertionError [ERR_ASSERTION]: erster Punkt fehlt woertlich
+```
+Genau der eine Punkte-Test fiel rot (3/4 grün) — die anderen drei Tests (inklusive „ohne
+`schritt-5`-Punkte fehlt der PUNKTE-Block ganz", der die Mutation nicht berührt, weil dort gar
+keine Punkte vorliegen) blieben grün. Danach die beiden Zeilen wiederhergestellt, komplette Suite
+erneut geprüft: `node --test` → **892/892 grün**.
+
+**Offen / bewusst nicht Teil von D4:** die eigentliche Prüf-/Ablage-Verdrahtung von Schritt 5
+(`controller.hochladen`: Datei-Klassifikation, Laden+Parsen der geltenden `content_final.blocks`,
+Aufruf von `inhalt.didaktikPruefe`, Ablage, Rückschreibung der `schritt-5`-Punkte nach
+`entschieden[]`) ist D5, nicht Teil dieser Task — D4 liefert ausschliesslich den Prompt-Kopf, den
+Kaltstart-Kasten und den `kopieren`-Handler-Zweig. Das reale `ablage-kontrakt.json`/`schritte.json`
+in SharePoint führen für Schritt 5 weiterhin nicht `pruefung: 'interaktion'`/`ext: 'blocks'` (Weg
+B, unverändert seit D2) — ohne diese Felder greift nichts live, kein Regressionsrisiko.
