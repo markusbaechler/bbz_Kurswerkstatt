@@ -590,14 +590,20 @@
 
     /* Ist das Lieferobjekt dieses Schritts eine DATEI (kommt nie als Fliesstext
        aus dem Chat) statt Text? A2, Etappe 3 — die eine Stelle fuer diese
-       Frage (Konvention 9): xlsx (Schritt 2, T11/T12) und docx (Schritt 3, E5
-       — der Chat liefert das Skript direkt, die App prueft beim Hochladen).
-       darfAblegen() nutzt sie statt einer eigenen, an dieselbe Endungsliste
-       gebundenen Bedingung — waechst die Liste (ein drittes Dateiformat), gibt
-       es nur eine Stelle zum Anpassen. */
+       Frage (Konvention 9): xlsx (Schritt 2, T11/T12), docx (Schritt 3, E5 —
+       der Chat liefert das Skript direkt, die App prueft beim Hochladen) und
+       seit der Fixwave nach dem Etappe-5-Review (C-1) blocks (Schritt 5,
+       D2/D6 — die Blockdatei mit den Interaktions-Contracts, geprueft ueber
+       inhalt.didaktikPruefe, exakt dasselbe Muster). darfAblegen() nutzt sie
+       statt einer eigenen, an dieselbe Endungsliste gebundenen Bedingung —
+       waechst die Liste (ein weiteres Dateiformat), gibt es nur eine Stelle
+       zum Anpassen. Ohne diesen Eintrag rendert Schritt 5 die ungeprueft-
+       Chat-Text-Ablage NEBEN dem geprueften Datei-Input — ein vollstaendiger
+       Gate-Bypass (Grammatik-Pruefung, basiert_auf-Guard, didaktikPruefe,
+       Punkte-Rueckschreibung wuerden alle uebersprungen). */
     dateiLieferobjekt: function (i, schrittId) {
       var e = inhalt.erwarteteEndung(i, schrittId);
-      return e === 'xlsx' || e === 'docx';
+      return e === 'xlsx' || e === 'docx' || e === 'blocks';
     },
 
     /* Der Weg Chat ist nur dort vorgesehen, wo der Kontrakt ihn nennt — UND nur

@@ -83,10 +83,30 @@ test('naechsteDatei verweigert Schritte mit festem Dateinamen', () => {
 
 /* Schritt 3 stand hier frueher mit true — seit A2 (Etappe 3) ist sein
    Lieferobjekt eine docx (s. den eigenen A2-Block weiter unten): der Chat
-   liefert sie direkt (E5), die Text-Ablage waere eine Sackgasse. Schritt 5
-   bleibt textbasiert und damit unveraendert erlaubt. */
+   liefert sie direkt (E5), die Text-Ablage waere eine Sackgasse. Schritt 1
+   (md) bleibt textbasiert und damit unveraendert erlaubt — der Text-Beleg
+   fuer "Ablegen ist erlaubt, wo das Lieferobjekt Text ist". */
 test('Ablegen ist erlaubt, wo der Weg Chat vorgesehen ist und das Lieferobjekt Text ist', () => {
-  assert.strictEqual(inhalt.darfAblegen(INHALT, 5), true);
+  const e = INHALT['ablage-kontrakt'].schritte['1'];
+  assert.ok(e.wege.indexOf('chat') >= 0, 'Testvoraussetzung: Schritt 1 fuehrt chat in wege');
+  assert.strictEqual(inhalt.erwarteteEndung(INHALT, 1), 'md', 'Testvoraussetzung: Schritt 1 ist md (Text)');
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 1), true);
+});
+
+/* ---------- Fixwave nach dem Etappe-5-Review (C-1): Schritt 5 fuehrt seit D2
+   ext 'blocks' — die Blockdatei mit den Interaktions-Contracts kommt wie bei
+   Schritt 3 (docx)/Schritt 4 (docx via ZIP) NIE ueber die Chat-Text-Ablage
+   herein, sondern geprueft ueber den Weg Hochladen (inhalt.didaktikPruefe).
+   Vor der Fixwave kannte inhalt.dateiLieferobjekt() nur xlsx/docx — Schritt 5
+   rutschte dadurch faelschlich als "Text-Lieferobjekt" durch, darfAblegen()
+   lieferte true, und die Ansicht rendertete die ungeprueft-Textarea NEBEN dem
+   geprueften Datei-Input: ein vollstaendiger Gate-Bypass. Muster Z10/A2. */
+test('Schritt 5 fuehrt den Weg Chat, die Text-Ablage bleibt aber gesperrt — blocks-Lieferobjekt (Fixwave Etappe 5, C-1)', () => {
+  const e = INHALT['ablage-kontrakt'].schritte['5'];
+  assert.ok(e.wege.indexOf('chat') >= 0, 'Testvoraussetzung: Schritt 5 fuehrt chat in wege');
+  assert.strictEqual(inhalt.erwarteteEndung(INHALT, 5), 'blocks', 'Testvoraussetzung: Schritt 5 ist blocks');
+  assert.strictEqual(inhalt.darfAblegen(INHALT, 5), false,
+    'Der Chat liefert die Blockdatei als Datei — die Text-Ablage waere ein Gate-Bypass');
 });
 
 test('Ablegen ist gesperrt, wo nur Claude Code oder Handarbeit vorgesehen ist', () => {
@@ -115,13 +135,16 @@ test('Schritt 2 fuehrt jetzt den Weg Chat, die Text-Ablage bleibt aber gesperrt 
 /* ---------- A2 (Etappe 3): dasselbe fuer Schritt 3 — docx-Lieferobjekt ----------
    Seit A2 liefert der Chat auch das Skript aus Schritt 3 direkt als .docx (E5,
    wie Schritt 2 die xlsx seit T12/Z10). inhalt.dateiLieferobjekt() ist die eine
-   Stelle fuer "ist das Lieferobjekt eine Datei" (xlsx ODER docx) — darfAblegen()
-   nutzt sie statt einer eigenen, an eine einzelne Endung gebundenen Bedingung. */
-test('inhalt.dateiLieferobjekt: wahr fuer xlsx und docx, falsch fuer Text-Lieferobjekte', () => {
+   Stelle fuer "ist das Lieferobjekt eine Datei" (xlsx, docx ODER seit der
+   Fixwave Etappe 5/C-1 auch blocks) — darfAblegen() nutzt sie statt einer
+   eigenen, an eine einzelne Endung gebundenen Bedingung. Schritt 1 (md) ist
+   der Text-Beleg: dort bleibt die Chat-Text-Ablage die richtige Flaeche. */
+test('inhalt.dateiLieferobjekt: wahr fuer xlsx, docx und blocks, falsch fuer Text-Lieferobjekte', () => {
+  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 1), false, 'Schritt 1 ist md (Text)');
   assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 2), true, 'Schritt 2 ist xlsx');
   assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 3), true, 'Schritt 3 ist docx');
-  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 5), false, 'Schritt 5 ist md (Text)');
-  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 6), false, 'Schritt 6 ist mbz — eine Datei, aber weder xlsx noch docx');
+  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 5), true, 'Schritt 5 ist blocks (Fixwave Etappe 5, C-1)');
+  assert.strictEqual(inhalt.dateiLieferobjekt(INHALT, 6), false, 'Schritt 6 ist mbz — eine Datei, aber weder xlsx/docx/blocks');
 });
 
 test('Schritt 3 fuehrt den Weg Chat, die Text-Ablage bleibt aber gesperrt — docx-Lieferobjekt (A2)', () => {

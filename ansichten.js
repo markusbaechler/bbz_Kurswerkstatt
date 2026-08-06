@@ -802,8 +802,8 @@
 
     var gelesen = ablageDaten.didaktik;
     if (!gelesen) {
-      return h + '<p class="hinweis-leise">Contracts erscheinen nach der ersten abgelegten ' +
-             'Fassung.</p></div>';
+      return h + '<p class="hinweis-leise">Interaktions-Contracts erscheinen nach der ersten ' +
+             'abgelegten Fassung.</p></div>';
     }
 
     var contracts = Array.isArray(gelesen.contracts) ? gelesen.contracts : [];
@@ -812,8 +812,18 @@
 
     h += contracts.map(didaktikContractZeile).join('');
 
+    /* Fixwave nach dem Etappe-5-Review (Auflage 3): dossier === null/undefined
+       heisst "laedt noch" bzw. "Ladefehler nachgesehen" (Muster gateBlock) —
+       ohne diesen Guard zeigte ein noch nicht geladenes Dossier faelschlich
+       "alle Punkte behandelt", obwohl schlicht nichts geprueft werden konnte. */
     var d = ablageDaten.dossier;
-    var offen = (d && Array.isArray(d.offen))
+    if (!d || typeof d !== 'object') {
+      h += '<p class="hinweis-leise">Punkte-Stand erscheint, sobald das Dossier geladen ' +
+           'ist.</p>';
+      return h + '</div>';
+    }
+
+    var offen = Array.isArray(d.offen)
       ? d.offen.filter(function (e) { return e && e.fuer === 'schritt-5'; })
       : [];
     h += offen.length

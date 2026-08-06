@@ -5773,3 +5773,103 @@ Schritt 5 weiterhin nicht `pruefung: 'interaktion'`/`ext: 'blocks'` (Weg B, unve
 ohne diese Felder erreicht `controller.render()` den Trigger dort nicht anders als heute schon,
 kein Regressionsrisiko. D7 (Tools-Baum) und D8 (SharePoint-Nachzug, Freigabe Markus) folgen laut
 Reihenfolge in `global-constraints.md`, sind aber nicht Teil dieser Task.
+
+## Fixwave nach dem Etappe-5-Gesamt-Review (C-1, Vokabular, Punkte-Stand-Guard)
+
+Ein unabhängiger Review der ganzen Etappe 5 fand ein Critical-Finding plus zwei kleine Auflagen —
+alle drei in einer Welle geschlossen.
+
+**C-1 (Critical) — Schritt 5 rendete die ungeprüfte Chat-Text-Ablage: ein vollständiger
+Gate-Bypass.** `inhalt.dateiLieferobjekt` kannte bisher nur `xlsx`/`docx` (A2) — Schritt 5 führt
+seit D2 `ext: 'blocks'`, `darfAblegen(INHALT, 5)` lieferte deshalb fälschlich `true`, und die
+Ansicht rendete `#ergebnis`-Textarea + `data-action="ablegen"` NEBEN dem geprüften Datei-Input.
+`controller.ablegen` hätte eingefügten Text ungeprüft als `{K}_umsetzung_vN.blocks` abgelegt — ohne
+Grammatik-Prüfung, ohne `basiert_auf`-Guard, ohne `inhalt.didaktikPruefe`, ohne
+Punkte-Rückschreibung — exakt dieselbe Fehlerklasse, die A2 für Schritt 3 (docx) und Z10 für
+Schritt 2 (xlsx) bereits geschlossen hatten, nur für das dritte Dateiformat nicht mitgezogen.
+**Fix:** `dateiLieferobjekt` um `'blocks'` erweitert (`e === 'xlsx' || e === 'docx' || e ===
+'blocks'`) — dieselbe eine Endungsliste (Konvention 9), kein Umstieg auf das `pruefung`-Feld, das
+die Funktion nie kannte. `darfAblegen(INHALT, 5)` liefert seither `false`, die Ansicht zeigt für
+Schritt 5 nur noch den geprüften Hochladen-Block.
+
+**Tests (Muster Z10/A2, drei Dateien):** `test/ablegen.test.js` — der Alt-Zustand-Test „Ablegen ist
+erlaubt, wo der Weg Chat vorgesehen ist und das Lieferobjekt Text ist" ist auf Schritt 1 (md)
+umgestellt (der bestehende Text-Beleg, mit expliziten Testvoraussetzungen `chat in wege` UND
+`erwarteteEndung === 'md'`); ein neuer, gedrehter Test „Schritt 5 führt den Weg Chat, die
+Text-Ablage bleibt aber gesperrt — blocks-Lieferobjekt" prüft `darfAblegen(INHALT, 5) === false`
+mit denselben Testvoraussetzungen (`chat in wege`, `erwarteteEndung === 'blocks'`); der Test
+„inhalt.dateiLieferobjekt: wahr für xlsx, docx und blocks" ist um Schritt 1 (`false`) und Schritt 5
+(jetzt `true`) ergänzt. `test/wege.test.js` — neuer Gegenprobe-Test „Schritt-5-Ansicht zeigt KEINE
+Chat-Text-Ablage (#ergebnis) — blocks ist eine Datei, kein Text" (Muster der bestehenden
+Schritt-2/Schritt-1-Gegenproben direkt darüber): kein `#ergebnis`, kein `data-action="ablegen"`,
+der Hochladen-Block bleibt. `test/ansichten.test.js` — der bestehende Test „die Schrittansicht hält
+einen Platz für die Fehlermeldung bereit" hing bisher an Schritt 5 als Text-Beleg; auf Schritt 1
+(md, weiterhin textbasiert) umgestellt, derselbe Mechanismus, kein zweiter Testfall nötig.
+
+**Mutationsprobe (tatsächlich ausgeführt):** die `'blocks'`-Erweiterung in `dateiLieferobjekt`
+wieder auskommentiert (`e === 'xlsx' || e === 'docx' /* MUTATIONSPROBE || e === 'blocks' */`),
+`node --test test/ablegen.test.js test/wege.test.js`:
+```
+ℹ tests 57
+ℹ pass 54
+ℹ fail 3
+
+✖ Schritt 5 fuehrt den Weg Chat, die Text-Ablage bleibt aber gesperrt — blocks-Lieferobjekt (Fixwave Etappe 5, C-1)
+  AssertionError [ERR_ASSERTION]: Der Chat liefert die Blockdatei als Datei — die Text-Ablage waere ein Gate-Bypass
+  true !== false
+✖ inhalt.dateiLieferobjekt: wahr fuer xlsx, docx und blocks, falsch fuer Text-Lieferobjekte
+  AssertionError [ERR_ASSERTION]: Schritt 5 ist blocks (Fixwave Etappe 5, C-1)
+  false !== true
+✖ Schritt-5-Ansicht zeigt KEINE Chat-Text-Ablage (#ergebnis) — blocks ist eine Datei, kein Text (Fixwave Etappe 5, C-1)
+  AssertionError [ERR_ASSERTION]: Text-Ablagefeld erscheint trotz blocks-Lieferobjekt
+```
+Genau die drei von der Mutation betroffenen Tests fielen rot, alle anderen 54 blieben grün; danach
+die Zeile wiederhergestellt, komplette Suite erneut geprüft: `node --test` → grün.
+
+**Auflage 2 (Vokabular, aus D6-Review) — „Contracts" statt „Interaktions-Contracts" im
+Kurzhinweis.** Die Global Constraint (`global-constraints.md`) verlangt im UI durchgängig
+„Interaktions-Contract", nie das verkürzte „Contract" (der gehört Schritt 2). Der Kurzhinweis in
+`ansichten.js` `didaktikBlock` trug bisher „Contracts erscheinen nach der ersten abgelegten
+Fassung." — **Fix:** „Interaktions-Contracts erscheinen nach der ersten abgelegten Fassung."
+Kein Testwortlaut musste angepasst werden — die bestehenden `assert.match(html, /Contracts
+erscheinen nach der ersten abgelegten Fassung/)`-Prüfungen (`test/didaktikansicht.test.js`) matchen
+den neuen Satz weiterhin als Teilstring, ohne Anker.
+
+**Auflage 3 (empfohlen, aus D6-Review) — Punkte-Stand-Guard, solange das Dossier nicht geladen
+ist.** `didaktikBlock` zeigte den Punkte-Stand bisher aus `ablageDaten.dossier` ohne Prüfung, ob
+das überhaupt ein geladenes Objekt ist — `null` (lädt gerade) oder `undefined` (nie geladen)
+fielen beide auf ein leeres `d.offen`-Array zurück und zeigten fälschlich „alle Punkte behandelt",
+obwohl schlicht nichts geprüft werden konnte. **Fix, Muster `gateBlock`** (dieselbe Frage steht
+dort bereits für die Gate-Box): `if (!d || typeof d !== 'object') { … 'Punkte-Stand erscheint,
+sobald das Dossier geladen ist.' … }` VOR der `offen`-Berechnung — ein geladenes, aber leeres
+Dossier-Objekt (`{offen: []}`) bleibt davon unberührt und zeigt weiterhin „alle Punkte behandelt".
+
+**Tests (`test/didaktikansicht.test.js`, zwei neue Fälle):** `dossier: null` und `dossier`
+komplett weggelassen (`undefined`) — beide zeigen weder „alle Punkte behandelt" noch „Punkte
+offen an schritt-5", sondern „Punkte-Stand erscheint, sobald das Dossier geladen ist.".
+
+**Mutationsprobe (tatsächlich ausgeführt):** den Guard auf `if (false && (!d || typeof d !==
+'object'))` gesetzt, `node --test test/didaktikansicht.test.js`:
+```
+ℹ tests 15
+ℹ pass 13
+ℹ fail 2
+
+✖ D6: dossier ist null (laedt noch) — der Block behauptet NICHT "alle Punkte behandelt"
+  TypeError: Cannot read properties of null (reading 'offen')
+✖ D6: dossier ist undefined (nie geladen) — derselbe Guard greift
+  TypeError: Cannot read properties of undefined (reading 'offen')
+```
+Genau die zwei neuen Guard-Tests fielen rot (als Absturz statt eines falschen Textes — der Guard
+verhindert also nicht nur eine falsche Aussage, sondern auch einen Crash bei `null`/`undefined`),
+alle anderen 13 blieben grün; danach wiederhergestellt.
+
+**917 Tests grün** (Baseline 913 + 4 neue: 1 in `test/ablegen.test.js`, 1 in `test/wege.test.js`,
+2 in `test/didaktikansicht.test.js`), komplette Suite nach allen drei Wiederherstellungen erneut
+geprüft: `node --test` → **917/917 grün**.
+
+**Offen / bewusst nicht Teil dieser Fixwave:** das reale `ablage-kontrakt.json`/`schritte.json` in
+SharePoint führen für Schritt 5 weiterhin nicht `pruefung: 'interaktion'`/`ext: 'blocks'` (Weg B,
+unverändert seit D2) — ohne diese Felder war der C-1-Bug dort ohnehin nie live erreichbar; diese
+Fixwave schliesst die Lücke trotzdem jetzt, bevor D7/D8 den Kontrakt nachziehen. D7 (Tools-Baum)
+und D8 (SharePoint-Nachzug, Freigabe Markus) bleiben unverändert offen, s. o.

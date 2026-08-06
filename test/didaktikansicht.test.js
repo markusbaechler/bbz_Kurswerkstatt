@@ -163,6 +163,27 @@ test('D6: ohne offene schritt-5-Punkte zeigt der Block "alle Punkte behandelt"',
   assert.doesNotMatch(html, /Punkte offen an schritt-5/);
 });
 
+/* ---------- Fixwave nach dem Etappe-5-Review (Auflage 3, Muster gateBlock):
+   dossier === null/undefined heisst "laedt noch" bzw. "Ladefehler
+   nachgesehen" — vorher zeigte der Block in diesem Fall faelschlich "alle
+   Punkte behandelt", obwohl schlicht nichts geprueft werden konnte. */
+test('D6: dossier ist null (laedt noch) — der Block behauptet NICHT "alle Punkte behandelt"', () => {
+  const gelesen = gelesenAus({});
+  const props = { dossier: null, didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.doesNotMatch(html, /alle Punkte behandelt/);
+  assert.doesNotMatch(html, /Punkte offen an schritt-5/);
+  assert.match(html, /Punkte-Stand erscheint, sobald das Dossier geladen ist/);
+});
+
+test('D6: dossier ist undefined (nie geladen) — derselbe Guard greift', () => {
+  const gelesen = gelesenAus({});
+  const props = { didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.doesNotMatch(html, /alle Punkte behandelt/);
+  assert.match(html, /Punkte-Stand erscheint, sobald das Dossier geladen ist/);
+});
+
 /* ---------- controller.didaktikNachladen (Cache, Doppelabruf-Schutz, Nicht-sticky, Retry) ---------- */
 
 function vorbereitenController() {

@@ -150,3 +150,14 @@ test('ein textbasierter Schritt (Schritt 1, md) behaelt die Chat-Text-Ablage unv
   const h = ansichten.einSchritt(INHALT, AFL, 1, null, { ordnerFehlt: false, dateien: [] });
   assert.ok(/id="ergebnis"/.test(h), 'Text-Ablagefeld fehlt bei einem textbasierten Lieferobjekt');
 });
+
+/* ---------- Fixwave nach dem Etappe-5-Review (C-1): Schritt 5 (blocks-
+   Lieferobjekt) zeigt wie Schritt 2 (xlsx)/Schritt 3 (docx) KEINE Chat-Text-
+   Ablage mehr — nur der geprueft-Datei-Input bleibt. Muster der Z10/A2-
+   Gegenprobe-Tests direkt oben. */
+test('Schritt-5-Ansicht zeigt KEINE Chat-Text-Ablage (#ergebnis) — blocks ist eine Datei, kein Text (Fixwave Etappe 5, C-1)', () => {
+  const h = ansichten.einSchritt(INHALT, AFL, 5, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(!/id="ergebnis"/.test(h), 'Text-Ablagefeld erscheint trotz blocks-Lieferobjekt');
+  assert.ok(!/data-action="ablegen"/.test(h), 'Ablegen-Knopf erscheint trotz blocks-Lieferobjekt');
+  assert.ok(/data-action="hochladen"/.test(h), 'der Hochladen-Block fuer die Blockdatei ist verschwunden');
+});
