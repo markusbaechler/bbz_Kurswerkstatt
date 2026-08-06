@@ -5007,12 +5007,25 @@ als Doppelprobe daneben. Layout: `reference.docx` = Kandidat G (L1). **865 Tests
 (Werkzeuge 377). Protokoll:
 `../IT_Architektur_bbz/output/2026-08-04-etappe-4-ausfuehrungsprotokoll.md`.
 
-**Offen nach Etappe 4 (Kern):** Debug-Task Livebefund 3 — drei von vier Schritt-4-Uploads
-schrieben `status.content`/Register STILL nicht (nicht deterministisch; Zustand von Hand
-konsistent nachgeführt; Ursache offen) · Gate-/Schritt-4-Bedienführung („wirr"-Feedback
+**Offen nach Etappe 4 (Kern):** Gate-/Schritt-4-Bedienführung („wirr"-Feedback
 Markus; leises Pflichtfeld-Feedback am Gate — B9-F3-Klasse) · Batch-Regelwechsel im
 content-Prompt fertig+getestet, SharePoint-Publish wartet auf Freigabe · guide-2b:
 Altmaterial-Handgriff prominenter (GPT validierte ohne Altmaterial im Projekt).
+
+**Debug-Task Livebefund 3 GESCHLOSSEN (2026-08-06): kein Defekt.** Die SharePoint-
+Versionshistorie (`driveItem/versions`, per Graph frisch gelesen) belegt für ALLE VIER
+Schritt-4-Uploads vom 2026-08-05 gepaarte Dossier-+Register-Writes binnen 7–11 Sekunden
+mit korrektem Inhalt (`status.content=validiert` ab Dossier-v26, Register ab v1.0). Die
+damalige „3 von 4 schrieben nicht"-Beobachtung war ein Rücklese-Fehler auf einer
+veralteten Kopie — die „Von-Hand-Nachführung" (Dossier-v29, 13:15:26 UTC) war ein
+byte-gleicher No-op gegen den schon liegenden v28-Stand, und v25+Status ergibt exakt die
+v28-Grösse: die Rücklese-Basis stammte von VOR den Uploads. Kein Code-Fix; der V4/V7-
+Erfolgspfad arbeitet korrekt. Lehre: eine Abnahme-Rücklese gilt nur frisch per Graph
+gegen die Datei (nie lokale Kopie, nie App-State eines zweiten Tabs — das Dossier wird
+je Sitzung genau einmal geladen); „wurde geschrieben?" beantwortet die Versionshistorie
+zweifelsfrei. Beweisführung:
+`../IT_Architektur_bbz/output/2026-08-06-debug-livebefund-3.md`. Der Meldungs-Aspekt
+(Erfolgsmeldung soll Dossier-Status/Register-Zeilen ausweisen) gehört zum offenen UI-Task.
 
 ## Fixwave nach dem Etappe-4-Gesamt-Review (2026-08-04): I-1, I-2, I-3, M-1, M-2
 
