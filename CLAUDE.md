@@ -5353,21 +5353,6 @@ Testdatei).
 `pruefung: 'skript'`/`'validierung'` bei Schritt 3/4), `wege:
 ['chat','claude-code','hochladen']` (`hochladen` neu, `chat` bleibt an erster Stelle —
 Default-Weg wie bei Schritt 3/4 seit B5/Z10/V9). `format` bleibt unverändert `'text'` — kein
-Aufrufer liest das Feld konditional, keine Testanpassung nötig dafür.
-
-## Etappe 5 / Task D3: `dossier.offenEntscheiden` trägt den Entscheid-Text (additiv)
-
-**`dossier.offenEntscheiden(d, index, {wer, wann, entscheid})` — neues optionales drittes Feld
-`entscheid` (String):** wird, wenn gesetzt, als `entscheid` auf dem `entschieden[]`-Eintrag
-gespeichert. OHNE `entscheid` byte-identisches Verhalten zu heute (jeder bestehende Aufrufer
-bleibt unverändert grün — das ist der Beleg für Additivität). `wer`/`wann` bleiben Pflicht wie
-bisher. `controller.offenEntscheiden` (`app.js`) liest aus `offen-entscheid-{index}` und
-reicht es mit durch.
-
-**Tests (`test/gate.test.js`, drei neue Fälle):** (a) mit `entscheid` steht der Text am Eintrag;
-(b) ohne bleibt der Eintrag schlüsselgleich zu heute (`deepStrictEqual` gegen den bisherigen Shape:
-`was`/`wo`/`wer`/`wann`, keine neuen Schlüssel); (c) leerer/Whitespace-`entscheid` wird nicht
-gespeichert.
 Aufrufer liest das Feld konditional, keine Testanpassung nötig dafür. Zwei bestehende Tests in
 `test/hochladen.test.js` waren auf die alte Schritt-5-Fixture (kein `hochladen` in `wege`)
 gepinnt und wurden nachgezogen — kein Verhaltensfehler, reine Fixture-Drift:
@@ -5418,3 +5403,39 @@ Verdrahtung von `BLOCKSTRECKEN_PRUEFUNGEN` um `'interaktion'`. Kein Tools-Pendan
 `pruefung: 'interaktion'`/`ext: 'blocks'`/`wege`+`hochladen` (Weg B) — diese Task ändert nur
 `inhalt.js` und die Test-Fixture; live greift nichts, bis D8 (SharePoint, Freigabe Markus)
 nachzieht.
+
+## Etappe 5 / Task D3: `dossier.offenEntscheiden` trägt den Entscheid-Text (additiv)
+
+**`dossier.offenEntscheiden(d, index, {wer, wann, entscheid})` — neues optionales drittes Feld
+`entscheid` (String):** wird, wenn gesetzt, als `entscheid` auf dem `entschieden[]`-Eintrag
+gespeichert. OHNE `entscheid` byte-identisches Verhalten zu heute (jeder bestehende Aufrufer
+bleibt unverändert grün — das ist der Beleg für Additivität). `wer`/`wann` bleiben Pflicht wie
+bisher.
+
+**Tests (`test/gate.test.js`, drei neue Fälle):** (a) mit `entscheid` steht der Text am Eintrag;
+(b) ohne bleibt der Eintrag schlüsselgleich zu heute (`deepStrictEqual` gegen den bisherigen Shape:
+`was`/`wo`/`wer`/`wann`, keine neuen Schlüssel); (c) leerer/Whitespace-`entscheid` wird nicht
+gespeichert. Aufrufer liest das Feld konditional, keine Testanpassung nötig dafür.
+
+**Tests:** **885 Tests grün** (Baseline 882 + 3 neue D3-Tests in `test/gate.test.js`).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** die entscheid-Speicherzeile
+in `dossier.js` Zeile 238 auskommentiert (`if (/* MUTATIONSPROBE */ false && entscheid)`),
+`node --test test/gate.test.js`:
+```
+ℹ tests 37
+ℹ pass 36
+ℹ fail 1
+
+✖ D3: mit entscheid steht der Text am entschieden[]-Eintrag
+```
+Genau der eine neue Test fiel rot (36/37 grün) — die beiden anderen D3-Gegenproben blieben grün,
+alle 34 bestehenden Tests blieben unberührt. Danach Zeile wiederhergestellt, komplette Suite
+erneut geprüft: `node --test` → **885/885 grün**.
+
+**Offen / bewusst nicht Teil von D3:** `controller.offenEntscheiden` sollte `offen-entscheid-{index}`
+lesen — das war ein Vorgriff ausserhalb des Brief-Scopes (kein UI rendert dieses Element seit Task
+Z9). Task D5 baut die echte Rückschreibung über einen eigenen Mutator auf. Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 5 weiterhin nicht
+`pruefung: 'interaktion'` (Weg B) — diese Task ändert nur `dossier.js` und die Test-Fixture;
+live greift nichts, bis D5+ nachzieht.
