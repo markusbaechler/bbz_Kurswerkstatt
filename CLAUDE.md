@@ -5008,9 +5008,12 @@ als Doppelprobe daneben. Layout: `reference.docx` = Kandidat G (L1). **865 Tests
 `../IT_Architektur_bbz/output/2026-08-04-etappe-4-ausfuehrungsprotokoll.md`.
 
 **Offen nach Etappe 4 (Kern):** Gate-/Schritt-4-Bedienführung („wirr"-Feedback
-Markus; leises Pflichtfeld-Feedback am Gate — B9-F3-Klasse) · Batch-Regelwechsel im
-content-Prompt fertig+getestet, SharePoint-Publish wartet auf Freigabe · guide-2b:
+Markus; leises Pflichtfeld-Feedback am Gate — B9-F3-Klasse) · guide-2b:
 Altmaterial-Handgriff prominenter (GPT validierte ohne Altmaterial im Projekt).
+Der Batch-Regelwechsel im content-Prompt ist seit dem 2026-08-06 publiziert (Freigabe
+Markus): `prompt-content` (beide Fassungen) + `guide-2b` in SharePoint ersetzt,
+byte-identisch zum Generat zurückgelesen, übrige 20 Werkzeug-Einträge unverändert;
+Rückweg `_zentral/_verlauf-2026-08-06/werkzeuge_vor-batchregel.json`.
 
 **Debug-Task Livebefund 3 GESCHLOSSEN (2026-08-06): kein Defekt.** Die SharePoint-
 Versionshistorie (`driveItem/versions`, per Graph frisch gelesen) belegt für ALLE VIER
