@@ -1619,7 +1619,7 @@
         state.data.didaktik[kursId] = gelesen;
         renderWennSichtbar();
       }).catch(function () {
-        state.fehlerHinweis = 'Contracts konnten nicht geladen werden — Seite neu laden.';
+        state.fehlerHinweis = 'Interaktions-Contracts konnten nicht geladen werden — Seite neu laden.';
         renderWennSichtbar();
         state.data.didaktik[kursId] = undefined;
       });
