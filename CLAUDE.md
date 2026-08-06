@@ -38,6 +38,8 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `docx-lesen.js` | Liest eine .docx dependency-frei — Absaetze mit Stil und Text, in Dokumentreihenfolge (Etappe 3, Task A1) |
 | `skript-schema.js` | Die kanonische Block-Grammatik des Selbstlernskripts (Schritt 4) — reine Daten (Etappe 3b, Task B2) |
 | `skript-lesen.js` | Parst die ###-Bloecke eines Selbstlernskripts gegen `skript-schema.js` (Etappe 3b, Task B2) |
+| `didaktik-schema.js` | Die kanonische Grammatik der Interaktions-Contracts (Schritt 5) — reine Daten (Etappe 5, Task D1) |
+| `didaktik-lesen.js` | Parst die ###-Bloecke einer Interaktions-Contract-Datei gegen `didaktik-schema.js` — eigene Grammatik, nie durch `skript-lesen.js` gelesen (Etappe 5, Task D1) |
 | `diagramm-zeichnen.js` | Zeichnet die sechs Bild-Diagrammtypen als SVG-String und wandelt SVG zu PNG (Browser-only) (Etappe 3b, Task B3) |
 | `docx-bauen.js` | Baut das Word-Dokument direkt gegen die Vorlage (Zip/OOXML, kein Pandoc) — Kern der Baustrecke (Etappe 3b, Task B4) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
@@ -5143,3 +5145,128 @@ Genau die eine I-1-Fixture fiel rot — die Tools-Fassung meldete die unbekannte
 (inklusive der drei übrigen neuen M-1/M-2-Tests, die von dieser Regel unabhängig sind) blieben
 grün. Danach die Zeile in `inhalt.js` wiederhergestellt, beide Suiten erneut komplett geprüft:
 App `node --test` → **863/863 grün**, Werkzeuge `node --test test/*.test.js` → **375/375 grün**.
+
+## Etappe 5 / Task D1: `didaktik-schema` + `didaktik-lesen` — die Interaktions-Contract-Grammatik
+
+Erster Task der Etappe 5 (Schritt 5, Interaktions-Contracts): Schema und Parser für eine NEUE,
+eigenständige Blockgrammatik — Interaktions-Contracts beschreiben je Kapitel EIN interaktives
+Element (Regler, Rechner, Zuordnung, …), das erst in einer späteren Etappe-5-Task tatsächlich
+gebaut wird. **`didaktik-lesen` kennt nur die eigene Grammatik** (`###CONTRACTS`/`###CONTRACT`/
+`###ENDE-CONTRACT`/`###PUNKTE`) — sie ruft nie `skriptLesen` und wird nie von `skriptLesen`
+gerufen; im UI heisst es immer „**Interaktions-Contract**", nie verkürzt „Contract" (der gehört
+Schritt 2). Muster mechanisch wie `skript-schema.js`/`skript-lesen.js` (Etappe 3b, Task B2):
+UMD-Zwillinge in beiden Bäumen, Parity-Wächter im Tools-Baum.
+
+**`didaktik-schema.js` (neu, Global `root.didaktikSchema`)** trägt `PALETTE` — den
+geschlossenen Katalog der neun Interaktionstypen (`regler`, `rechner`, `zuordnung`,
+`finde-den-fehler`, `umschalt-diagramm`, `zerlegen`, `szenario`, `illustration`,
+`fliesstext`) — plus `istTyp(t)`. `PFLICHT` (`kernaussage`/`zielhandlung`/`denkfehler`/
+`stuetztext`) gilt für JEDEN Contract, unabhängig vom Typ. `PFLICHT_MODELL`
+(`steuert`/`beobachtet`/`aha`/`vorhersage`/`konsequenz`) gilt für jeden Typ AUSSER
+`fliesstext` — ein Fliesstext-Contract hat kein interaktives Modell, das gesteuert/
+beobachtet wird; dort ist stattdessen `begruendung` Pflicht. `pflichtfelder(typ)`:
+`PFLICHT` immer, dazu `PFLICHT_MODELL` für jeden bekannten Typ ausser `fliesstext`, bei
+`fliesstext` stattdessen zusätzlich `begruendung`; ein UNBEKANNTER Typ liefert `PFLICHT`
+allein — die Funktion rät nie, was ein erfundener Typ zusätzlich verlangen würde, das
+meldet die Typ-Prüfung im Parser separat (`'Contract N: unbekannter typ "x"'`).
+
+**`didaktik-lesen.js` (neu, Global `root.didaktikLesen`)**: `lies(text) -> { kopf,
+contracts, punkte, fehler }`. Die Kopfzeile `###CONTRACTS kurs=… | basiert_auf=…` ist
+Pflicht — fehlt sie GANZ, wirft `lies()` `Error('###CONTRACTS fehlt - kurs= und
+basiert_auf= sind Pflicht')` (Muster `skript-lesen.js` ###SKRIPT-Wurf, W2); fehlende
+einzelne Attribute innerhalb eines vorhandenen `###CONTRACTS`-Blocks lösen keinen
+eigenen Fehler aus (`kopf.kurs`/`kopf.basiertAuf` bleiben dann leer). Je Contract:
+`###CONTRACT ek=… | nr=… | typ=…`, Feldzeilen `name: wert`, abgeschlossen mit
+`###ENDE-CONTRACT` — `contracts[i] = { ek, nr (Zahl), typ, felder: {name: wert} }`.
+
+**Mehrzeilige Feldwerte sind stärker eingeschränkt als bei `skript-lesen.js`.**
+`skript-lesen.js` erkennt JEDE `wort:`-Zeile als neues Feld (generischer Regex); ein
+Fliesstext-Wert mit einem zufälligen Doppelpunkt darin würde dort fälschlich als neues
+Feld gelesen. `didaktik-lesen.js` kennt stattdessen eine feste, bekannte Feldliste (die
+Vereinigung aus `PFLICHT`, `PFLICHT_MODELL` und `begruendung` — zehn Namen) — NUR eine
+Zeile, die mit einem dieser bekannten Namen beginnt, eröffnet ein neues Feld; jede
+andere Zeile (auch eine, die wie `irgendwas: xyz` aussieht) gilt als Fortsetzung des
+zuletzt eröffneten Feldes und wird mit EINEM Leerzeichen angehängt (führende/
+nachlaufende Leerzeichen der Folgezeile getrimmt). Leerzeilen innerhalb eines Contracts
+beenden kein Feld — sie werden übersprungen, ohne etwas anzuhängen. Eine Zeile VOR dem
+ersten erkannten Feld wird verworfen (Muster `skript-lesen.js` `felder()`: eine Zeile
+ohne Treffer wird einfach übersprungen).
+
+**`###CONTRACT` verlangt zwingend ein `###ENDE-CONTRACT`** — anders als `###KAPITEL` in
+`skript-lesen.js` (dort bleibt ein nie geschlossenes Kapitel stillschweigend im Ergebnis
+und wird nur am Dateiende nachgeprüft) gibt es hier eine explizite Fehlermeldung
+`'###CONTRACT ohne ###ENDE-CONTRACT'` — sowohl wenn ein zweites `###CONTRACT` eröffnet
+wird, bevor das erste geschlossen ist, als auch am Dateiende. Ein nie geschlossener
+Contract landet NICHT in `contracts[]` — er wurde nie vollständig gelesen, seine
+Feldprüfung (Pflichtfelder, ek+nr-Duplikat) läuft für ihn nicht.
+
+**`###PUNKTE`** (höchstens einmal, optional) fasst Gruppen aus `punkt: <Wortlaut>`
+gefolgt von `entscheid: <Text>` ODER `verschieben: <ziel>` + `begruendung: <Text>`
+zusammen — dieselbe Mehrzeilen-Regel wie bei den Contract-Feldern, nur mit der eigenen
+Marken-Liste (`punkt:`/`entscheid:`/`verschieben:`/`begruendung:`). `punkte[j] = {
+punkt, entscheid|null, verschieben|null, begruendung|null }`. Ein `punkt:` ohne
+`entscheid:` und ohne `verschieben:` erzeugt `'###PUNKTE: punkt ohne entscheid oder
+verschieben: "…"'`; ein `verschieben:` ohne `begruendung:` erzeugt `'###PUNKTE:
+verschieben ohne begruendung: "…"'`.
+
+**CLI-Modus nur im Tools-Zwilling** (`didaktik-lesen.cjs`, `require.main === module`):
+`node didaktik-lesen.cjs <datei.blocks>` druckt `JSON.stringify(lies(text), null, 2)`,
+Exit 0 bei leerer `fehler[]`, Exit 1 bei Befunden ODER einem Wurf ODER einem fehlenden/
+unlesbaren Argument — bewusst EIN einheitlicher Fehler-Exitcode (nicht wie bei
+`skript-abnahme.cjs`/`content-abnahme.cjs` Exit 2 für Aufruffehler), weil dies die
+**Schritt-6-Probe** ist: sie liest ohne Rückfrage oder eben nicht — ein Aufrufer
+unterscheidet nur „ok" von „nicht ok", nie einen dritten Zustand.
+
+**Parity:** `IT_Architektur_bbz/output/tools/test/app-parity.test.js` (erweitert, kein
+neues File) vergleicht `PALETTE` deepStrictEqual, `pflichtfelder()` für jeden
+`PALETTE`-Typ plus einen unbekannten Typ, `lies()` auf einem sauberen Fixture (Kopf, 2
+Contracts — einer mit mehrzeiligem `stuetztext` —, `###PUNKTE` mit `entscheid` UND
+`verschieben`) sowie drei Fehlerlisten-Fixtures (unbekannter Typ, fehlendes
+Pflichtfeld, `fliesstext` ohne `begruendung`) und den Wurf ohne `###CONTRACTS` — beide
+Fassungen dieselbe `Error.message`.
+
+**Tests (App, Kernfälle, Muster B2):** `test/didaktiklesen.test.js` — sauberer
+Durchlauf (Kopf, 2 Contracts inkl. mehrzeiligem `stuetztext`, `###PUNKTE` mit
+`entscheid` UND `verschieben`), Wurf ohne `###CONTRACTS`, `fliesstext` ohne
+`begruendung` → Fehler, `regler` ohne `steuert` → Fehler UND `fliesstext` ohne
+`steuert` → KEIN Fehler (der Brief-Kernfall, der die Asymmetrie von `pflichtfelder()`
+belegt), ek+nr-Duplikat. Die volle Abdeckung (alle acht Fehler-Wortlaute einzeln, der
+Fall „unbekannter Typ prüft trotzdem nur PFLICHT, nicht PFLICHT_MODELL", CLI-Modus über
+`child_process`) liegt in `IT_Architektur_bbz/output/tools/test/didaktik-lesen.test.js`
+(24 Fälle) plus dem Parity-Wächter. **870 Tests grün** (Baseline 865 + 5 neue). Tools:
+**408 Tests grün** (Baseline 377 + 24 in `didaktik-lesen.test.js` + 7 neue
+Parity-Tests).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** die
+`fliesstext`-`begruendung`-Pflicht NUR in der App-Fassung (`didaktik-lesen.js`)
+auskommentiert, `node --test test/app-parity.test.js` im TOOLS-Baum:
+```
+ℹ tests 52
+ℹ pass 51
+ℹ fail 1
+
+✖ Parity D1: Fehlerliste-Fixture "kaputt (fliesstext ohne begruendung)" ist in beiden Fassungen identisch
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+  + [
+  +   'Contract 2 (VL-002-EK-005): typ fliesstext verlangt begruendung'
+  + ]
+  - []
+```
+Genau der eine Fehlerlisten-Parity-Test fiel rot — die Tools-Fassung meldete die fehlende
+`begruendung` weiterhin, die (mutierte) App-Fassung nicht mehr, die Listen liefen auseinander.
+Alle anderen 51 Tests blieben grün; danach die Zeile in `didaktik-lesen.js` wiederhergestellt,
+beide Suiten erneut komplett geprüft: App `node --test` → **870/870 grün**, Werkzeuge
+`node --test test/*.test.js` → **408/408 grün**.
+
+**`index.html`:** Script-Tags `didaktik-schema.js` (vor `didaktik-lesen.js`) stehen nach
+`skript-lesen.js`, vor `diagramm-zeichnen.js` — folgt demselben Cache-Buster-Muster wie jedes
+andere `*.js`.
+
+**Offen / bewusst nicht Teil von D1:** kein Aufrufer in `app.js`/`inhalt.js`/`ansichten.js` —
+D1 liefert nur Schema und Parser, keine UI, keinen Upload-Weg, keine Prüfregel gegen ein
+Dossier. Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 5
+weiterhin nicht `pruefung: 'interaktion'`/`ext: 'blocks'`/`wege`+`hochladen` (Weg B) — diese
+Task ändert nur die beiden neuen Module und ihre Tests; live greift nichts, bis D8 (SharePoint,
+Freigabe Markus) nachzieht. Die restlichen D-Tasks (D2–D7) bauen auf dieser Grammatik auf.
