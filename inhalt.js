@@ -106,15 +106,29 @@
     }).length;
   }
 
-  /* Ziffern-Zahlen in einem Text zaehlen (validierungPruefe Regel 4b) — eine
-     Zahl darf ein Tausendertrennzeichen tragen (Punkt ODER Apostroph, z. B.
-     34'128 oder 3.5) und zaehlt dabei als EINE Zahl, nicht mehrere.
-     Oeffentlich (inhalt.zahlenImText) — validierungPruefe und ein eigener
-     Test brauchen denselben Zaehler (Konvention 9). */
-  function zahlenImText(text) {
+  /* Ziffern-Zahlen in einem Text finden — eine Zahl darf ein
+     Tausendertrennzeichen tragen (Punkt ODER Apostroph, z. B. 34'128 oder
+     3.5) und zaehlt dabei als EINE Zahl, nicht mehrere. zahlenListe() liefert
+     die TREFFER (roh, wie im Text geschrieben); zahlenImText() (oeffentlich,
+     validierungPruefe Regel 4b) zaehlt nur ihre Anzahl. D2 (Etappe 5,
+     didaktikPruefe Regel 2) braucht die Treffer selbst, nicht nur die Zahl —
+     EINE Quelle fuer den Regex (Konvention 9) statt einer zweiten Kopie. */
+  function zahlenListe(text) {
     var t = String(text == null ? '' : text);
-    var m = t.match(/\d+(?:[.']\d+)*/g);
-    return m ? m.length : 0;
+    return t.match(/\d+(?:[.']\d+)*/g) || [];
+  }
+  function zahlenImText(text) {
+    return zahlenListe(text).length;
+  }
+
+  /* Eine Zahl auf ihren Vergleichswert normalisieren (didaktikPruefe Regel
+     2, D2): das Apostroph-Tausendertrennzeichen faellt weg (22'680 == 22680),
+     der Dezimalpunkt bleibt stehen (6.8 bleibt 6.8) — eigene, kleine
+     Funktion, damit die Mutationsprobe genau HIER greift, nicht verstreut
+     an zwei Stellen (Kontrakt-Seite UND Content-Seite lesen dieselbe
+     Funktion). */
+  function normZahl(z) {
+    return String(z).replace(/'/g, '');
   }
 
   /* Ein Kapitel einer Variante ueber die EK-ID finden (validierungPruefe
@@ -1820,6 +1834,142 @@
           });
         });
       }
+
+      return { fehler: fehler, hinweise: hinweise };
+    },
+
+    /* --- Der Interaktions-Contract-Pruefer (D2, Etappe 5) ---
+       Gegenstueck zu validierungPruefe (Schritt 4): die Grammatik (D1,
+       didaktik-lesen.js gegen didaktik-schema.js) prueft schon Pflichtfelder,
+       Typ-Katalog und ek+nr-Duplikate — didaktikPruefe prueft nur noch die
+       Kontext-Regeln, fuer die die Grammatik allein blind ist: Contracts
+       gegen den freigegebenen Content (R1), Zahlen gegen den Content (R2,
+       "Schritt 5 uebersetzt, er erfindet nicht"), offene Punkte gegen das
+       Dossier (R3).
+
+       didaktikPruefe(gelesen, d, kursId, contentGelesen, ziele) -> { fehler:
+       [], hinweise: [] } | null. null, wenn d ODER contentGelesen fehlt —
+       ungeprueft ist nie gruen (Muster blocksPruefe/validierungPruefe); der
+       Controller (D5) meldet, WAS fehlt. Aufrufer-Vertrag: nur bei leerem
+       gelesen.fehler rufen (die Grammatik prueft D1). gelesen =
+       didaktikLesen.lies()-Ergebnis, contentGelesen = skriptLesen.lies() der
+       geltenden content_final.blocks. kursId wird von keiner Regel
+       ausgewertet — Teil der Signatur, weil der Aufrufer sie wie bei
+       validierungPruefe ohnehin zur Hand hat (Muster V4/D5).
+
+       ziele = dossier.ZIELE als DATEN hereingereicht — inhalt.js kennt
+       dossier.js nicht, dossier.offenFuer() wird NICHT gerufen (Konvention:
+       Daten statt Modul-Import, Muster BRIEFING_FELDER-Durchreichung). Ein
+       verschieben-Ziel ist gueltig, wenn es in ziele vorkommt UND nicht
+       'schritt-5' selbst ist — ein Punkt kann nicht an sich selbst
+       "verschoben" werden.
+
+       hinweise bleibt vorerst [] (Konsistenz der Signatur mit blocksPruefe/
+       validierungPruefe — keine der drei Regeln erzeugt hier einen Hinweis,
+       alle sind Fehler-Regeln). */
+    didaktikPruefe: function (gelesen, d, kursId, contentGelesen, ziele) {
+      if (!d || typeof d !== 'object') return null;
+      if (!contentGelesen || typeof contentGelesen !== 'object') return null;
+
+      var fehler = [];
+      var hinweise = [];
+      var contracts = (gelesen && Array.isArray(gelesen.contracts)) ? gelesen.contracts : [];
+      var punkte = (gelesen && Array.isArray(gelesen.punkte)) ? gelesen.punkte : [];
+      var kapitel = Array.isArray(contentGelesen.kapitel) ? contentGelesen.kapitel : [];
+      var zieleListe = Array.isArray(ziele) ? ziele : [];
+
+      /* Regel 1: Abdeckung — jede EK des Contents hat mindestens einen
+         Contract, jeder Contract zeigt auf eine EK, die es im
+         freigegebenen Content tatsaechlich gibt. Zwei getrennte Schleifen
+         (nicht eine gemeinsame), weil die beiden Richtungen unterschiedliche
+         Wortlaute tragen — "fehlend" (Content ohne Contract) vs. "erfunden"
+         (Contract ohne Content-EK). */
+      var contractEks = {};
+      contracts.forEach(function (c) { if (c && c.ek) contractEks[c.ek] = true; });
+
+      var contentEks = {};
+      kapitel.forEach(function (k) {
+        var ek = k && k.ek;
+        if (!ek || contentEks[ek]) return;
+        contentEks[ek] = true;
+        if (!contractEks[ek]) {
+          fehler.push('Eingangskompetenz ' + ek + ': kein Interaktions-Contract vorhanden.');
+        }
+      });
+
+      contracts.forEach(function (c) {
+        if (c.ek && !contentEks[c.ek]) {
+          fehler.push('Contract ' + c.nr + ': Eingangskompetenz "' + c.ek +
+                       '" existiert nicht im freigegebenen Content.');
+        }
+      });
+
+      /* Regel 2: Zahlen-Schutz — jede Zahl aus den vier Fliesstext-Feldern
+         eines Contracts (kernaussage/vorhersage/konsequenz/stuetztext) muss
+         im Content-Gesamttext vorkommen. Verglichen wird NORMALISIERT
+         (normZahl, s. oben): 22'680 im Contract gilt gegen 22680 im Content
+         als gefunden, der Dezimalpunkt bleibt unangetastet. Der
+         Content-Gesamttext sind ALLE kapitel[].teile-Werte — auch
+         Steuerdaten (VALIDIERUNG/ILLUSTRATION) zaehlen hier mit: eine Zahl,
+         die irgendwo im freigegebenen Dokument belegt ist, ist belegt, egal
+         in welchem Baustein. */
+      var contentZahlen = {};
+      kapitel.forEach(function (k) {
+        var teile = (k && k.teile) || {};
+        Object.keys(teile).forEach(function (name) {
+          zahlenListe(teile[name]).forEach(function (z) {
+            contentZahlen[normZahl(z)] = true;
+          });
+        });
+      });
+
+      var R2_FELDER = ['kernaussage', 'vorhersage', 'konsequenz', 'stuetztext'];
+      contracts.forEach(function (c) {
+        var geprueft = {}; // vermeidet identische Doppelmeldungen innerhalb desselben Contracts
+        R2_FELDER.forEach(function (feld) {
+          var text = (c.felder && c.felder[feld]) || '';
+          zahlenListe(text).forEach(function (z) {
+            if (geprueft[z]) return;
+            geprueft[z] = true;
+            if (!contentZahlen[normZahl(z)]) {
+              fehler.push('Contract ' + c.nr + ' (' + c.ek + '): Zahl ' + z +
+                           ' kommt im freigegebenen Content nicht vor.');
+            }
+          });
+        });
+      });
+
+      /* Regel 3: Punkte-Abdeckung — jeder an schritt-5 adressierte
+         Dossier-Punkt (dossier.offenFuer(d,'schritt-5'), hier direkt aus
+         d.offen gefiltert, s. Funktionskopf) hat GENAU eine passende
+         punkt:-Zeile in ###PUNKTE; ihr Wortlaut (getrimmt) muss exakt dem
+         was entsprechen. */
+      var offenSchritt5 = ((d.offen && Array.isArray(d.offen)) ? d.offen : [])
+        .filter(function (e) { return e && e.fuer === 'schritt-5'; });
+      var bekannt = {};
+      offenSchritt5.forEach(function (e) { bekannt[e.was] = true; });
+
+      var zaehlung = {};
+      punkte.forEach(function (p) {
+        var text = String((p && p.punkt) || '').trim();
+        if (!bekannt[text]) {
+          fehler.push('Unbekannter Punkt in ###PUNKTE: "' + text + '"');
+          return;
+        }
+        zaehlung[text] = (zaehlung[text] || 0) + 1;
+        if (p.verschieben) {
+          var ziel = String(p.verschieben).trim();
+          if (zieleListe.indexOf(ziel) < 0 || ziel === 'schritt-5') {
+            fehler.push('Punkt "' + text + '": ungültiges Verschiebe-Ziel "' + ziel + '"');
+          }
+        }
+      });
+
+      offenSchritt5.forEach(function (e) {
+        var n = zaehlung[e.was] || 0;
+        if (n === 0) fehler.push('Offener Punkt nicht behandelt: "' + e.was + '"');
+        else if (n > 1) fehler.push('Punkt doppelt behandelt: "' + e.was + '"');
+      });
 
       return { fehler: fehler, hinweise: hinweise };
     },

@@ -82,7 +82,14 @@
         '4': { ordner: '04_validierung', lieferobjekt: 'content', ext: 'docx', quelle: 'blocks', format: 'word', wege: ['chat','claude-code','hochladen'], gate: 'Sign-off',
                qualitaet: '_zentral/prompt-bibliothek/content-inhaltskontrakt.txt',
                pruefung: 'validierung' },
-        '5': { ordner: '05_didaktik', lieferobjekt: 'umsetzung', ext: 'md', format: 'text', wege: ['chat','claude-code'], gate: null },
+        /* D2 (Etappe 5): Schritt 5 (Didaktik/Interaktions-Contracts) baut wie
+           Schritt 3/4 auf der Blockdatei auf — ext/pruefung spiegeln das
+           (pruefung: 'interaktion' ist der Haken fuer
+           inhalt.didaktikPruefe, analog zu 'skript'/'validierung' bei
+           Schritt 3/4). 'chat' zuerst in wege — Default-Weg wie bei Schritt
+           3/4 seit B5/Z10/V9, live erst mit D8 (SharePoint, Weg B). */
+        '5': { ordner: '05_didaktik', lieferobjekt: 'umsetzung', ext: 'blocks', format: 'text', wege: ['chat','claude-code','hochladen'], gate: null,
+               pruefung: 'interaktion' },
         '6': { ordner: '06_moodle', datei: '{K}_export.mbz', format: 'binaer', wege: ['claude-code','hochladen'], gate: null },
         '7': { ordner: '07_abnahme', lieferobjekt: 'abnahme', ext: 'md', format: 'text', wege: ['kurswerkstatt'], gate: 'Gate 2 · Schluss' },
         '8': { ordner: '08_backbone', datei: '{K}_publiziert.md', format: 'text', wege: ['chat','claude-code'], gate: null }

@@ -20,7 +20,12 @@ test('nur wo der Kontrakt den Weg nennt', () => {
      ebenfalls 'hochladen' in wege — dokumentierte Fixture-Drift, wie schon
      bei Z10 fuer Schritt 2. */
   assert.strictEqual(inhalt.darfHochladen(INHALT, 4), true, 'Validierung — Blockdatei wie Schritt 3');
-  [1, 5, 7, 8].forEach(function (n) {
+  /* D2 (Etappe 5): Schritt 5 fuehrt seit der Fixture-Umstellung auf die
+     Blockdatei (ext: 'blocks', pruefung: 'interaktion') ebenfalls
+     'hochladen' in wege — dokumentierte Fixture-Drift, wie schon bei
+     Z10/V2 fuer Schritt 2/4. */
+  assert.strictEqual(inhalt.darfHochladen(INHALT, 5), true, 'Didaktik — Blockdatei wie Schritt 3/4');
+  [1, 7, 8].forEach(function (n) {
     assert.strictEqual(inhalt.darfHochladen(INHALT, n), false, 'Schritt ' + n);
   });
 });
@@ -138,7 +143,10 @@ test('ein unbekannter Weg wird roh gezeigt statt verschwiegen', () => {
 });
 
 test('Schritte ohne den Weg bekommen kein Dateifeld', () => {
-  [1, 5].forEach(function (n) {
+  /* Schritt 5 fuehrt seit D2 (Etappe 5, Fixture-Drift wie oben) ebenfalls
+     'hochladen' in wege und damit ein Dateifeld — nur noch Schritt 1 bleibt
+     hier als Beleg fuer "kein Weg genannt -> kein Feld". */
+  [1].forEach(function (n) {
     const h = ansichten.einSchritt(INHALT, AFL, n, null, { ordnerFehlt: false, dateien: [] });
     assert.ok(!/id="datei"/.test(h), 'Schritt ' + n);
   });

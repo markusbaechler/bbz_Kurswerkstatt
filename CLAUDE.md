@@ -5270,3 +5270,136 @@ Dossier. Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint führen 
 weiterhin nicht `pruefung: 'interaktion'`/`ext: 'blocks'`/`wege`+`hochladen` (Weg B) — diese
 Task ändert nur die beiden neuen Module und ihre Tests; live greift nichts, bis D8 (SharePoint,
 Freigabe Markus) nachzieht. Die restlichen D-Tasks (D2–D7) bauen auf dieser Grammatik auf.
+
+## Etappe 5 / Task D2: `inhalt.didaktikPruefe` — die Abnahme-Regeln als reine Funktion
+
+Baut auf D1 (Grammatik) auf: die drei Kontext-Regeln, für die `didaktikLesen.lies()` allein
+blind ist — Contracts gegen den freigegebenen Content, Zahlen gegen den Content, offene Punkte
+gegen das Dossier. Gegenstück zu `validierungPruefe` (Schritt 4): dieselbe Rollenteilung, die
+Grammatik prüft D1, `didaktikPruefe` prüft nur noch den Kontext.
+
+**`inhalt.didaktikPruefe(gelesen, d, kursId, contentGelesen, ziele) -> { fehler: [], hinweise:
+[] } | null`.** `null`, wenn `d` ODER `contentGelesen` fehlt — ungeprüft ist nie grün (Muster
+`blocksPruefe`/`validierungPruefe`); der Controller (D5) meldet, WAS fehlt. Aufrufer-Vertrag:
+nur bei leerem `gelesen.fehler` rufen (die Grammatik prüft D1). `kursId` wird von keiner Regel
+ausgewertet — Teil der Signatur, weil der Aufrufer sie wie bei `validierungPruefe` ohnehin zur
+Hand hat (Muster V4/D5). `hinweise` bleibt vorerst `[]` — keine der drei Regeln erzeugt einen
+Hinweis, alle sind Fehler-Regeln (Konsistenz der Signatur mit `blocksPruefe`/
+`validierungPruefe`, kein totes Feld).
+
+**`ziele` kommt als fünftes Argument, DATEN statt Modul** — `inhalt.js` kennt `dossier.js`
+nicht (wie überall sonst, Konvention: `BRIEFING_FELDER`-Durchreichung). Der Aufrufer übergibt
+`dossier.ZIELE`; `didaktikPruefe` liest `d.offen` direkt und filtert selbst auf
+`fuer === 'schritt-5'` — `dossier.offenFuer()` wird NICHT gerufen, dieselbe Filterlogik steht
+hier nur noch einmal, ohne den Modul-Import.
+
+**R1 Abdeckung (zwei Richtungen, zwei Wortlaute):** jede EK aus `contentGelesen.kapitel[].ek`
+braucht mindestens einen Contract — sonst `'Eingangskompetenz {ek}: kein Interaktions-Contract
+vorhanden.'`; jeder Contract muss auf eine EK zeigen, die es im Content tatsächlich gibt —
+sonst `'Contract {nr}: Eingangskompetenz "{ek}" existiert nicht im freigegebenen Content.'`.
+Zwei getrennte Schleifen, keine gemeinsame — die beiden Richtungen tragen unterschiedliche
+Wortlaute und prüfen unterschiedliche Mengen (Content-EKs vs. Contract-EKs).
+
+**R2 Zahlen-Schutz — „Schritt 5 übersetzt, er erfindet nicht".** Jede Zahl aus den vier
+Fliesstext-Feldern eines Contracts (`kernaussage`/`vorhersage`/`konsequenz`/`stuetztext`) muss
+im Content-Gesamttext (alle `kapitel[].teile`-Werte, `join`) vorkommen — verglichen wird
+NORMALISIERT: das Apostroph-Tausendertrennzeichen fällt weg (`22'680` == `22680`), der
+Dezimalpunkt bleibt (`6.8` bleibt `6.8`). Fehler: `'Contract {nr} ({ek}): Zahl {z} kommt im
+freigegebenen Content nicht vor.'` — `{z}` ist der ROHE, im Contract geschriebene Wert (z. B.
+`22'680`), nicht der normalisierte.
+
+**Zahlen-Extraktion aus derselben Quelle wie `zahlenImText` (V2, Etappe 4) — kein zweiter
+Regex.** `zahlenImText` war bisher nur ein Zähler (`m ? m.length : 0`); D2 braucht die TREFFER
+selbst, nicht nur ihre Anzahl. Refactoring statt Neubau: der Regex
+(`/\d+(?:[.']\d+)*/g`) sitzt jetzt in der privaten `zahlenListe(text)` (liefert das Treffer-
+Array), `zahlenImText(text)` ist seither ein dünner Wrapper (`zahlenListe(text).length`) —
+ihr öffentliches Verhalten ist unverändert, die bestehenden `zahlenImText`-Tests
+(`test/skriptpruefe.test.js`) bleiben ohne Anpassung grün, das ist der Beleg für den rein
+mechanischen Umbau. Die Normalisierung selbst sitzt in einer eigenen, kleinen Funktion
+`normZahl(z)` (`String(z).replace(/'/g, '')`) — EINE Stelle für Kontrakt- UND Content-Seite,
+genau dort, wo die Mutationsprobe greifen soll (s. u.). Der Content-Gesamttext für den
+Zahlen-Abgleich umfasst ALLE Bausteine eines Kapitels, auch VALIDIERUNG/ILLUSTRATION
+(Steuerdaten) — anders als bei `kapitelWortzahl`/`STEUER_BAUSTEINE` (die zählen Steuerdaten
+nicht als Fliesstext-Wörter): eine Zahl, die irgendwo im freigegebenen Dokument belegt ist,
+ist belegt, unabhängig vom Baustein.
+
+**R3 Punkte-Abdeckung.** Jeder an `schritt-5` adressierte Dossier-Punkt (`d.offen`, gefiltert
+auf `fuer === 'schritt-5'`) braucht GENAU eine `punkt:`-Zeile in `###PUNKTE`, deren Wortlaut
+(getrimmt) exakt dem `was` entspricht:
+- fehlt sie: `'Offener Punkt nicht behandelt: "{was}"'`
+- ein `punkt:` ohne passenden Dossier-`was`: `'Unbekannter Punkt in ###PUNKTE: "{punkt}"'`
+  (bricht die weitere Prüfung für DIESEN Punkt ab — ohne bekanntes `was` lässt sich kein
+  Verschiebe-Ziel sinnvoll benennen)
+- derselbe `was`-Wortlaut mehr als einmal behandelt: `'Punkt doppelt behandelt: "{was}"'`
+- ein `verschieben`-Ziel, das nicht in `ziele` vorkommt ODER gleich `'schritt-5'` ist (ein
+  Punkt kann nicht an sich selbst „verschoben" werden): `'Punkt "{was}": ungültiges
+  Verschiebe-Ziel "{ziel}"'`.
+
+**Tests (`test/didaktikpruefe.test.js`, neu, 12 Fälle) — Fixtures ausschliesslich über die
+ECHTEN Parser** (`skriptLesen.lies()` für den Content, `didaktikLesen.lies()` für die
+Contracts, kein Handbau der `gelesen`-Objekte, Muster `test/skriptpruefe.test.js`): `null`
+ohne `d`/ohne `contentGelesen`, R1 fehlend + Gegenprobe, R1 erfunden + Gegenprobe, R2 mit dem
+Zahlenpaar `22'680`(Contract)/`22680`(Content) — normalisiert KEIN Fehler — plus einer
+erfundenen `99999` — ein Fehler —, alle vier R3-Wortlaute einzeln (inklusive einer
+Doppelmeldung bei zwei ungültigen Verschiebe-Zielen in einem Test: unbekanntes Ziel UND
+`schritt-5` selbst), sowie ein Vollzufriedenheits-Fall (`fehler: []` UND `hinweise: []`, per
+`deepStrictEqual` auf dem GANZEN Rückgabeobjekt). `ziele` kommt im Test aus dem echten
+`dossier.ZIELE` (`require('../dossier.js')`) — realistische Daten statt einer erfundenen
+Liste, ohne dass `inhalt.js` selbst `dossier.js` kennen müsste (der Import steht nur in der
+Testdatei).
+
+**Fixture-Drift `test/fixture.js` Schritt 5 (dokumentiert, Muster V2/Z10):** `ext: 'blocks'`
+(vorher `md`), `pruefung: 'interaktion'` (neu, der Haken für `inhalt.didaktikPruefe`, analog zu
+`pruefung: 'skript'`/`'validierung'` bei Schritt 3/4), `wege:
+['chat','claude-code','hochladen']` (`hochladen` neu, `chat` bleibt an erster Stelle —
+Default-Weg wie bei Schritt 3/4 seit B5/Z10/V9). `format` bleibt unverändert `'text'` — kein
+Aufrufer liest das Feld konditional, keine Testanpassung nötig dafür. Zwei bestehende Tests in
+`test/hochladen.test.js` waren auf die alte Schritt-5-Fixture (kein `hochladen` in `wege`)
+gepinnt und wurden nachgezogen — kein Verhaltensfehler, reine Fixture-Drift:
+- „nur wo der Kontrakt den Weg nennt": Schritt 5 stand in der Liste der Schritte OHNE
+  Hochladen (`[1, 5, 7, 8]`) — jetzt ein eigenes `assert.strictEqual(…, true, …)` für Schritt 5
+  (Muster der bereits bestehenden Schritt-4-Zeile), die Restliste schrumpft auf `[1, 7, 8]`.
+- „Schritte ohne den Weg bekommen kein Dateifeld": Schritt 5 stand in `[1, 5]` — jetzt nur noch
+  `[1]`, mit Kommentar, der auf die Fixture-Drift verweist.
+
+**`ansichten.js`/`app.js` bleiben unangetastet** — D2 liefert ausschliesslich die reine
+Prüffunktion in `inhalt.js`. Die neuen Kontraktfelder (`pruefung: 'interaktion'`, `ext:
+'blocks'`, `hochladen` in `wege`) greifen deshalb noch nirgends in der UI: kein
+Blockstrecken-Datei-Input für Schritt 5 (`BLOCKSTRECKEN_PRUEFUNGEN` bleibt bei
+`['skript','validierung']`, unverändert — die Erweiterung um `'interaktion'` ist Sache eines
+späteren D-Tasks, der auch `controller.hochladen` für Schritt 5 verdrahtet), kein Prompt-Kopf,
+kein Kaltstart-Kasten. Genau das ist beabsichtigt (Muster D1/A2/V2: Grammatik/Prüfregel zuerst,
+Verdrahtung in einer eigenen, späteren Task).
+
+**Tests:** **882 Tests grün** (Baseline 870 + 12 neue in `test/didaktikpruefe.test.js`). Die
+Tools-Suite ist von D2 nicht betroffen — `didaktikPruefe` hat kein Tools-Pendant und keinen
+Parity-Wächter-Eintrag; die Parity-Pflicht aus den Etappe-5-Constraints
+(„`didaktik-abnahme` ↔ `inhalt.didaktikPruefe`") ist Sache von D7 (Tools-Baum), das ein
+eigenständiges `didaktik-abnahme.cjs` erst noch bauen und gegen `inhalt.didaktikPruefe`
+spiegeln muss.
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** `normZahl(z)` auf
+`return String(z);` gesetzt (Apostroph-Normalisierung stillgelegt), `node --test
+test/didaktikpruefe.test.js`:
+```
+ℹ tests 12
+ℹ pass 11
+ℹ fail 1
+
+✖ R2: das Zahlenpaar 22'680 (Contract) / 22680 (Content) ist normalisiert KEIN Fehler; eine erfundene 99999 ist ein Fehler
+  AssertionError [ERR_ASSERTION]: normalisiertes Zahlenpaar haette keinen Fehler erzeugen duerfen: Contract 1 (VL-002-EK-005): Zahl 22'680 kommt im freigegebenen Content nicht vor. | Contract 1 (VL-002-EK-005): Zahl 99999 kommt im freigegebenen Content nicht vor.
+```
+Genau der eine EK-005-Zahlenpaar-Test fiel rot (11/12 grün) — die neu unnormalisierte
+Kontrakt-Zahl `22'680` fand ihr Content-Gegenstück `22680` nicht mehr, weil beide Seiten jetzt
+wörtlich verglichen wurden; die übrigen elf Tests (inklusive der `99999`-Fehlermeldung selbst
+und aller R1/R3-Fälle) blieben grün. Danach `normZahl` wiederhergestellt, komplette Suite
+erneut geprüft: `node --test` → **882/882 grün**.
+
+**Offen / bewusst nicht Teil von D2:** kein Aufrufer in `app.js`/`ansichten.js` — D2 liefert nur
+die reine Prüffunktion, keine UI, keinen Upload-Weg (D5), kein Prompt-Kopf (D3/D4), keine
+Verdrahtung von `BLOCKSTRECKEN_PRUEFUNGEN` um `'interaktion'`. Kein Tools-Pendant/Parity-Test —
+`didaktik-abnahme.cjs` und der zugehörige Parity-Wächter-Eintrag sind Sache von D7. Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 5 weiterhin nicht
+`pruefung: 'interaktion'`/`ext: 'blocks'`/`wege`+`hochladen` (Weg B) — diese Task ändert nur
+`inhalt.js` und die Test-Fixture; live greift nichts, bis D8 (SharePoint, Freigabe Markus)
+nachzieht.
