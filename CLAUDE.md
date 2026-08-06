@@ -5415,7 +5415,7 @@ bisher.
 **Tests (`test/gate.test.js`, drei neue Fälle):** (a) mit `entscheid` steht der Text am Eintrag;
 (b) ohne bleibt der Eintrag schlüsselgleich zu heute (`deepStrictEqual` gegen den bisherigen Shape:
 `was`/`wo`/`wer`/`wann`, keine neuen Schlüssel); (c) leerer/Whitespace-`entscheid` wird nicht
-gespeichert. Aufrufer liest das Feld konditional, keine Testanpassung nötig dafür.
+gespeichert.
 
 **Tests:** **885 Tests grün** (Baseline 882 + 3 neue D3-Tests in `test/gate.test.js`).
 
@@ -5432,6 +5432,10 @@ in `dossier.js` Zeile 238 auskommentiert (`if (/* MUTATIONSPROBE */ false && ent
 Genau der eine neue Test fiel rot (36/37 grün) — die beiden anderen D3-Gegenproben blieben grün,
 alle 34 bestehenden Tests blieben unberührt. Danach Zeile wiederhergestellt, komplette Suite
 erneut geprüft: `node --test` → **885/885 grün**.
+
+**Fix-Runde 2 (Review Finding 1):** Ein Spleiss-Rest-Satz am Ende des D3-Test-Absatzes war
+inhaltlich FALSCH — er behauptete einen app.js-Aufrufer, der in Fix-Runde 1 gerade entfernt wurde.
+Satz ersatzlos gestrichen, D3-Absatz endet jetzt sauber mit „gespeichert."
 
 **Offen / bewusst nicht Teil von D3:** `controller.offenEntscheiden` sollte `offen-entscheid-{index}`
 lesen — das war ein Vorgriff ausserhalb des Brief-Scopes (kein UI rendert dieses Element seit Task
