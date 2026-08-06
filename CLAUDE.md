@@ -5353,6 +5353,21 @@ Testdatei).
 `pruefung: 'skript'`/`'validierung'` bei Schritt 3/4), `wege:
 ['chat','claude-code','hochladen']` (`hochladen` neu, `chat` bleibt an erster Stelle —
 Default-Weg wie bei Schritt 3/4 seit B5/Z10/V9). `format` bleibt unverändert `'text'` — kein
+Aufrufer liest das Feld konditional, keine Testanpassung nötig dafür.
+
+## Etappe 5 / Task D3: `dossier.offenEntscheiden` trägt den Entscheid-Text (additiv)
+
+**`dossier.offenEntscheiden(d, index, {wer, wann, entscheid})` — neues optionales drittes Feld
+`entscheid` (String):** wird, wenn gesetzt, als `entscheid` auf dem `entschieden[]`-Eintrag
+gespeichert. OHNE `entscheid` byte-identisches Verhalten zu heute (jeder bestehende Aufrufer
+bleibt unverändert grün — das ist der Beleg für Additivität). `wer`/`wann` bleiben Pflicht wie
+bisher. `controller.offenEntscheiden` (`app.js`) liest aus `offen-entscheid-{index}` und
+reicht es mit durch.
+
+**Tests (`test/gate.test.js`, drei neue Fälle):** (a) mit `entscheid` steht der Text am Eintrag;
+(b) ohne bleibt der Eintrag schlüsselgleich zu heute (`deepStrictEqual` gegen den bisherigen Shape:
+`was`/`wo`/`wer`/`wann`, keine neuen Schlüssel); (c) leerer/Whitespace-`entscheid` wird nicht
+gespeichert.
 Aufrufer liest das Feld konditional, keine Testanpassung nötig dafür. Zwei bestehende Tests in
 `test/hochladen.test.js` waren auf die alte Schritt-5-Fixture (kein `hochladen` in `wege`)
 gepinnt und wurden nachgezogen — kein Verhaltensfehler, reine Fixture-Drift:

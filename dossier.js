@@ -234,6 +234,8 @@
       if (!wann) throw new Error('Entscheid: wann fehlt');
       var alt = d.offen.splice(index, 1)[0];
       var e = { was: alt.was, wo: alt.wo, wer: wer, wann: wann };
+      var entscheid = String(p.entscheid || '').trim();
+      if (entscheid) e.entscheid = entscheid;
       d.entschieden.push(e);
       return e;
     },

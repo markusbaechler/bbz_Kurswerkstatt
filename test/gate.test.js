@@ -658,6 +658,76 @@ test('offenEntscheiden mit verschobenem Index (Identitaet stimmt nicht mehr) bri
   delete global.document;
 });
 
+/* ---------- D3: optionales Entscheid-Text-Feld ---------- */
+
+test('D3: mit entscheid steht der Text am entschieden[]-Eintrag', async () => {
+  setzeKurs();
+  state.data.dossier = { 'DBS-001': dossierMit([{ was: 'Lernziel unklar', wo: 'LZ-004', fuer: 'gate-1' }]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  els({ 'offen-wer-0': { value: 'Anna' }, 'offen-wann-0': { value: '2026-08-06' }, 'offen-entscheid-0': { value: 'mit Anna abgeklaert' } });
+  let abgelegtMit = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    abgelegtMit = { kursId, ordner, datei, text };
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.offenEntscheiden({ dataset: { index: '0', was: 'Lernziel unklar' } });
+
+  assert.ok(abgelegtMit, 'graph.ablegen wurde nicht aufgerufen');
+  const d = JSON.parse(abgelegtMit.text);
+  assert.strictEqual(d.entschieden.length, 1);
+  assert.strictEqual(d.entschieden[0].entscheid, 'mit Anna abgeklaert',
+    'entscheid-Text steht nicht am Eintrag');
+  delete global.document;
+});
+
+test('D3: ohne entscheid ist der Eintrag schluesselgleich zu heute (keine neuen Schluessel)', async () => {
+  setzeKurs();
+  state.data.dossier = { 'DBS-001': dossierMit([{ was: 'Test-Frage', wo: 'LZ-007', fuer: 'gate-1' }]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  els({ 'offen-wer-0': { value: 'Bob' }, 'offen-wann-0': { value: '2026-08-06' } });
+  let abgelegtMit = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    abgelegtMit = { kursId, ordner, datei, text };
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.offenEntscheiden({ dataset: { index: '0', was: 'Test-Frage' } });
+
+  const d = JSON.parse(abgelegtMit.text);
+  const e = d.entschieden[0];
+  assert.deepStrictEqual(Object.keys(e).sort(), ['wann', 'wer', 'wo', 'was'].sort(),
+    'Eintrag hat neue Schluessel oder andere Struktur');
+  assert.strictEqual(e.was, 'Test-Frage');
+  assert.strictEqual(e.wo, 'LZ-007');
+  assert.strictEqual(e.wer, 'Bob');
+  assert.strictEqual(e.wann, '2026-08-06');
+  delete global.document;
+});
+
+test('D3: leerer/nur-Whitespace-entscheid wird nicht gespeichert', async () => {
+  setzeKurs();
+  state.data.dossier = { 'DBS-001': dossierMit([{ was: 'Verwirrung', wo: 'LZ-009', fuer: 'gate-1' }]) };
+  state.data.dossierETag = {};
+  state.hinweis = null;
+  els({ 'offen-wer-0': { value: 'Charlie' }, 'offen-wann-0': { value: '2026-08-06' }, 'offen-entscheid-0': { value: '   ' } });
+  let abgelegtMit = null;
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    abgelegtMit = { kursId, ordner, datei, text };
+    return Promise.resolve({ eTag: 'W/"1"' });
+  };
+
+  await controller.offenEntscheiden({ dataset: { index: '0', was: 'Verwirrung' } });
+
+  const d = JSON.parse(abgelegtMit.text);
+  const e = d.entschieden[0];
+  assert.strictEqual('entscheid' in e, false,
+    'leerer/nur-Whitespace-entscheid wurde trotzdem gespeichert');
+  delete global.document;
+});
+
 test('offenVerschieben mit verschobenem Index bricht OHNE Schreiben ab', async () => {
   setzeKurs();
   state.data.dossier = { 'DBS-001': dossierMit([

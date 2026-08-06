@@ -2033,10 +2033,13 @@
       var wasErwartet = t.dataset.was;
       var wer = (document.getElementById('offen-wer-' + index) || {}).value;
       var wann = (document.getElementById('offen-wann-' + index) || {}).value;
+      var entscheid = (document.getElementById('offen-entscheid-' + index) || {}).value;
       return controller.dossierSchreiben(kursId, function (kopie) {
         var eintrag = kopie.offen[index];
         if (!eintrag || eintrag.was !== wasErwartet) return null;
-        if (!root.dossier.offenEntscheiden(kopie, index, { wer: wer, wann: wann })) return null;
+        var p = { wer: wer, wann: wann };
+        if (entscheid) p.entscheid = entscheid;
+        if (!root.dossier.offenEntscheiden(kopie, index, p)) return null;
         return kopie;
       }, sag)
         .then(function (ergebnis) {
