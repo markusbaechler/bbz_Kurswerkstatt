@@ -5670,3 +5670,106 @@ Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schr
 das gesamte D5-Gate nirgends live, kein Regressionsrisiko. D6 (Contracts-Ansicht Schritt 5 —
 `controller.didaktikNachladen`, gerenderte Übersicht, Cache-Invalidierung im D5-Erfolgspfad) baut
 auf dieser Ablage-/Rückschreibungs-Strecke auf, ist aber nicht Teil dieser Task.
+
+## Etappe 5 / Task D6: Contracts-Ansicht (funktional) — `didaktikNachladen` + gerenderte Übersicht
+
+Baut auf D5 (Upload-Weg, Punkte-Rückschreibung) auf: die Contracts-Ansicht selbst — laden,
+parsen und rendern der geltenden Fassung, **bewusst funktional schlicht** (Entscheid Markus:
+Polish kommt später als eigene Runde, keine Gestaltungs-Extras in diesem Task).
+
+**`controller.didaktikNachladen(kursId)` (app.js) — Muster `reviewNachladen` (V5), aber nur EIN
+Slot statt dreier.** Schritt 5 führt anders als Schritt 3 keine Varianten — es gibt nur die eine
+geltende `umsetzung`-`.blocks` aus `05_didaktik`. Ordner/Lieferobjekt kommen ausschliesslich aus
+dem Ablage-Kontrakt (`inhalt.ablageVon(inh,'5',kursId)`), `inhalt.geltendeDatei()` findet die
+Fassung. **Kein Endungstausch** — anders als beim Schritt-4→3-Muster (docx→blocks, B5-Invariante)
+ist die Kontrakt-Endung für Schritt 5 bereits `blocks`; `geltendeDatei()` ist ohnehin endung-blind
+(Regex `[a-z0-9]+`), aber es gibt hier schlicht nichts zu tauschen. Text wird über
+`graph.dateiLesen` gelesen und mit `root.didaktikLesen.lies(text)` geparst — ein Wurf (kein
+`###CONTRACTS`-Kopf) landet in einem `try/catch`, der Slot wird `null` statt die Kette abzubrechen
+(dieselbe Fehlerklasse wie "keine geltende Datei" — beides heisst "nichts Brauchbares zum
+Anzeigen", kein Netzfehler). Cache `state.data.didaktik[kursId]` = geparstes `gelesen`-Objekt ODER
+`null` (kein Lieferobjekt im Kontrakt, keine geltende Datei, kein Text oder ein Parse-Fehler);
+`undefined` = nie geladen, `null` = lädt gerade (Doppelabruf-Schutz, Muster
+`dossierNachladen`/`briefingNachladen`/`reviewNachladen`). Nicht-sticky-Fehlerpfad (Etappe 1e): nur
+ein echter Kettenfehler (Promise-Reject) setzt `state.fehlerHinweis`, rendert, und fällt DANACH auf
+`undefined` zurück, damit der nächste Ansichtswechsel es erneut versucht.
+
+**Render-Trigger in `controller.render()`** — direkt neben der bestehenden Schritt-4-
+`reviewNachladen`-Zeile, dasselbe Muster: `if (k && String(p.schrittId) === '5' &&
+state.data.ordner[k.kursId]) { controller.didaktikNachladen(k.kursId); }`. `ansichten.einSchritt`
+bekommt das Ergebnis als neues Prop `didaktik: k ? (state.data.didaktik[k.kursId] || null) :
+null` durchgereicht — Muster `review`.
+
+**Cache-Invalidierung im D5-Erfolgspfad (`weiterMitDidaktikAblage`, app.js):**
+`delete state.data.didaktik[k.kursId];` direkt neben der bestehenden `state.data.dateiAuswahl =
+null;`-Zeile — die frisch abgelegte Fassung macht den geladenen Contracts-Cache veraltet, dieselbe
+Überlegung wie beim Review-Cache in `weiterMitSkriptBau` (V4/V5).
+
+**`ansichten.didaktikBlock(inh, kurs, ablageDaten)` — Muster `reviewBlock`, aber ohne
+Varianten-Nebeneinander (Schritt 5 führt keine).** Sichtbarkeit über die in `einSchritt` BEREITS
+aufgelöste `ablage`-Variable (`ablage.pruefung === 'interaktion'`) — V5-Lehre, NIE eine zweite
+`ablageVon`-Stelle mit hartkodierter `'5'` (die käme immer für Schritt 5 zurück, unabhängig vom
+tatsächlich gerenderten Schritt). Position: direkt VOR der Gate-Box, wie `reviewBlock` — Schritt 5
+führt zwar kein Gate (`gate: null` im Kontrakt, `gateBlock` ist dort ein No-op), aber die
+Reihenfolge bleibt konsistent mit dem V5-Muster, falls sich das je ändert.
+
+Ohne geladene Fassung (`ablageDaten.didaktik` falsy — `undefined` oder `null`, beide heissen "noch
+nichts Brauchbares"): nur der Kurzhinweis „Contracts erscheinen nach der ersten abgelegten
+Fassung." Sonst: Kopfzeile „{n} Interaktions-Contracts · Basis: {basiert_auf}" (`n` =
+`gelesen.contracts.length`, `basiert_auf` aus `gelesen.kopf.basiertAuf` — Plural bleibt wörtlich
+stehen, unabhängig von `n`, Muster D5-Erfolgsmeldung „wie eine Masseinheit"). Je Contract eine
+`<details>`-Zeile (`didaktikContractZeile`): ein Typ-Badge im `<summary>` mit den bestehenden
+`.badge`-Klassen — **`fliesstext` trägt `badge-offen` (rot), jeder andere Typ `badge-bestaetigt`
+(grün)**: `fliesstext` hat kein interaktives Modell (`didaktik-schema.js`, D1) und verlangt
+stattdessen `begruendung` — die begründungspflichtige Ausnahme in der Palette, farblich markiert
+wie ein ungeklärter Fall in der Review-Ansicht (V5). EK und `kernaussage` stehen daneben im
+Summary; die übrigen gesetzten Felder (`zielhandlung`/`denkfehler`/`stuetztext`/
+`steuert`/`beobachtet`/`aha`/`vorhersage`/`konsequenz`/`begruendung`) folgen als `<ul>` darunter —
+nur die tatsächlich gesetzten (ein Contract führt entweder die Modell-Felder ODER `begruendung`,
+nie beide, D1). Jeder Wert durch `esc()` (Konvention 4) — die Blockdatei ist ein Fremdwert wie
+jeder andere. **Kein `inhalt.js`-Export nötig** — `didaktikBlock`/`didaktikContractZeile`/
+`didaktikFelderListe` sind wie `reviewBlock`/`reviewKapitelZeile` privat in `ansichten.js` und nur
+über `einSchritt` erreichbar (kein zu ändernde-Datei-Eintrag für `inhalt.js` im Task-Brief).
+
+**Punkte-Stand aus dem Dossier** (`ablageDaten.dossier`, nicht aus der Blockdatei — die
+Rückschreibung selbst läuft über `dossier.offen[]`, D5): `d.offen` gefiltert auf `fuer ===
+'schritt-5'`, gezählt — „{n} Punkte offen an schritt-5" bzw., wenn keiner mehr offen ist, „alle
+Punkte behandelt". Direkter Array-Filter statt `dossier.offenFuer(d, 'schritt-5')` — dieselbe
+Frage, aber ohne einen zusätzlichen `root.dossier`-Aufruf nur für einen Einzeiler; die Funktion
+selbst bleibt in `dossier.js` unverändert für die Gate-Box (V5) verfügbar.
+
+**Tests (`test/didaktikansicht.test.js`, neu, 13 Fälle):** Kurzhinweis ohne geladene Fassung (sowohl
+`null` als auch `undefined`); Sichtbarkeit nur bei `pruefung === 'interaktion'` — Schritt 3 UND
+Schritt 4 zeigen den Block nicht (Schritt 4 als eigene Gegenprobe, weil dort ein anderer,
+NICHT-leerer `pruefung`-Wert `'validierung'` greift — ein reiner `!ablage`-Test hätte diese
+Verwechslungsgefahr nicht abgedeckt); Kopfzeile mit `n`/`Basis`; eine aufgeklappte Zeile mit
+Fremdwert-Probe (`<img src=x onerror=alert(1)>` in `kernaussage`, escaped, plus zwei Felder aus der
+Liste); die `fliesstext`-Ausnahme trägt `badge-offen` und listet `begruendung`; Punkte-Stand mit
+offenen `schritt-5`-Punkten (fremde `fuer`-Werte wie `sign-off` zählen nicht mit) und die
+Gegenprobe „alle Punkte behandelt". Vier Controller-Tests für `didaktikNachladen` (Muster
+`test/review.test.js`): laden+cachen unter dem Kurs, Doppelabruf-Schutz über einen hängenden
+`graph.ordnerInhalt`-Mock, Nicht-sticky-Fehlerpfad (Kettenfehler → `fehlerHinweis` + `undefined`
+danach), Retry nach Fehler (ein zweiter Aufruf fragt tatsächlich erneut ab). **913 Tests grün**
+(Baseline 900 + 13 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** den `esc()`-Aufruf an
+`kernaussage` in `didaktikContractZeile` entfernt, `node --test test/didaktikansicht.test.js`:
+```
+ℹ tests 13
+ℹ pass 12
+ℹ fail 1
+
+✖ D6: eine aufgeklappte Zeile traegt typ/kernaussage/felder escaped (Fremdwert-Probe <img>)
+  AssertionError [ERR_ASSERTION]: unescaped <img> im Ausgabe-HTML gefunden — XSS-Luecke
+```
+Genau der eine Fremdwert-Test fiel rot, alle anderen zwölf blieben grün; danach die Zeile
+wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **913/913 grün**.
+
+**Offen / bewusst nicht Teil von D6:** kein Polish (Layout/Optik) — Entscheid Markus, das kommt als
+eigene Runde. Kein Schreibpfad aus dieser Ansicht heraus (Leitsatz „die App verwaltet nichts",
+Muster reviewBlock) — Punkte werden ausschliesslich über den D5-Upload zurückgeschrieben, nicht
+über einen UI-Klick hier. Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint führen für
+Schritt 5 weiterhin nicht `pruefung: 'interaktion'`/`ext: 'blocks'` (Weg B, unverändert seit D2) —
+ohne diese Felder erreicht `controller.render()` den Trigger dort nicht anders als heute schon,
+kein Regressionsrisiko. D7 (Tools-Baum) und D8 (SharePoint-Nachzug, Freigabe Markus) folgen laut
+Reihenfolge in `global-constraints.md`, sind aber nicht Teil dieser Task.

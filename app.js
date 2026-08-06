@@ -50,6 +50,17 @@
                     nie geladen, null = laedt gerade (Doppelabruf-Schutz, Muster
                     dossier/briefing). s. controller.reviewNachladen. */
                  review: {},
+                 /* didaktik (D6, Etappe 5): Schritt-5-Ansicht — die geltende
+                    umsetzung-.blocks (05_didaktik), geparst ueber
+                    didaktikLesen.lies(). Anders als review (drei Slots: eine
+                    validierte Fassung + zwei Schritt-3-Varianten) fuehrt
+                    Schritt 5 keine Varianten — EIN Slot je Kurs. gelesen-
+                    Objekt ODER null (kein Lieferobjekt im Kontrakt, keine
+                    geltende Datei, kein Text oder ein Parse-Fehler);
+                    undefined = nie geladen, null = laedt gerade
+                    (Doppelabruf-Schutz, Muster review/dossier/briefing).
+                    s. controller.didaktikNachladen. */
+                 didaktik: {},
                  /* dateiAuswahl (B9-F1): die Auswahl am Datei-Input #datei ueberlebt
                     keinen Render (Live-Befund) — controller.render() baut die Ansicht
                     als HTML-String neu, der Input ist danach ein NEUES, leeres Element.
@@ -1274,7 +1285,11 @@
           dateien04: dateien04Fuer5,
           /* V5, Etappe 4: die geparsten .blocks fuer die Review-Ansicht (nur
              Schritt 4 relevant, s. controller.reviewNachladen unten). */
-          review: k ? (state.data.review[k.kursId] || null) : null
+          review: k ? (state.data.review[k.kursId] || null) : null,
+          /* D6, Etappe 5: die geparste umsetzung-.blocks fuer die
+             Contracts-Ansicht (nur Schritt 5 relevant, s.
+             controller.didaktikNachladen unten). */
+          didaktik: k ? (state.data.didaktik[k.kursId] || null) : null
         }));
         if (k && ab) controller.ordnerNachladen(k.kursId, ab.ordner);
         /* A3, Etappe 3: Schritt 3 erbt den GESETZTEN Contract-Stand (Version,
@@ -1307,6 +1322,12 @@
            dossierNachladen/briefingNachladen oben). */
         if (k && String(p.schrittId) === '4' && state.data.ordner[k.kursId]) {
           controller.reviewNachladen(k.kursId);
+        }
+        /* D6, Etappe 5: Schritt 5 zeigt die Contracts-Ansicht — sie braucht
+           die geparste umsetzung-.blocks aus 05_didaktik, ohne Kursordner
+           gibt es nichts zu lesen (Muster reviewNachladen direkt oben). */
+        if (k && String(p.schrittId) === '5' && state.data.ordner[k.kursId]) {
+          controller.didaktikNachladen(k.kursId);
         }
         /* Auf Schritt 1 stehen die Projekt-Instruktionen, und die tragen das
            Briefing. Es wurde aber nur auf Schritt 2 geladen — deshalb stand dort
@@ -1544,6 +1565,63 @@
         state.fehlerHinweis = 'Review konnte nicht geladen werden — Seite neu laden.';
         renderWennSichtbar();
         state.data.review[kursId] = undefined;
+      });
+    },
+
+    /* Didaktik (D6, Etappe 5, Schritt 5 — Interaktions-Contracts): laedt und
+       parst die geltende umsetzung-.blocks aus 05_didaktik — Muster
+       reviewNachladen, aber nur EIN Slot statt dreier (Schritt 5 fuehrt
+       keine Varianten wie Schritt 3). Ordner/Lieferobjekt kommen
+       ausschliesslich aus dem Ablage-Kontrakt (inhalt.ablageVon) — nichts
+       hartkodiert. geltendeDatei() ist endung-blind, die Kontrakt-Endung
+       ist bereits 'blocks' — anders als bei Schritt 4 (docx -> blocks,
+       B5-Invariante) gibt es hier KEINEN Endungstausch. Cache
+       state.data.didaktik[kursId] = geparstes gelesen-Objekt ODER null
+       (kein Lieferobjekt im Kontrakt, keine geltende Datei, kein Text oder
+       ein Parse-Fehler); undefined = nie geladen, null = laedt gerade
+       (Doppelabruf-Schutz, Muster dossierNachladen/briefingNachladen/
+       reviewNachladen). Nicht-sticky-Fehlerpfad (Etappe 1e): nur ein echter
+       Kettenfehler (Promise-Reject — graph.ordnerInhalt/graph.dateiLesen
+       selbst lehnen praktisch nie ab, sie fangen ihre eigenen Fehler intern
+       ab) setzt state.fehlerHinweis, rendert, und faellt DANACH auf
+       undefined zurueck, damit der naechste Ansichtswechsel es erneut
+       versucht — waehrend controller.render() laeuft, blockiert der noch
+       stehende null-Wert einen sofortigen Selbst-Retry aus demselben
+       Render-Aufruf. */
+    didaktikNachladen: function (kursId) {
+      if (state.data.didaktik[kursId] !== undefined) return;
+      state.data.didaktik[kursId] = null;
+      var inh = state.data.inhalt;
+
+      function renderWennSichtbar() {
+        if (state.position.kursId === kursId && String(state.position.schrittId) === '5') {
+          controller.render();
+        }
+      }
+
+      var ablage = root.inhalt.ablageVon(inh, '5', kursId);
+      if (!ablage || !ablage.lieferobjekt) {
+        state.data.didaktik[kursId] = null;
+        renderWennSichtbar();
+        return Promise.resolve();
+      }
+
+      return graph.ordnerInhalt(kursId, ablage.ordner).then(function (dateien) {
+        var name = root.inhalt.geltendeDatei(dateien, kursId, ablage.lieferobjekt);
+        if (!name) return null;
+        return graph.dateiLesen(kursId, ablage.ordner, name);
+      }).then(function (text) {
+        var gelesen = null;
+        if (text) {
+          try { gelesen = root.didaktikLesen.lies(text); }
+          catch (e) { gelesen = null; }
+        }
+        state.data.didaktik[kursId] = gelesen;
+        renderWennSichtbar();
+      }).catch(function () {
+        state.fehlerHinweis = 'Contracts konnten nicht geladen werden — Seite neu laden.';
+        renderWennSichtbar();
+        state.data.didaktik[kursId] = undefined;
       });
     },
 
@@ -3335,6 +3413,10 @@
           .then(function (ergebnis) {
             return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
               state.data.dateiAuswahl = null;
+              /* D6: die frisch abgelegte Fassung macht den geladenen
+                 Contracts-Cache veraltet — dieselbe Ueberlegung wie beim
+                 Review-Cache in weiterMitSkriptBau (V5/V4). */
+              delete state.data.didaktik[k.kursId];
               var ziel = ergebnis.ziel;
               var anzahl = (gelesenDidaktik.contracts || []).length;
               /* Wortlaut woertlich aus dem Task-Brief — "Interaktions-Contracts"

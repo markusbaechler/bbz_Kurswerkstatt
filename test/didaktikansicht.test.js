@@ -1,0 +1,253 @@
+'use strict';
+/* D6, Etappe 5 — die Contracts-Ansicht (Schritt 5). Funktional schlicht
+   (Entscheid Markus: Polish kommt spaeter als eigene Runde): Kopfzeile,
+   je Contract eine aufklappbare Zeile (typ-Badge, kernaussage im Summary,
+   uebrige Felder als Liste darunter), darunter der Punkte-Stand aus dem
+   Dossier (offen[] gefiltert fuer==='schritt-5'). Rein lesend — die App
+   verwaltet nichts (Leitsatz): geaendert wird in der Blockdatei, neu
+   hochgeladen, die Ansicht rendert frisch.
+
+   Blocktext-Fixtures laufen ueber die ECHTE didaktikLesen.lies()-Kette
+   (Muster test/review.test.js), kein Handbau der gelesen-Objekte. */
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { controller, state, graph } = require('../app.js');
+const { inhalt } = require('../inhalt.js');
+require('../dossier.js');
+require('../didaktik-schema.js');
+const { didaktikLesen } = require('../didaktik-lesen.js');
+const { ansichten } = require('../ansichten.js');
+const { INHALT, KURSE } = require('./fixture.js');
+
+const DBS = KURSE[0]; // DBS-001, s. ansichten.test.js/review.test.js
+
+/* ---------- Blocktext-Fixtures ---------- */
+
+function contractText(opts) {
+  opts = opts || {};
+  const ek = opts.ek || 'DBS-001-EK-001';
+  const nr = opts.nr || 1;
+  const typ = opts.typ || 'regler';
+  const kernaussage = opts.kernaussage || 'Die Praemie sinkt, wenn der Selbstbehalt steigt.';
+  const lines = [
+    '###CONTRACT ek=' + ek + ' | nr=' + nr + ' | typ=' + typ,
+    'kernaussage: ' + kernaussage,
+    'zielhandlung: Regler bewegen und den Effekt beobachten.',
+    'denkfehler: Ein hoeherer Selbstbehalt senkt die Praemie automatisch um denselben Betrag.',
+    'stuetztext: Der Zusammenhang haengt vom Modell ab.'
+  ];
+  if (typ === 'fliesstext') {
+    lines.push('begruendung: Ein Rechenbeispiel reicht hier ohne interaktives Modell.');
+  } else {
+    lines.push('steuert: den Selbstbehalt in Franken');
+    lines.push('beobachtet: die monatliche Praemie');
+    lines.push('aha: bei kleinen Selbstbehalten aendert sich wenig');
+    lines.push('vorhersage: Wie stark sinkt die Praemie?');
+    lines.push('konsequenz: Ein zu hoher Selbstbehalt kann das Budget sprengen.');
+  }
+  lines.push('###ENDE-CONTRACT');
+  return lines.join('\n');
+}
+
+function didaktikText(opts) {
+  opts = opts || {};
+  const kurs = opts.kurs || 'DBS-001';
+  const basiertAuf = opts.basiertAuf === undefined ? 'DBS-001_content_final.blocks' : opts.basiertAuf;
+  const kopf = '###CONTRACTS kurs=' + kurs + (basiertAuf ? ' | basiert_auf=' + basiertAuf : '');
+  const contracts = (opts.contracts || [contractText()]).join('\n');
+  let text = [kopf, contracts].join('\n');
+  if (opts.punkte) text += '\n' + opts.punkte;
+  return text;
+}
+
+function gelesenAus(opts) { return didaktikLesen.lies(didaktikText(opts)); }
+
+function dossierMit(offenListe) {
+  return {
+    dossier: 1, kurs: 'DBS-001', scope: {}, regulatorik: {}, content_modus: 'quellengestuetzt',
+    quellen: [], status: {}, offen: offenListe || [], entschieden: []
+  };
+}
+
+/* ---------- ansichten.didaktikBlock (ueber einSchritt, Muster reviewBlock) ---------- */
+
+test('D6: ohne geladene Fassung erscheint nur der Kurzhinweis', () => {
+  const props = { dossier: dossierMit([]), didaktik: null };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /Contracts erscheinen nach der ersten abgelegten Fassung/);
+});
+
+test('D6: ohne jedes didaktik-Feld (undefined) ebenfalls nur der Kurzhinweis', () => {
+  const props = { dossier: dossierMit([]) };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /Contracts erscheinen nach der ersten abgelegten Fassung/);
+});
+
+test('D6: didaktikBlock erscheint nur an einem Schritt mit pruefung===interaktion (Schritt 3 zeigt ihn nicht)', () => {
+  const gelesen = gelesenAus({});
+  const props = { dossier: dossierMit([]), didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 3, null, props);
+  assert.doesNotMatch(html, /id="didaktik-block"/);
+});
+
+test('D6: didaktikBlock erscheint nicht auf Schritt 4 (Validierung, nicht Interaktion)', () => {
+  const gelesen = gelesenAus({});
+  const props = { dossier: dossierMit([]), didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 4, null, props);
+  assert.doesNotMatch(html, /id="didaktik-block"/);
+});
+
+test('D6: auf Schritt 5 erscheint der Block mit Kopfzeile — n Contracts, Basis', () => {
+  const gelesen = gelesenAus({
+    contracts: [contractText({ ek: 'DBS-001-EK-001', nr: 1 }), contractText({ ek: 'DBS-001-EK-002', nr: 1 })],
+    basiertAuf: 'DBS-001_content_final.blocks'
+  });
+  const props = { dossier: dossierMit([]), didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /id="didaktik-block"/);
+  assert.match(html, /2 Interaktions-Contracts/);
+  assert.match(html, /Basis: DBS-001_content_final\.blocks/);
+});
+
+test('D6: eine aufgeklappte Zeile traegt typ/kernaussage/felder escaped (Fremdwert-Probe <img>)', () => {
+  const boesesFeld = 'Normaler Text <img src=x onerror=alert(1)> Ende.';
+  const gelesen = gelesenAus({
+    contracts: [contractText({ ek: 'DBS-001-EK-001', kernaussage: boesesFeld })]
+  });
+  const props = { dossier: dossierMit([]), didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /<details class="didaktik-contract">/);
+  assert.match(html, /class="badge badge-bestaetigt"/);
+  assert.match(html, />regler</);
+  assert.match(html, /DBS-001-EK-001/);
+  assert.ok(!html.includes('<img src=x'), 'unescaped <img> im Ausgabe-HTML gefunden — XSS-Luecke');
+  assert.match(html, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  /* uebrige Felder als Liste darunter */
+  assert.match(html, /<li><b>zielhandlung:<\/b>/);
+  assert.match(html, /<li><b>steuert:<\/b>/);
+});
+
+test('D6: ein fliesstext-Contract traegt die rote badge-offen-Klasse (begruendungspflichtige Ausnahme)', () => {
+  const gelesen = gelesenAus({
+    contracts: [contractText({ ek: 'DBS-001-EK-001', typ: 'fliesstext' })]
+  });
+  const props = { dossier: dossierMit([]), didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /class="badge badge-offen"/);
+  assert.match(html, /<li><b>begruendung:<\/b>/);
+});
+
+test('D6: Punkte-Stand zeigt die Zahl offener schritt-5-Punkte aus dem Dossier', () => {
+  const gelesen = gelesenAus({});
+  const props = {
+    dossier: dossierMit([
+      { was: 'Punkt A', wo: 'DBS-001-EK-001', fuer: 'schritt-5' },
+      { was: 'Punkt B', wo: 'DBS-001-EK-002', fuer: 'schritt-5' },
+      { was: 'Punkt C', wo: 'DBS-001-EK-003', fuer: 'sign-off' }
+    ]),
+    didaktik: gelesen
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /2 Punkte offen an schritt-5/);
+});
+
+test('D6: ohne offene schritt-5-Punkte zeigt der Block "alle Punkte behandelt"', () => {
+  const gelesen = gelesenAus({});
+  const props = {
+    dossier: dossierMit([{ was: 'Punkt X', wo: 'irgendwo', fuer: 'sign-off' }]),
+    didaktik: gelesen
+  };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.match(html, /alle Punkte behandelt/);
+  assert.doesNotMatch(html, /Punkte offen an schritt-5/);
+});
+
+/* ---------- controller.didaktikNachladen (Cache, Doppelabruf-Schutz, Nicht-sticky, Retry) ---------- */
+
+function vorbereitenController() {
+  state.position.kursId = 'DBS-001';
+  state.position.schrittId = '5';
+  state.data.inhalt = INHALT;
+  state.data.didaktik = {};
+  state.hinweis = null;
+  state.fehlerHinweis = null;
+  global.document = undefined;   /* controller.render() muss auch ohne DOM auskommen */
+}
+
+test('didaktikNachladen laedt die geltende umsetzung-.blocks und cacht das Ergebnis unter dem Kurs', async () => {
+  vorbereitenController();
+  const lief = inhalt.ablageVon(INHALT, '5', 'DBS-001').lieferobjekt;
+
+  graph.ordnerInhalt = function (kursId, ordner) {
+    if (ordner === '05_didaktik') return Promise.resolve([{ name: 'DBS-001_' + lief + '_v1.blocks' }]);
+    return Promise.resolve([]);
+  };
+  graph.dateiLesen = function (kursId, ordner, datei) {
+    if (datei === 'DBS-001_' + lief + '_v1.blocks') {
+      return Promise.resolve(didaktikText({ contracts: [contractText({ ek: 'DBS-001-EK-001' })] }));
+    }
+    return Promise.resolve(null);
+  };
+
+  await controller.didaktikNachladen('DBS-001');
+
+  const r = state.data.didaktik['DBS-001'];
+  assert.ok(r, 'kein Didaktik-Objekt im Cache');
+  assert.strictEqual(r.contracts[0].ek, 'DBS-001-EK-001');
+  assert.strictEqual(r.kopf.kurs, 'DBS-001');
+});
+
+test('didaktikNachladen: Doppelabruf-Schutz — ein zweiter Aufruf waehrend des Ladens loest keine weiteren Netzzugriffe aus', async () => {
+  vorbereitenController();
+  let aufrufe = 0;
+  const resolvers = [];
+  graph.ordnerInhalt = function () {
+    aufrufe++;
+    return new Promise(function (res) { resolvers.push(res); });
+  };
+  graph.dateiLesen = function () { return Promise.resolve(null); };
+
+  const p1 = controller.didaktikNachladen('DBS-001');
+  assert.strictEqual(state.data.didaktik['DBS-001'], null, 'der Zwischenzustand null (laedt) fehlt');
+  const anzahlNachErstemAufruf = aufrufe;
+
+  controller.didaktikNachladen('DBS-001');   /* Guard: !== undefined -> return, ohne Netzzugriff */
+  assert.strictEqual(aufrufe, anzahlNachErstemAufruf,
+    'ein zweiter Aufruf waehrend des Ladens hat erneut Netzzugriffe ausgeloest');
+
+  resolvers.forEach(function (r) { r([]); });
+  await p1;
+});
+
+test('didaktikNachladen: ein Kettenfehler setzt fehlerHinweis, rendert und faellt danach auf undefined zurueck (I1-Muster)', async () => {
+  vorbereitenController();
+  graph.ordnerInhalt = function () { return Promise.reject(new Error('Netz weg')); };
+  graph.dateiLesen = function () { return Promise.resolve(null); };
+
+  await controller.didaktikNachladen('DBS-001');
+
+  assert.strictEqual(state.data.didaktik['DBS-001'], undefined,
+    'sticky null: ein erneuter Ansichtswechsel koennte nie wieder nachladen');
+  assert.match(state.fehlerHinweis, /Contracts/);
+});
+
+test('didaktikNachladen: nach einem Fehler ruft ein zweiter Aufruf tatsaechlich erneut ab', async () => {
+  vorbereitenController();
+  let aufrufe = 0;
+  graph.ordnerInhalt = function () {
+    aufrufe++;
+    if (aufrufe === 1) return Promise.reject(new Error('Netz weg'));
+    return Promise.resolve([]);
+  };
+  graph.dateiLesen = function () { return Promise.resolve(null); };
+
+  await controller.didaktikNachladen('DBS-001');
+  assert.strictEqual(state.data.didaktik['DBS-001'], undefined,
+    'nach dem Fehler muss der Zustand wieder undefined sein, sonst blockiert der Doppelabruf-Guard');
+
+  await controller.didaktikNachladen('DBS-001');
+  assert.ok(aufrufe > 1, 'der zweite Aufruf haette erneut abfragen sollen — stattdessen sticky null/Guard');
+  assert.strictEqual(state.data.didaktik['DBS-001'], null,
+    'der zweite Versuch fand keine Datei — null ist das korrekte Ergebnis (kein Lieferobjekt gefunden)');
+});

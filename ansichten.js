@@ -746,6 +746,83 @@
     return h + '</div>';
   }
 
+  /* ---------- Die Contracts-Ansicht (D6, Etappe 5, Schritt 5) ----------
+     Funktional schlicht (Entscheid Markus: Polish kommt spaeter als eigene
+     Runde) — Muster reviewBlock, aber ohne Varianten-Nebeneinander (Schritt
+     5 fuehrt keine, anders als Schritt 3): Kopfzeile ("{n}
+     Interaktions-Contracts · Basis: {basiert_auf}"), je Contract eine
+     aufklappbare Zeile (typ-Badge, kernaussage im Summary, uebrige Felder
+     als Liste darunter), darunter der Punkte-Stand aus dem Dossier
+     (offen[] gefiltert fuer==='schritt-5'). Rein lesend — die App verwaltet
+     nichts (Leitsatz): geaendert wird in der Blockdatei, neu hochgeladen,
+     die Ansicht rendert frisch. Der Aufrufer (einSchritt) entscheidet ueber
+     die bereits fuer den AKTUELLEN Schritt aufgeloeste
+     ablage.pruefung === 'interaktion', ob dieser Block ueberhaupt gerufen
+     wird — kontrakt-getrieben, nie die Schrittnummer hartkodiert (V5-Lehre:
+     eine zweite ablageVon()-Aufloesung hier drin kaeme immer fuer Schritt 5
+     zurueck, unabhaengig vom tatsaechlich gerenderten Schritt). */
+
+  /* Alle Felder AUSSER kernaussage (die steht im Summary) — Reihenfolge wie
+     im Schema (didaktik-schema.js PFLICHT ohne kernaussage, dann
+     PFLICHT_MODELL, zuletzt begruendung fuer fliesstext). Nur gesetzte
+     Felder werden gelistet — ein Contract fuehrt entweder die Modell-
+     Felder ODER begruendung, nie beide (D1). */
+  var DIDAKTIK_LISTEN_FELDER = ['zielhandlung', 'denkfehler', 'stuetztext',
+    'steuert', 'beobachtet', 'aha', 'vorhersage', 'konsequenz', 'begruendung'];
+
+  function didaktikFelderListe(c) {
+    var f = (c && c.felder) || {};
+    var zeilen = DIDAKTIK_LISTEN_FELDER.filter(function (n) { return f[n]; })
+      .map(function (n) { return '<li><b>' + esc(n) + ':</b> ' + esc(f[n]) + '</li>'; });
+    return zeilen.length ? '<ul>' + zeilen.join('') + '</ul>' : '';
+  }
+
+  /* fliesstext hat kein interaktives Modell (s. didaktik-schema.js) —
+     begruendungspflichtige Ausnahme, deshalb die rote badge-offen-Klasse;
+     jeder andere Typ traegt die gruene badge-bestaetigt-Klasse. Kein
+     eigenes REVIEW_HERKUNFT_KLASSEN-Pendant noetig: die Palette selbst
+     (neun Typen) ist hier nicht relevant, nur die Zweiteilung
+     fliesstext/nicht-fliesstext. */
+  function didaktikContractZeile(c) {
+    var badgeKlasse = c.typ === 'fliesstext' ? 'badge-offen' : 'badge-bestaetigt';
+    var f = (c && c.felder) || {};
+    var h = '<details class="didaktik-contract">';
+    h += '<summary><span class="badge ' + esc(badgeKlasse) + '">' + esc(c.typ || '?') +
+         '</span> <b>' + esc(c.ek || '') + '</b> ' + esc(f.kernaussage || '') + '</summary>';
+    h += didaktikFelderListe(c);
+    h += '</details>';
+    return h;
+  }
+
+  function didaktikBlock(inh, kurs, ablageDaten) {
+    ablageDaten = ablageDaten || {};
+    if (!kurs) return '';
+
+    var h = '<div class="box didaktik-block" id="didaktik-block"><h3>Interaktions-Contracts</h3>';
+
+    var gelesen = ablageDaten.didaktik;
+    if (!gelesen) {
+      return h + '<p class="hinweis-leise">Contracts erscheinen nach der ersten abgelegten ' +
+             'Fassung.</p></div>';
+    }
+
+    var contracts = Array.isArray(gelesen.contracts) ? gelesen.contracts : [];
+    h += '<p>' + contracts.length + ' Interaktions-Contracts &middot; Basis: ' +
+         esc((gelesen.kopf && gelesen.kopf.basiertAuf) || '') + '</p>';
+
+    h += contracts.map(didaktikContractZeile).join('');
+
+    var d = ablageDaten.dossier;
+    var offen = (d && Array.isArray(d.offen))
+      ? d.offen.filter(function (e) { return e && e.fuer === 'schritt-5'; })
+      : [];
+    h += offen.length
+      ? '<p>' + offen.length + ' Punkte offen an schritt-5</p>'
+      : '<p>alle Punkte behandelt</p>';
+
+    return h + '</div>';
+  }
+
   /* ---------- Die Gate-Box (Schritt 2, 4, 7) ----------
      Z9 (Entscheid Markus, 2026-07-30, nach dem Live-Einsatz: "Ich erwarte:
      Drehbuch v(n) auswaehlen und als final bestaetigen, evtl. Freigabe erteilt
@@ -1302,6 +1379,14 @@
        hartkodiert). */
     if (ablage && ablage.pruefung === 'validierung') {
       h += reviewBlock(inh, kurs, ablageDaten);
+    }
+
+    /* D6: die Contracts-Ansicht steht ebenso VOR der Gate-Box, dieselbe
+       Begruendung wie beim Review-Block direkt darueber — Schritt 5 fuehrt
+       ohnehin kein Gate (s. fixture: gate: null), gateBlock ist hier also
+       ein No-op, aber die Reihenfolge bleibt konsistent mit dem V5-Muster. */
+    if (ablage && ablage.pruefung === 'interaktion') {
+      h += didaktikBlock(inh, kurs, ablageDaten);
     }
 
     h += gateBlock(inh, kurs, schrittId, ablageDaten);
