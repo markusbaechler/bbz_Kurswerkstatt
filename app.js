@@ -184,6 +184,25 @@
       }).catch(function () {
         return c.acquireTokenPopup({ scopes: CONFIG.graph.scopes });
       }).then(function (r) { return r.accessToken; });
+    },
+
+    /* D5 (Etappe 5): der Name fuer "wer" bei der Punkte-Rueckschreibung
+       (controller.hochladen, Schritt 5). LAZY wie jeder andere auth-Helfer —
+       liest NUR ein bereits erzeugtes MSAL-Client-Objekt (auth._msal), ruft
+       NIE auth._client() selbst (das wuerde beim ersten Aufruf einen MSAL-
+       Client erzeugen — dieselbe Node-Test-Falle wie beim Laden der Datei,
+       CLAUDE.md "MSAL ist im Node-Test nicht vorhanden"). Liefert IMMER
+       einen nicht-leeren String — Fallback 'Kurswerkstatt', wenn (noch) kein
+       Client existiert, keine Konten angemeldet sind oder MSAL wirft. */
+    kontoName: function () {
+      try {
+        if (!auth._msal) return 'Kurswerkstatt';
+        var konten = auth._msal.getAllAccounts();
+        var name = konten && konten[0] && konten[0].name;
+        return name ? name : 'Kurswerkstatt';
+      } catch (e) {
+        return 'Kurswerkstatt';
+      }
     }
   };
 
@@ -3228,6 +3247,224 @@
           })
           .catch(function (e) {
             klemmtSichtbar('Datei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
+          });
+        return;
+      }
+
+      /* --- D5 (Etappe 5): das Didaktik-Gate — Schritt 5 (Interaktions-
+         Contracts). Haengt wie A2/B5/V4 an ZWEI Bedingungen (F5-Muster):
+         Kontrakt-Feld ablage.pruefung === 'interaktion' PLUS Kontrakt-Endung
+         'blocks'. Steht VOR dem Skript-/Validierungs-Gate weiter unten, weil
+         die pruefung-Werte sich ausschliessen (kein Schritt fuehrt zwei).
+
+         Anders als Schritt 3/4 baut Schritt 5 KEIN Word (docxBauen) — die
+         Blockdatei mit den Interaktions-Contracts wird selbst abgelegt, kein
+         Diagramm gerendert, keine Vorlage geladen. Deshalb ein eigener,
+         schlankerer Zweig statt Wiederverwendung von
+         pruefeUndBaueBlock/weiterMitSkriptBau. */
+      var geprueftPflichtDidaktik = !!(ab && ab.pruefung === 'interaktion') &&
+        root.inhalt.erwarteteEndung(inh, n) === 'blocks';
+
+      /* Schritt 4: der freigegebene Content, gegen den Schritt 5 geprueft
+         wird (didaktikPruefe braucht ihn, s. u.) — reine Ableitung, nichts
+         hartkodiert (Muster A3/V3/D4-Kontrakt-Nachlade-Kommentare). */
+      function weiterMitDidaktikAblage(gelesenDidaktik, text) {
+        knopf.textContent = 'wird hochgeladen …';
+        delete state.data.dateien[schl];
+        graph.ordnerInhalt(k.kursId, ab.ordner)
+          .then(function (dateien) {
+            var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
+            if (!ziel) {
+              throw new Error('Für diesen Schritt ist kein Hochladen vorgesehen.');
+            }
+            return graph.hochladen(k.kursId, ziel.ordner, ziel.datei,
+              new Blob([text], { type: 'text/plain;charset=utf-8' })).then(function (antwort) {
+              ziel.webUrl = antwort && antwort.webUrl;
+              return ziel;
+            });
+          })
+          .then(function (ziel) {
+            var neu = graph.standNachAblage(k, +n);
+            var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
+            return weiter.then(function () { return ziel; });
+          })
+          .then(function (ziel) {
+            /* Punkte-Rueckschreibung — EIN controller.dossierSchreiben-Mutator
+               (Task-Brief), der jeden ###PUNKTE-Eintrag ueber den was-Wortlaut
+               im Dossier sucht (Identitaets-Guard-Muster, wie
+               controller.offenEntscheiden/offenVerschieben — NIE einen zum
+               Klickzeitpunkt gemerkten Index verwenden, der Mutator laeuft
+               zum AUSFUEHRUNGSZEITPUNKT der Warteschlange). Ein zwischen-
+               zeitlich bereits entschiedener/verschobener Punkt (fehlt dann
+               in kopie.offen) wird uebersprungen und gezaehlt, statt
+               abzubrechen — die Ablage ist schon geschehen. */
+            var wer = auth.kontoName();
+            var wann = new Date().toISOString().slice(0, 10);
+            var punkteZahlen = null;
+            return controller.dossierSchreiben(k.kursId, function (kopie) {
+              var z = { e: 0, v: 0, u: 0 };
+              (gelesenDidaktik.punkte || []).forEach(function (p) {
+                var punktText = String((p && p.punkt) || '').trim();
+                var idx = -1;
+                for (var i = 0; i < kopie.offen.length; i++) {
+                  if (kopie.offen[i] && kopie.offen[i].fuer === 'schritt-5' &&
+                      kopie.offen[i].was === punktText) {
+                    idx = i;
+                    break;
+                  }
+                }
+                if (idx < 0) { z.u += 1; return; }
+                if (p.entscheid) {
+                  root.dossier.offenEntscheiden(kopie, idx, { wer: wer, wann: wann, entscheid: p.entscheid });
+                  z.e += 1;
+                } else if (p.verschieben) {
+                  root.dossier.offenVerschieben(kopie, idx, p.verschieben, p.begruendung);
+                  z.v += 1;
+                }
+              });
+              punkteZahlen = z;
+              return kopie;
+            }).then(function () {
+              return { ziel: ziel, punkte: punkteZahlen };
+            }).catch(function (e) {
+              /* Ein Fehlschlag der Rueckschreibung bricht die Ablage NICHT ab
+                 — die Datei liegt schon (Task-Brief). */
+              return { ziel: ziel, punkte: null };
+            });
+          })
+          .then(function (ergebnis) {
+            return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
+              state.data.dateiAuswahl = null;
+              var ziel = ergebnis.ziel;
+              var anzahl = (gelesenDidaktik.contracts || []).length;
+              /* Wortlaut woertlich aus dem Task-Brief — "Interaktions-Contracts"
+                 bleibt Plural, unabhaengig von n (wie eine Masseinheit). */
+              var erfolgstext = 'Hochgeladen als ' + ziel.datei + ' — ' + anzahl +
+                ' Interaktions-Contracts';
+              if (ergebnis.punkte) {
+                var pz = ergebnis.punkte;
+                erfolgstext += ' · Punkte: ' + pz.e + ' entschieden, ' + pz.v + ' verschoben' +
+                  (pz.u ? ', ' + pz.u + ' nicht mehr gefunden' : '') + '.';
+              } else {
+                erfolgstext += '.';
+                state.fehlerHinweis = 'Punkte nicht zurückgeschrieben — erneut hochladen ' +
+                  'schreibt sie nach.';
+              }
+              var meldungOk = { typ: 'ok', text: erfolgstext };
+              if (ziel.webUrl) meldungOk.url = ziel.webUrl;
+              state.data.uploadMeldung = meldungOk;
+              state.hinweis = erfolgstext;
+              controller.render();
+            });
+          })
+          .catch(function (e) {
+            klemmtSichtbar('Nicht hochgeladen. ' + (e.message || e));
+          });
+      }
+
+      /* Schritt-4-Content laden + basiert_auf-Guard + didaktikPruefe (D2) —
+         Muster weiterMitValidierungPruefe (V4): kein Netz/DOM in inhalt.js,
+         deshalb hier. */
+      function weiterMitDidaktikContent(gelesenDidaktik, text, dDidaktik) {
+        var ab4 = root.inhalt.ablageVon(inh, '4', k.kursId);
+        /* Frisch lesen, nicht nur Cache — der geltende Content darf nicht aus
+           einem veralteten Stand kommen (Muster V4). */
+        delete state.data.dateien[k.kursId + '/' + ab4.ordner];
+        graph.ordnerInhalt(k.kursId, ab4.ordner)
+          .then(function (dateien04) {
+            var lief4 = root.inhalt.lieferobjektVon(inh, '4');
+            var finalName = root.inhalt.finalVorhanden(dateien04, k.kursId, lief4);
+            if (!finalName) {
+              klemmtSichtbar('Nicht hochgeladen: Kein freigegebener Content — Sign-off in ' +
+                'Schritt 4 zuerst.');
+              return;
+            }
+            var blocksName = finalName.replace(/\.[a-z0-9]+$/i, '.blocks');
+            return graph.dateiLesen(k.kursId, ab4.ordner, blocksName).then(function (contentText) {
+              var contentGelesen;
+              try {
+                contentGelesen = root.skriptLesen.lies(contentText);
+              } catch (e) {
+                throw new Error('Content-Blockdatei "' + blocksName + '" nicht lesbar — ' +
+                  (e.message || e));
+              }
+
+              /* basiert_auf-Guard (M-5-Versionsabgleich): die Contracts
+                 muessen auf der GELTENDEN .blocks-Fassung basieren, nicht auf
+                 einer veralteten. */
+              if (gelesenDidaktik.kopf.basiertAuf !== blocksName) {
+                klemmtSichtbar('Die Contracts basieren auf ' +
+                  (gelesenDidaktik.kopf.basiertAuf || '(leer)') + ', geltend ist ' + blocksName +
+                  ' — neu erzeugen.');
+                return;
+              }
+
+              var befund = root.inhalt.didaktikPruefe(gelesenDidaktik, dDidaktik, k.kursId,
+                contentGelesen, root.dossier.ZIELE);
+              if (!befund) {
+                klemmtSichtbar('Nicht hochgeladen: Prüfung braucht Dossier und freigegebenen Content.');
+                return;
+              }
+              if (befund.fehler.length) {
+                klemmtSichtbar('Interaktions-Contracts weichen vom Kontrakt ab — nicht ' +
+                  'hochgeladen: ' + befund.fehler.join(' · '));
+                return;
+              }
+
+              weiterMitDidaktikAblage(gelesenDidaktik, text);
+            });
+          })
+          .catch(function (e) {
+            klemmtSichtbar(e.message || String(e));
+          });
+      }
+
+      if (geprueftPflichtDidaktik) {
+        var istBlocksDidaktik = /\.(blocks|txt)$/i.test((datei.name || ''));
+        if (!istBlocksDidaktik) {
+          klemmtSichtbar('Nicht hochgeladen: für diesen Schritt wird eine .blocks- oder ' +
+            '.txt-Datei erwartet, gewählt wurde "' + (datei.name || '(ohne Namen)') + '".');
+          return;
+        }
+
+        /* Dossier-Guard (Muster B5) — VOR jedem Netzzugriff. */
+        var dDidaktikGuard = state.data.dossier[k.kursId];
+        if (!dDidaktikGuard || typeof dDidaktikGuard !== 'object') {
+          klemmtSichtbar('Nicht hochgeladen: Prüfung braucht das Dossier — zuerst Schritt 1 ' +
+            'abschliessen (Briefing), dann erneut versuchen.');
+          return;
+        }
+
+        if (meld) meld.hidden = true;
+        knopf.disabled = true; knopf.textContent = 'wird geprüft …';
+
+        var lesenDidaktik = (datei.text && typeof datei.text === 'function')
+          ? datei.text()
+          : Promise.reject(new Error('Diese Datei kann nicht gelesen werden.'));
+
+        lesenDidaktik
+          .then(function (text) {
+            return { text: text, gelesen: root.didaktikLesen.lies(text) };
+          })
+          .then(function (r) {
+            var gelesenDidaktik = r.gelesen;
+            if (gelesenDidaktik.fehler && gelesenDidaktik.fehler.length) {
+              klemmtSichtbar('Blockdatei weicht vom Schema ab — nicht hochgeladen: ' +
+                gelesenDidaktik.fehler.join(' · '));
+              return;
+            }
+            /* Kurs-Guard (B5-F3-Muster) — beide IDs in der Meldung, kein
+               stilles Bevorzugen. */
+            if (gelesenDidaktik.kopf.kurs !== k.kursId) {
+              klemmtSichtbar('Nicht hochgeladen: die Blockdatei gehört zu Kurs "' +
+                gelesenDidaktik.kopf.kurs + '", diese Seite zu "' + k.kursId +
+                '" — falscher Kurs, nicht angleichbar.');
+              return;
+            }
+            weiterMitDidaktikContent(gelesenDidaktik, r.text, dDidaktikGuard);
+          })
+          .catch(function (e) {
+            klemmtSichtbar('Blockdatei nicht lesbar — nicht hochgeladen: ' + (e.message || e));
           });
         return;
       }

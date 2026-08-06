@@ -1177,7 +1177,13 @@
            Blockdatei auf (pruefung:'validierung') — istBlockstreckenPruefung()
            entscheidet ueber BEIDE Werte (eine Stelle, Konvention 9), statt
            pruefung nur gegen 'skript' zu vergleichen. Schritt 2/6 (kein
-           pruefung-Feld) bleiben unberuehrt, weiterhin Einzeldatei. */
+           pruefung-Feld) bleiben unberuehrt, weiterhin Einzeldatei.
+           D5 (Etappe 5): Schritt 5 (pruefung:'interaktion') baut ANDERS als
+           Schritt 3/4 — die Blockdatei mit den Interaktions-Contracts wird
+           selbst abgelegt, kein Word gebaut, keine Illustrationen dazu. Kein
+           `multiple`, kein .zip — genau EINE Datei (.blocks/.txt), deshalb
+           NICHT ueber istBlockstreckenPruefung() (die entscheidet nur ueber
+           'skript'/'validierung'), sondern ein eigener Vergleich. */
     if (kurs && I().darfHochladen(inh, schrittId) && !ablageDaten.ordnerFehlt) {
       /* Die Variante steht oben schon fest — hier wird sie nur noch benutzt. */
       var hziel = Array.isArray(ablageDaten.dateien)
@@ -1185,6 +1191,7 @@
         : null;
       var endung = I().erwarteteEndung(inh, schrittId);
       var istBlockUpload = !!(ablage && I().istBlockstreckenPruefung(ablage.pruefung));
+      var istDidaktikUpload = !!(ablage && ablage.pruefung === 'interaktion');
 
       h += '<h2 class="tun">Datei hochladen' +
            '<span class="tun-sub">die Kurswerkstatt vergibt Ordner und Namen</span></h2>';
@@ -1208,6 +1215,7 @@
 
       h += '<input type="file" id="datei"' +
           (istBlockUpload ? ' multiple accept=".blocks,.txt,.png,.zip"'
+                          : istDidaktikUpload ? ' accept=".blocks,.txt"'
                           : (endung ? ' accept=".' + esc(endung) + '"' : '')) + ' />';
 
       /* B9-F1: die zuletzt gewaehlten Dateien stehen im State (dateiGewaehlt),
@@ -1266,6 +1274,11 @@
             'legt Word, Blockdatei (als <code>.blocks</code> daneben) und Bilder ' +
             '(<code>abbildungen/</code>) in einem Vorgang ab. Wie die Dateien auf deinem Rechner ' +
             'heissen, spielt keine Rolle. ' +
+            (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
+            'Du tippst keinen Pfad und keinen Dateinamen.</p>'
+          : istDidaktikUpload
+          ? '<p class="dim">Die Blockdatei mit den Interaktions-Contracts &mdash; eine Datei, ' +
+            'keine Bilder. Wie sie auf deinem Rechner heisst, spielt keine Rolle. ' +
             (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
             'Du tippst keinen Pfad und keinen Dateinamen.</p>'
           : '<p class="dim">Wie die Datei auf deinem Rechner heisst, spielt keine Rolle &mdash; ' +

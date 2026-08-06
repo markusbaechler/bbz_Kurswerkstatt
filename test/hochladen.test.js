@@ -1821,3 +1821,384 @@ test('V7 (c): 412/409 beim Register-Schreiben löst genau EIN frisches Lesen + e
   assert.strictEqual(l.registerAblegenRufe.length, 2, 'genau ein Konflikt-Versuch plus ein erfolgreicher Retry');
   assert.strictEqual(l.fehlerHinweis, null, 'nach erfolgreichem Retry darf kein Register-Fehlerhinweis stehen');
 });
+
+/* ---------- D5 (Etappe 5): Upload-Weg Schritt 5 — Gate, Pruefkette, Ablage,
+   Punkte-Rueckschreibung ----------
+   Schritt 5 (Interaktions-Contracts) baut — anders als Schritt 3/4 — KEIN
+   Word: die Blockdatei selbst wird abgelegt, kein docxBauen, kein Diagramm,
+   keine Illustrationen. Eigener, schlankerer Test-Harness statt
+   hochladenLaufB5 (der Vorlage/PNG-Rendering mockt, das D5 nicht braucht). */
+
+require('../didaktik-schema.js');
+require('../didaktik-lesen.js');
+const { didaktikLesen } = require('../didaktik-lesen.js');
+
+function worteD5(n, praefix) {
+  const w = [];
+  for (let i = 0; i < n; i++) w.push((praefix || 'wort') + i);
+  return w.join(' ');
+}
+
+/* Ein Content-Kapitel — alle zwoelf Pflichtbausteine, knapper Inhalt (Muster
+   test/didaktikpruefe.test.js kapitelBlock()). */
+function kapitelBlockD5(opts) {
+  opts = opts || {};
+  const ek = opts.ek || 'AFL-001-EK-001';
+  const nr = opts.nr || 1;
+  const beispiel = opts.beispiel != null ? opts.beispiel : worteD5(3, 'bsp');
+  return [
+    '###KAPITEL nr=' + nr + ' | ek=' + ek + ' | titel=Kapitel ' + nr + ' | bloom=2 | richtzeit=25',
+    '###HERO', worteD5(3, 'hero'),
+    '###STORY', worteD5(3, 'story'),
+    '###DEFINITION', worteD5(3, 'def'),
+    '###ERKLAERUNG', worteD5(3, 'erkl'),
+    '###FEHLVORSTELLUNG', worteD5(3, 'fehl'),
+    '###BEISPIEL', beispiel,
+    '###ABBILDUNG typ=kompositions-leiste | titel=Verteilung',
+    'werte: Teil eins 1 | Teil zwei 2',
+    '###INTERAKTION', worteD5(3, 'inter'),
+    '###MERKSATZ', worteD5(3, 'merk'),
+    '###DEEPDIVE', worteD5(3, 'deep'),
+    '###WISSENSCHECK', 'frage: Was trifft zu?', 'a) nichts', 'b) alles',
+    'loesung: b', 'begruendung: weil es so ist',
+    '###ABSCHLUSS', worteD5(3, 'schluss'),
+    '###ENDE-KAPITEL'
+  ].join('\n');
+}
+
+/* Der freigegebene Content (skriptLesen.lies()-Text), gelesen aus
+   04_validierung — der geltenden AFL-001_content_final.blocks. */
+function contentTextD5(kapitelOptsListe, opts) {
+  opts = opts || {};
+  const kurs = opts.kurs || 'AFL-001';
+  const kopf = '###SKRIPT kurs=' + kurs + ' | variante=claude | titel=Testtitel | rechtsstand=1.1.2026';
+  const quellen = '###QUELLEN\ngelesen: BSV Mitteilungen Nr. 168, 01.01.2026';
+  return [kopf, quellen].concat(kapitelOptsListe.map(kapitelBlockD5)).join('\n');
+}
+
+/* Ein einzelner Interaktions-Contract (Muster test/didaktikpruefe.test.js
+   contractText()) — kernaussage/vorhersage/konsequenz/stuetztext tragen
+   absichtlich keine Ziffern, damit R2 (Zahlen-Schutz) hier nie ungewollt
+   triggert. */
+function contractTextD5(opts) {
+  opts = opts || {};
+  const ek = opts.ek || 'AFL-001-EK-001';
+  const nr = opts.nr || 1;
+  const typ = opts.typ || 'regler';
+  return [
+    '###CONTRACT ek=' + ek + ' | nr=' + nr + ' | typ=' + typ,
+    'kernaussage: Die Praemie sinkt, wenn der Selbstbehalt steigt.',
+    'zielhandlung: Regler bewegen und den Effekt beobachten.',
+    'denkfehler: Ein hoeherer Selbstbehalt senkt die Praemie automatisch um denselben Betrag.',
+    'stuetztext: Der Zusammenhang haengt vom Modell ab.',
+    'steuert: den Selbstbehalt in Franken',
+    'beobachtet: die monatliche Praemie',
+    'aha: bei kleinen Selbstbehalten aendert sich wenig',
+    'vorhersage: Wie stark sinkt die Praemie?',
+    'konsequenz: Ein zu hoher Selbstbehalt kann das Budget sprengen.',
+    '###ENDE-CONTRACT'
+  ].join('\n');
+}
+
+function punkteBlockD5(eintraege) {
+  const lines = ['###PUNKTE'];
+  eintraege.forEach(function (e) {
+    lines.push('punkt: ' + e.punkt);
+    if (e.entscheid) lines.push('entscheid: ' + e.entscheid);
+    if (e.verschieben) {
+      lines.push('verschieben: ' + e.verschieben);
+      lines.push('begruendung: ' + (e.begruendung || 'Begruendung.'));
+    }
+  });
+  return lines.join('\n');
+}
+
+/* Der Interaktions-Contract-Text (Datei-Endung .blocks im Upload). basiertAuf
+   default deckungsgleich mit contentTextD5() ueber die geltende
+   AFL-001_content_final.blocks. */
+function didaktikTextD5(opts) {
+  opts = opts || {};
+  const kurs = opts.kurs || 'AFL-001';
+  const basiertAuf = opts.basiertAuf === undefined
+    ? 'AFL-001_content_final.blocks' : opts.basiertAuf;
+  const kopf = '###CONTRACTS kurs=' + kurs + (basiertAuf ? ' | basiert_auf=' + basiertAuf : '');
+  const contracts = (opts.contracts || [contractTextD5()]).join('\n');
+  let text = [kopf, contracts].join('\n');
+  if (opts.punkte) text += '\n' + opts.punkte;
+  return text;
+}
+
+/* Ein minimales Dossier mit offen[]/entschieden[] — die beiden Felder, die
+   die Punkte-Rueckschreibung tatsaechlich anfasst. */
+function dossierD5(offenListe) {
+  return {
+    regulatorik: { stand: '1.1.2026' }, content_modus: 'quellengestuetzt',
+    quellen: [{ id: 'Q-001' }], offen: offenListe || [], entschieden: []
+  };
+}
+
+/* Eigener, schlankerer Harness (Task-Brief: "eigener Harness-Zweig") — kein
+   Vorlage-/PNG-Mock (D5 baut kein Word), keine Diagramm-Rendering-Kette.
+   opts.beimHochladen (optional) laeuft SYNCHRON, bevor graph.hochladen
+   aufloest — Testhilfe fuer (g): die Punkte-Rueckschreibung liest das
+   Dossier ZUM AUSFUEHRUNGSZEITPUNKT der Warteschlange (nach der Ablage),
+   nicht zum Pruef-Zeitpunkt (davor) — ein Punkt kann dazwischen woanders
+   verschwinden. */
+async function hochladenLaufD5(dateiListe, opts) {
+  opts = opts || {};
+  const meldung = { textContent: '', hidden: true };
+  const hochladenRufe = [];
+  const ablegenRufe = [];
+  const rufe = { ordnerInhalt: 0, dateiLesen: 0 };
+
+  state.data.inhalt = opts.inhalt || JSON.parse(JSON.stringify(INHALT));
+  state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
+                        schritt: 5, status: 'inArbeit' }];
+  state.data.dateien = {};
+  state.data.dossier = { 'AFL-001': opts.dossier };
+  state.data.dossierETag = {};
+  state.data.dateiAuswahl = null;
+  state.data.uploadMeldung = null;
+  state.fehlerHinweis = null;
+  state.hinweis = null;
+  state.position = { bereich: 'arbeiten', kursId: 'AFL-001', schrittId: '5',
+                     werkzeugId: null, werk: null, variante: null, weg: null };
+  controller._dossierQueue = {};
+
+  global.document = {
+    getElementById: function (id) {
+      if (id === 'datei') return { files: dateiListe };
+      if (id === 'hochladefehler') return meldung;
+      return null;
+    }
+  };
+
+  graph.ordnerInhalt = function (kursId, ordner) {
+    rufe.ordnerInhalt++;
+    if (opts.dateienJeOrdner && Object.prototype.hasOwnProperty.call(opts.dateienJeOrdner, ordner)) {
+      return Promise.resolve(opts.dateienJeOrdner[ordner]);
+    }
+    return Promise.resolve([]);
+  };
+  graph.dateiLesen = function (kursId, ordner, datei) {
+    rufe.dateiLesen++;
+    const texte = opts.contentTexte || {};
+    return Promise.resolve(Object.prototype.hasOwnProperty.call(texte, datei) ? texte[datei] : null);
+  };
+  graph.hochladen = function (kursId, ordner, datei, blob) {
+    hochladenRufe.push({ ordner: ordner, datei: datei, blob: blob });
+    if (opts.beimHochladen) opts.beimHochladen();
+    if (opts.hochladenWirft) return Promise.reject(opts.hochladenWirft);
+    if (opts.webUrl) return Promise.resolve({ webUrl: opts.webUrl });
+    return Promise.resolve({});
+  };
+  graph.ablegen = function (kursId, ordner, datei, text) {
+    ablegenRufe.push({ kursId: kursId, ordner: ordner, datei: datei, text: text });
+    if (opts.ablegenWirft) return Promise.reject(opts.ablegenWirft);
+    return Promise.resolve({ eTag: 'test-etag' });
+  };
+  graph.standNachAblage = function () { return null; };
+  graph.standSetzenRoh = function () { return Promise.resolve(); };
+  controller.render = function () {};
+
+  const knopf = { disabled: false, textContent: 'Hochladen' };
+  controller.hochladen('5', knopf);
+  await new Promise(function (r) { setTimeout(r, 120); });
+  return { hochladenRufe: hochladenRufe, ablegenRufe: ablegenRufe,
+           meldung: meldung.textContent, fehlerHinweis: state.fehlerHinweis,
+           hinweis: state.hinweis, uploadMeldung: state.data.uploadMeldung,
+           rufe: rufe, knopf: knopf };
+}
+
+const WAS1_D5 = 'Punkt A — wird entschieden.';
+const WAS2_D5 = 'Punkt B — wird verschoben.';
+
+test('D5 (a): sauber — Datei abgelegt, Dossier-Mutator entscheidet 1 + verschiebt 1 Punkt, Meldung nennt die Zahlen', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })],
+    punkte: punkteBlockD5([
+      { punkt: WAS1_D5, entscheid: 'Erledigt.' },
+      { punkt: WAS2_D5, verschieben: 'schritt-6', begruendung: 'Gehört zur Review-Ansicht.' }
+    ])
+  });
+  assert.deepStrictEqual(didaktikLesen.lies(didaktikText).fehler, [], 'Testvoraussetzung: Fixture selbst fehlerfrei');
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([
+      { was: WAS1_D5, wo: 'Contract 1', fuer: 'schritt-5' },
+      { was: WAS2_D5, wo: 'Contract 1', fuer: 'schritt-5' }
+    ]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText }
+  });
+
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.hochladenRufe.length, 1, 'genau EIN Upload — die Blockdatei selbst, kein Word');
+  assert.deepStrictEqual(
+    l.hochladenRufe.map(function (r) { return r.ordner + '/' + r.datei; }),
+    ['05_didaktik/AFL-001_umsetzung_v1.blocks']
+  );
+
+  assert.strictEqual(l.ablegenRufe.length, 1, 'genau EIN Dossier-Schreibvorgang (Netzwerk-Ebene)');
+  const geschriebenesDossier = JSON.parse(l.ablegenRufe[0].text);
+  /* dossier.offenEntscheiden() spleisst den Eintrag aus offen[] heraus —
+     dossier.offenVerschieben() dagegen laesst ihn IN offen[] stehen, nur mit
+     neuem fuer/begruendung (der Punkt ist ja nicht erledigt, nur woanders
+     zustaendig) — deshalb bleibt genau EIN Eintrag in offen[]. */
+  assert.strictEqual(geschriebenesDossier.offen.length, 1, 'der verschobene Punkt bleibt in offen[]');
+  assert.strictEqual(geschriebenesDossier.offen[0].was, WAS2_D5);
+  assert.strictEqual(geschriebenesDossier.offen[0].fuer, 'schritt-6');
+  assert.strictEqual(geschriebenesDossier.offen[0].begruendung, 'Gehört zur Review-Ansicht.');
+  assert.strictEqual(geschriebenesDossier.entschieden.length, 1);
+  assert.strictEqual(geschriebenesDossier.entschieden[0].was, WAS1_D5);
+  assert.strictEqual(geschriebenesDossier.entschieden[0].entscheid, 'Erledigt.');
+  assert.strictEqual(geschriebenesDossier.entschieden[0].wer, 'Kurswerkstatt',
+    'auth.kontoName() faellt in Node auf Kurswerkstatt zurueck (kein MSAL-Client)');
+  assert.match(geschriebenesDossier.entschieden[0].wann, /^\d{4}-\d{2}-\d{2}$/);
+
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_umsetzung_v1\.blocks/);
+  assert.match(l.hinweis || '', /1 Interaktions-Contracts/);
+  assert.match(l.hinweis || '', /1 entschieden, 1 verschoben\./);
+  assert.strictEqual(l.uploadMeldung && l.uploadMeldung.typ, 'ok');
+});
+
+test('D5 (b): Grammatik-Fehler (fehlende Pflichtfelder im Contract) — Abbruch VOR jedem Netzzugriff', async () => {
+  const kaputterContract = [
+    '###CONTRACT ek=AFL-001-EK-001 | nr=1 | typ=regler',
+    'kernaussage: Nur ein Feld gesetzt.',
+    '###ENDE-CONTRACT'
+  ].join('\n');
+  const didaktikText = didaktikTextD5({ contracts: [kaputterContract] });
+  assert.ok(didaktikLesen.lies(didaktikText).fehler.length > 0, 'Testvoraussetzung: Fixture ist tatsaechlich kaputt');
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([])
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.strictEqual(l.rufe.ordnerInhalt, 0, 'kein Netzzugriff — auch nicht fuer den Content');
+  assert.match(l.meldung, /Blockdatei weicht vom Schema ab/);
+  assert.match(l.meldung, /Feld/);
+  assert.match(l.fehlerHinweis || '', /Blockdatei weicht vom Schema ab/);
+});
+
+test('D5 (c): fremde Kurs-ID — Abbruch, beide IDs in der Meldung, kein Netzzugriff', async () => {
+  const didaktikText = didaktikTextD5({
+    kurs: 'ZZZ-001',
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+  });
+  assert.deepStrictEqual(didaktikLesen.lies(didaktikText).fehler, [], 'Testvoraussetzung: Fixture selbst fehlerfrei');
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([])
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.strictEqual(l.rufe.ordnerInhalt, 0, 'kein Netzzugriff bei einer fremden Kurs-ID');
+  assert.match(l.meldung, /ZZZ-001/);
+  assert.match(l.meldung, /AFL-001/);
+});
+
+test('D5 (d): kein _final in 04_validierung — Abbruch', async () => {
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([]),
+    dateienJeOrdner: { '04_validierung': [], '05_didaktik': [] }
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.match(l.meldung, /Kein freigegebener Content/);
+  assert.match(l.meldung, /Sign-off in Schritt 4/);
+});
+
+test('D5 (e): basiert_auf veraltet — Abbruch (der M-5-Versionsabgleich)', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    basiertAuf: 'AFL-001_content_v3.blocks',
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText }
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 0, 'kein Upload bei veraltetem basiert_auf');
+  assert.match(l.meldung, /AFL-001_content_v3\.blocks/);
+  assert.match(l.meldung, /AFL-001_content_final\.blocks/);
+  assert.match(l.meldung, /neu erzeugen/);
+});
+
+test('D5 (f): didaktikPruefe-Fehler (ein unbehandelter Dossier-Punkt) — Abbruch mit Liste', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+    // kein ###PUNKTE — der offene schritt-5-Punkt bleibt unbehandelt
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([{ was: WAS1_D5, wo: 'Contract 1', fuer: 'schritt-5' }]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText }
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 0);
+  assert.match(l.meldung, /Interaktions-Contracts weichen vom Kontrakt ab/);
+  assert.match(l.meldung, /Offener Punkt nicht behandelt/);
+});
+
+test('D5 (g): ein Punkt ist zum Schreibzeitpunkt zwischenzeitlich weg — die Ablage laeuft trotzdem, die Meldung weist ihn aus', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })],
+    punkte: punkteBlockD5([{ punkt: WAS1_D5, entscheid: 'Erledigt.' }])
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([{ was: WAS1_D5, wo: 'Contract 1', fuer: 'schritt-5' }]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText },
+    /* Simuliert eine zweite Sitzung, die den Punkt bereits VOR dem
+       Dossier-Schreibvorgang (der erst NACH der Ablage laeuft) behandelt
+       hat — die Pruefung (didaktikPruefe, VOR dem Upload) hat ihn noch
+       gesehen, der Mutator (NACH dem Upload) findet ihn nicht mehr. */
+    beimHochladen: function () {
+      state.data.dossier['AFL-001'].offen = [];
+    }
+  });
+
+  assert.strictEqual(l.meldung, '', 'die Ablage selbst darf nicht scheitern: ' + l.meldung);
+  assert.strictEqual(l.hochladenRufe.length, 1, 'die Datei wird trotzdem hochgeladen');
+  assert.strictEqual(l.ablegenRufe.length, 1);
+  const geschriebenesDossier = JSON.parse(l.ablegenRufe[0].text);
+  assert.deepStrictEqual(geschriebenesDossier.entschieden, [], 'nichts wurde entschieden — der Punkt war schon weg');
+  assert.match(l.hinweis || '', /0 entschieden, 0 verschoben, 1 nicht mehr gefunden\./);
+});
+
+test('D5 (h): Ansicht — accept=".blocks,.txt" OHNE multiple NUR an Schritt 5, Schritt 3 unveraendert', () => {
+  const h5 = ansichten.einSchritt(INHALT, AFL, 5, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(/id="datei"[^>]*accept="\.blocks,\.txt"/.test(h5), 'accept nennt nicht genau .blocks,.txt (Schritt 5)');
+  assert.ok(!/id="datei"[^>]*\bmultiple\b/.test(h5), 'Schritt 5 haette KEIN multiple tragen sollen');
+  assert.ok(/Interaktions-Contracts/.test(h5), 'kein Hinweistext auf die Interaktions-Contracts (Schritt 5)');
+
+  const h3 = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
+  assert.ok(/id="datei"[^>]*\bmultiple\b/.test(h3), 'Schritt 3 haette weiterhin multiple tragen sollen');
+  assert.ok(/accept="\.blocks,\.txt,\.png,\.zip"/.test(h3), 'Schritt 3 haette weiterhin das Blockstrecken-accept tragen sollen');
+});

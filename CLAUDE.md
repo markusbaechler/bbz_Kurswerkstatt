@@ -5534,3 +5534,139 @@ Aufruf von `inhalt.didaktikPruefe`, Ablage, Rückschreibung der `schritt-5`-Punk
 Kaltstart-Kasten und den `kopieren`-Handler-Zweig. Das reale `ablage-kontrakt.json`/`schritte.json`
 in SharePoint führen für Schritt 5 weiterhin nicht `pruefung: 'interaktion'`/`ext: 'blocks'` (Weg
 B, unverändert seit D2) — ohne diese Felder greift nichts live, kein Regressionsrisiko.
+
+## Etappe 5 / Task D5: Upload-Weg Schritt 5 — Gate, Prüfkette, Ablage, Punkte-Rückschreibung
+
+Das Kernstück von Schritt 5: `controller.hochladen` bekommt einen eigenen, dritten Blockdatei-Gate-
+Zweig — **anders als Schritt 3/4 baut Schritt 5 kein Word.** Die Blockdatei mit den Interaktions-
+Contracts wird selbst abgelegt, kein `docxBauen`, kein Diagramm, keine Vorlage — deshalb ein
+eigener, schlankerer Zweig statt Wiederverwendung von `pruefeUndBaueBlock`/`weiterMitSkriptBau`.
+
+**`geprueftPflichtDidaktik = !!(ab && ab.pruefung === 'interaktion') && erwarteteEndung === 'blocks'`**
+— dieselben zwei Bedingungen wie A2/B5/V4 (F5-Muster), eigener `if`-Zweig **vor** dem Skript-/
+Validierungs-Gate weiter unten: die `pruefung`-Werte schliessen sich gegenseitig aus, kein Schritt
+führt zwei zugleich, die Reihenfolge selbst entscheidet also nichts, macht aber die Kontrakt-
+Herkunft der Verzweigung an einer Stelle sichtbar. Falsche Endung der gewählten Datei (nicht
+`.blocks`/`.txt`) → laute Abweisung, kein stiller Bypass (F5-Wortlaut-Muster).
+
+**Prüfkette, jeder Abbruch über `klemmtSichtbar`, VOR jedem Schreib-Netzzugriff (Task-Brief-
+Reihenfolge, wörtlich umgesetzt):**
+1. **Dossier-Guard** (`state.data.dossier[k.kursId]` muss ein Objekt sein — Muster B5) — noch vor
+   dem Lesen der Datei.
+2. **`datei.text()` → `didaktikLesen.lies(text)`.** Ein Wurf (kein `###CONTRACTS`-Kopf) landet im
+   `.catch` — „Blockdatei nicht lesbar — nicht hochgeladen: …"; `gelesen.fehler.length` (Pflicht-
+   felder/Typ-Katalog/ek+nr-Duplikate, D1) bricht MIT der Liste ab — „Blockdatei weicht vom Schema
+   ab — nicht hochgeladen: …".
+3. **Kurs-Guard** (`gelesen.kopf.kurs !== k.kursId`) — Abbruch mit BEIDEN IDs in der Meldung
+   (B5-F3-Muster, kein stilles Bevorzugen).
+4. **Content laden** (`weiterMitDidaktikContent`, ein Geschwister von `weiterMitDidaktikAblage`,
+   Muster `weiterMitValidierungPruefe`/V4: kein Netz/DOM in `inhalt.js`, deshalb hier): der
+   Schritt-4-Ordner (`ablageVon(inh,'4',kursId)`) wird **frisch** gelesen (Cache vorher gelöscht —
+   der geltende Content darf nicht aus einem veralteten Stand kommen), `finalVorhanden` fürs
+   Lieferobjekt Schritt 4 (`content`) — fehlt sie: „Kein freigegebener Content — Sign-off in
+   Schritt 4 zuerst." Sonst die geltende `.blocks`-Fassung lesen (`graph.dateiLesen`, Endung von
+   `.docx`/`.final`-Namen auf `.blocks` getauscht, dieselbe B5-Invariante wie T13/A3/D4) und
+   `skriptLesen.lies` darauf — ein Parse-Fehler bricht mit dem Dateinamen ab (V4-Muster: „Content-
+   Blockdatei "…" nicht lesbar — …").
+5. **`basiert_auf`-Guard (M-5-Versionsabgleich, hier von Beginn an richtig):**
+   `gelesen.kopf.basiertAuf !== <geltende .blocks>` → Abbruch „Die Contracts basieren auf {alt},
+   geltend ist {neu} — neu erzeugen."
+6. **`inhalt.didaktikPruefe(gelesen, d, kursId, contentGelesen, root.dossier.ZIELE)`** — `null`
+   (Dossier ODER Content fehlt — ein Doppelschutz zum Dossier-Guard oben, Muster `blocksPruefe`) →
+   „Prüfung braucht Dossier und freigegebenen Content."; `fehler.length` → Abbruch mit Liste
+   („Interaktions-Contracts weichen vom Kontrakt ab — nicht hochgeladen: …").
+
+**Ablage + Rückschreibung (`weiterMitDidaktikAblage`, erst NACH bestandener Prüfung):**
+`hochladeZiel` (versioniert, `lieferobjekt: 'umsetzung'`, `_v{N}.blocks`, kein `letzteGiltAlsFinal`,
+kein Gate an Schritt 5) → `graph.hochladen(kursId, ordner, ziel.datei, new Blob([text], {type:
+'text/plain;charset=utf-8'}))` (Muster `.blocks`-Upload B5 Fix-Runde 1: der bereits gelesene Text
+wird zu einem echten Blob, kein rohes Pseudo-Objekt) → `standNachAblage`/`standSetzenRoh` → **ein**
+`controller.dossierSchreiben`-Mutator.
+
+**Der Mutator ist der Identitäts-Guard in Reinform** (Muster `controller.offenEntscheiden`/
+`offenVerschieben`, aber ohne DOM-Index — hier gibt es keinen Klick, nur die geparste Blockdatei):
+er bekommt die Dossier-Kopie zum **Ausführungszeitpunkt** der Warteschlange (nie einen zum
+Lesezeitpunkt gemerkten Index) und sucht je `###PUNKTE`-Eintrag den passenden `kopie.offen`-Eintrag
+frisch über den **`was`-Wortlaut** (getrimmt) UND `fuer === 'schritt-5'` — dieselbe Eingrenzung wie
+`inhalt.didaktikPruefe` Regel 3 (`offenSchritt5`), damit ein zufällig wortgleicher Punkt an einem
+anderen Ziel nie fälschlich getroffen wird. Trägt der Eintrag `entscheid`, ruft der Mutator
+`dossier.offenEntscheiden(kopie, idx, {wer, wann, entscheid})`; trägt er `verschieben`,
+`dossier.offenVerschieben(kopie, idx, ziel, begruendung)`. `wer` kommt aus dem neuen Helfer
+`auth.kontoName()`, `wann` aus `new Date().toISOString().slice(0,10)` (Muster `gateKlick`s
+`datum`). Ein Eintrag, den der Mutator **nicht mehr findet** (zwischenzeitlich anderswo behandelt —
+die Dossier-Grundlage von `didaktikPruefe` beim Prüfen ist nicht dieselbe wie die frische Kopie
+beim Schreiben), wird übersprungen und gezählt (`u`), **bricht aber nichts ab** — die Ablage ist zu
+diesem Zeitpunkt schon geschehen. Da `dossier.offenEntscheiden` den Eintrag aus `offen[]`
+heraussspleisst, `dossier.offenVerschieben` ihn dagegen **in** `offen[]` stehen lässt (nur mit
+neuem `fuer`/`begruendung` — der Punkt ist ja nicht erledigt, nur woanders zuständig), unterscheidet
+die Zählung `e`/`v` sauber zwischen beiden Fällen, ohne dass der Mutator das Array selbst
+interpretieren müsste.
+
+**`auth.kontoName()` (app.js, neuer Helfer im `auth`-Objekt) — lazy wie jeder andere auth-Helfer:**
+liest **nur** ein bereits erzeugtes `auth._msal`-Client-Objekt (`getAllAccounts()[0].name`), ruft
+**nie** `auth._client()` selbst — das würde beim ersten Aufruf einen MSAL-Client erzeugen, dieselbe
+Node-Test-Falle wie beim Laden der Datei (CLAUDE.md „MSAL ist im Node-Test nicht vorhanden").
+Liefert **immer** einen nicht-leeren String: `'Kurswerkstatt'`, solange kein Client existiert, keine
+Konten angemeldet sind oder MSAL wirft (`try`/`catch`).
+
+**Ein Fehlschlag der Punkte-Rückschreibung bricht die Ablage nicht ab** — die Datei liegt schon.
+`weiterMitDidaktikAblage` fängt den Fehler mit `.catch` auf (`{ziel, punkte: null}`) und setzt
+`state.fehlerHinweis = 'Punkte nicht zurückgeschrieben — erneut hochladen schreibt sie nach.'`; die
+Erfolgsmeldung bleibt trotzdem stehen, nur ohne den Punkte-Teil. Die Rückschreibung selbst ist
+idempotent (bereits entschiedene/verschobene Punkte findet ein zweiter Versuch nicht mehr — Zähler
+`u` statt eines Fehlers), ein erneutes Hochladen ist deshalb sicher.
+
+**Erfolgsmeldung weist aus, was geschrieben wurde (Lehre aus dem Debug-Task, Etappe-4-Livebefund
+3 — „still nichts geschrieben" durfte nie wieder unbemerkt bleiben):** „Hochgeladen als {datei} —
+{n} Interaktions-Contracts · Punkte: {e} entschieden, {v} verschoben{, {u} nicht mehr gefunden}."
+— `Interaktions-Contracts` bleibt wörtlich Plural, unabhängig von `n` (wie eine Masseinheit, Brief-
+Wortlaut). `state.hinweis` + `state.data.uploadMeldung` (B9-F3-Muster, beide Kanäle), `webUrl` →
+`uploadMeldung.url`, wenn Graph sie liefert (K3-Muster).
+
+**`ansichten.js` — der Datei-Input-Zweig für `pruefung === 'interaktion'` ist EIGENSTÄNDIG, nicht
+über `istBlockstreckenPruefung()`** (die kennt nur `'skript'`/`'validierung'` — Schritt 3/4 bauen
+ein Word und brauchen deshalb `multiple` + `.zip`; Schritt 5 legt genau EINE Datei ab, keine
+Illustrationen dazu). Neuer, eigener Vergleich `istDidaktikUpload = !!(ablage && ablage.pruefung
+=== 'interaktion')`: `accept=".blocks,.txt"` ohne `multiple`, eigener kurzer Hinweistext („Die
+Blockdatei mit den Interaktions-Contracts — eine Datei, keine Bilder."). Schritt 2/3/4/6
+unverändert.
+
+**Tests (`test/hochladen.test.js`, eigener Harness `hochladenLaufD5` — Muster `hochladenLaufB5`,
+aber ohne Vorlage-/Diagramm-Mocks, die D5 nicht braucht):** (a) sauber → die Blockdatei selbst wird
+abgelegt (kein Word/Bild), der Dossier-Mutator entscheidet 1 + verschiebt 1 Punkt (Netzwerk-Ebene
+über den `graph.ablegen`-Fake: `entschieden[]`/`offen[]` geprüft, inklusive `wer`='Kurswerkstatt'
+und `wann` im ISO-Datumsformat), die Meldung nennt die Zahlen; (b) ein Grammatik-Fehler (fehlende
+Contract-Pflichtfelder) bricht VOR jedem Netzzugriff ab; (c) eine fremde Kurs-ID bricht mit beiden
+IDs in der Meldung ab, kein Netzzugriff; (d) fehlt `_final` in `04_validierung`, bricht es mit
+„Sign-off in Schritt 4 zuerst" ab; (e) ein veraltetes `basiert_auf` bricht mit beiden Dateinamen
+und „neu erzeugen" ab; (f) ein `didaktikPruefe`-Fehler (ein unbehandelter Dossier-Punkt) bricht mit
+Liste ab; (g) ein Punkt verschwindet zwischen Prüfung und Schreiben (`opts.beimHochladen` mutiert
+`state.data.dossier` unmittelbar vor dem Ablegen) — die Ablage läuft trotzdem durch, die Meldung
+weist „1 nicht mehr gefunden" aus; (h) die Ansicht trägt `accept=".blocks,.txt"` ohne `multiple`
+NUR an Schritt 5, Schritt 3 bleibt bei `multiple` + dem vollen Blockstrecken-`accept`. **900 Tests
+grün** (Baseline 892 + 8).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Brief verlangt):** den `basiert_auf`-Guard in
+`weiterMitDidaktikContent` auf `if (/* MUTATIONSPROBE */ false && …)` gesetzt, `node --test
+test/hochladen.test.js`:
+```
+ℹ tests 96
+ℹ pass 95
+ℹ fail 1
+
+✖ D5 (e): basiert_auf veraltet — Abbruch (der M-5-Versionsabgleich)
+  AssertionError [ERR_ASSERTION]: kein Upload bei veraltetem basiert_auf
+  1 !== 0
+```
+Genau der eine Test (e) fiel rot — ohne den Guard lief die sonst vollständig gültige Fixture
+(passende EK/Contract, kein `###PUNKTE`-Widerspruch) einfach durch und wurde hochgeladen, statt
+abzubrechen. Alle anderen 95 Tests (inklusive der übrigen sieben D5-Tests) blieben grün; danach die
+Zeile wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **900/900 grün**.
+
+**Offen / bewusst nicht Teil von D5:** die Werkzeug-Texte (Masterprompt/Anleitung Schritt 5) sind
+nicht Teil dieser Task — reiner App-Code + Test-Fixture, wie bei jedem vorangegangenen A-/B-/V-Task.
+Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint führen für Schritt 5 weiterhin nicht
+`pruefung: 'interaktion'`/`ext: 'blocks'` (Weg B, unverändert seit D2) — ohne diese Felder greift
+das gesamte D5-Gate nirgends live, kein Regressionsrisiko. D6 (Contracts-Ansicht Schritt 5 —
+`controller.didaktikNachladen`, gerenderte Übersicht, Cache-Invalidierung im D5-Erfolgspfad) baut
+auf dieser Ablage-/Rückschreibungs-Strecke auf, ist aber nicht Teil dieser Task.
