@@ -5977,3 +5977,67 @@ neuen Fassungen ist ein separater, freigabepflichtiger Schritt (Freigabe Markus,
 Etappe-2-Task-8-Nachzug) und nicht Teil dieser Task. Bis dahin trägt der GESETZT-Kopf der
 Kurswerkstatt (App-seitig, sofort mit dem nächsten Deploy) die Aufzählung bereits — der
 Masterprompt in SharePoint zieht mit der Publikation nach.
+
+## Etappe 6 / Fast-Follow F2: Contracts-Ansicht Feldwerte — Befund nicht reproduzierbar, Testlücke geschlossen
+
+**Livebefund D9 (2026-08-06, Markus):** die Contracts-Ansicht (Schritt 5) zeige je
+Interaktions-Contract 8 LEERE Aufzählungspunkte — die Feldwerte
+(`zielhandlung`/`denkfehler`/`steuert`/…) erschienen nicht, obwohl die Daten vollständig sind.
+Der Etappe-6-Plan vermutete als Ursache einen Feldzugriff `c[name]` statt `c.felder[name]` in
+`ansichten.js` (`didaktikFelderListe`).
+
+**Systematische Reproduktion (Vorgehen wie beim Debug-Task Livebefund 3) — Ergebnis: KEIN
+Code-Defekt auffindbar.** Vier unabhängige Proben, alle tatsächlich ausgeführt:
+1. **Echte Kette, echte Daten:** die reale geltende `VL-002_umsetzung_v2.blocks`
+   (lokale Kopie aus `moodle_genius/VL-002/input/`, dieselbe Datei, die die Etappe-6-Engine
+   liest) durch `didaktikLesen.lies()` → `ansichten.einSchritt(…, 5, …)` — alle 13 Contracts
+   parsen mit 9 nicht-leeren Feldern, JEDER Feldwert steht wörtlich im erzeugten HTML
+   (`<li><b>steuert:</b> Szenario-Schalter mit drei Stellungen: …</li>` usw.).
+2. **Echter Browser, echtes CSS:** dieselbe Ausgabe mit dem kompletten `<style>`-Block aus
+   `index.html` in headless Edge gerendert und als Screenshot geprüft — alle Werte sichtbar,
+   kein CSS in `index.html` blendet `li`-Inhalte aus (es gibt gar keine
+   `.didaktik-contract`-Regeln).
+3. **Live-Abgleich:** die von GitHub Pages tatsächlich ausgelieferten `ansichten.js`/`app.js`/
+   `didaktik-lesen.js` (Stand `0ca72bc` — die Version, unter der Markus den Befund sah) per
+   `curl` geholt und gegen `git show 0ca72bc` gedifft — **byte-identisch**; und der
+   Didaktik-Ansichtscode ist zwischen `ea4195a` (D6), `0ca72bc` und HEAD unverändert.
+4. **Verdachtsprüfung:** der vermutete `c[name]`-Zugriff existiert in KEINER Git-Fassung —
+   `didaktikFelderListe` liest seit D6 durchgängig `c.felder[n]`.
+
+Mit gesetzten Feldwerten kann der ausgelieferte Code das Symptom nicht erzeugen (Werte werden
+gerendert), mit leeren kann er es auch nicht (der `filter(f[n])` verwirft leere Felder — es
+entstünden 0 Punkte, nicht 8). Der Befund ist damit gegen den aktuellen Code+Datenbestand
+nicht reproduzierbar (dieselbe Ergebnisklasse wie Debug-Livebefund 3: Beobachtung, kein
+Defekt) — eine **Nachprobe durch Markus am Live-System nach dem nächsten Deploy** steht als
+letzter Beleg aus.
+
+**Die Testlücke aus dem Plan ist dagegen REAL und ist geschlossen.** Die bestehenden D6-Tests
+prüften ausschliesslich die Labels (`/<li><b>zielhandlung:<\/b>/`) — nie die Werte. Der
+verdächtigte Fehler (filter auf `f[n]`, map auf `c[n]`: Labels gerendert, Werte leer — exakt
+das gemeldete Bild) wäre durch die GESAMTE bisherige Suite grün gelaufen. Zwei neue Tests in
+`test/didaktikansicht.test.js` (über die ECHTE `didaktikLesen.lies()`-Kette, kein Handbau):
+jeder gelistete Feldwert steht WOERTLICH hinter seinem Label (alle 8 Modell-Felder einzeln),
+plus der `begruendung`-Wert (fliesstext) und Apostroph-Werte im VL-002-Realdaten-Stil
+(`20'000` → `20&#39;000`, escaped über `esc()`, Konvention 4). `ansichten.js` selbst bleibt
+in diesem Task UNVERÄNDERT — es gibt nichts zu fixen, nur zu pinnen.
+
+**Tests: 920 grün** (Baseline nach F1 918 + 2 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt — der verdächtigte Fehler selbst als Mutation):** in
+`didaktikFelderListe` den map-Wert von `esc(f[n])` auf `esc(c[n])` gesetzt, `node --test
+test/didaktikansicht.test.js`:
+```
+ℹ pass 15
+ℹ fail 2
+✖ F2: jede Feld-Zeile traegt den WERT woertlich hinter dem Label — Modell-Contract, alle 8 Felder
+✖ F2: begruendung-Wert (fliesstext) und Apostroph-Werte (VL-002-Realdaten-Stil) stehen escaped im HTML
+```
+Genau die zwei neuen F2-Tests fielen rot — und ALLE 15 bestehenden D6-Tests blieben grün: der
+direkte Beweis, dass die bisherige Suite für genau diese Fehlerklasse blind war. Danach
+wiederhergestellt (`git diff ansichten.js` leer), komplette Suite erneut geprüft:
+`node --test` → **920/920 grün**.
+
+**Offen / bewusst nicht Teil von F2:** die Live-Nachprobe durch Markus (Schritt 5, VL-002,
+nach dem nachgeholten Deploy) — zeigt sie das Symptom erneut, ist der nächste Verdächtige die
+konkrete Browser-Umgebung (Theme/Forced Colors/Zoom), nicht der HTML-Aufbau; die neuen Tests
+halten die HTML-Seite ab jetzt fest.

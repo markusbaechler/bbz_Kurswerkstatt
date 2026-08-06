@@ -184,6 +184,67 @@ test('D6: dossier ist undefined (nie geladen) — derselbe Guard greift', () => 
   assert.match(html, /Punkte-Stand erscheint, sobald das Dossier geladen ist/);
 });
 
+/* ---------- Etappe 6 / Fast-Follow F2: die FELDWERTE sind gepinnt, nicht nur die Labels.
+   Livebefund D9 ("8 leere Aufzaehlungspunkte je Contract — die Feldwerte erscheinen
+   nicht"): die bestehenden D6-Tests prueften nur die Labels
+   (/<li><b>zielhandlung:<\/b>/) — eine Fassung, die die Werte verliert (z. B. der
+   im Etappe-6-Plan verdaechtigte Zugriffsfehler c[name] statt c.felder[name]),
+   waere durch die GESAMTE bisherige Suite gruen gelaufen: der filter() laeuft auf
+   f[n] (Felder vorhanden -> Label gerendert), erst der map()-Wert waere leer.
+   Diese Tests schliessen genau die Luecke: jeder gelistete Feldwert muss
+   WOERTLICH hinter seinem Label stehen — ueber die ECHTE didaktikLesen.lies()-
+   Kette, kein Handbau der gelesen-Objekte. (Die Reproduktion am echten
+   VL-002-Bestand ergab KEINEN Code-Defekt — s. CLAUDE.md, "Fast-Follow F2".) */
+
+test('F2: jede Feld-Zeile traegt den WERT woertlich hinter dem Label — Modell-Contract, alle 8 Felder', () => {
+  const gelesen = gelesenAus({});
+  const props = { dossier: dossierMit([]), didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  const erwartet = {
+    zielhandlung: 'Regler bewegen und den Effekt beobachten.',
+    denkfehler: 'Ein hoeherer Selbstbehalt senkt die Praemie automatisch um denselben Betrag.',
+    stuetztext: 'Der Zusammenhang haengt vom Modell ab.',
+    steuert: 'den Selbstbehalt in Franken',
+    beobachtet: 'die monatliche Praemie',
+    aha: 'bei kleinen Selbstbehalten aendert sich wenig',
+    vorhersage: 'Wie stark sinkt die Praemie?',
+    konsequenz: 'Ein zu hoher Selbstbehalt kann das Budget sprengen.'
+  };
+  for (const [name, wert] of Object.entries(erwartet)) {
+    assert.ok(html.includes('<li><b>' + name + ':</b> ' + wert + '</li>'),
+      'Feldwert fehlt hinter dem Label: ' + name);
+  }
+});
+
+test('F2: begruendung-Wert (fliesstext) und Apostroph-Werte (VL-002-Realdaten-Stil) stehen escaped im HTML', () => {
+  const gelesen = gelesenAus({ contracts: [
+    contractText({ ek: 'DBS-001-EK-001', typ: 'fliesstext' }),
+    [
+      '###CONTRACT ek=DBS-001-EK-002 | nr=1 | typ=rechner',
+      'kernaussage: Gerechnet wird auf dem versicherten Lohn.',
+      'zielhandlung: Die Kette durchrechnen.',
+      'denkfehler: Lohn und versicherter Lohn werden gleichgesetzt.',
+      'stuetztext: Beispiel unveraendert aus dem Content.',
+      "steuert: Jahreslohn (Schieber 20'000-100'000).",
+      'beobachtet: alle Kettenglieder live.',
+      "aha: Unter 22'680 springt alles auf null.",
+      "vorhersage: Wie hoch ist die Gutschrift bei 78'000?",
+      "konsequenz: 7'731 Franken.",
+      '###ENDE-CONTRACT'
+    ].join('\n')
+  ] });
+  const props = { dossier: dossierMit([]), didaktik: gelesen };
+  const html = ansichten.einSchritt(INHALT, DBS, 5, null, props);
+  assert.ok(html.includes('<li><b>begruendung:</b> Ein Rechenbeispiel reicht hier ohne interaktives Modell.</li>'),
+    'begruendung-Wert fehlt hinter dem Label');
+  /* Das Apostroph-Tausendertrennzeichen der echten VL-002-Werte laeuft durch esc()
+     (Konvention 4) — der Wert bleibt sichtbar, nur escaped. */
+  assert.ok(html.includes('<li><b>steuert:</b> Jahreslohn (Schieber 20&#39;000-100&#39;000).</li>'),
+    'Apostroph-Wert fehlt oder ist nicht escaped');
+  assert.ok(html.includes('<li><b>aha:</b> Unter 22&#39;680 springt alles auf null.</li>'),
+    'aha-Wert fehlt');
+});
+
 /* ---------- controller.didaktikNachladen (Cache, Doppelabruf-Schutz, Nicht-sticky, Retry) ---------- */
 
 function vorbereitenController() {
