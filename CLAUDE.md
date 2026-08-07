@@ -6454,30 +6454,36 @@ gemacht, damit `app.js` ihn ruft, statt eine zweite Kopie des Regex zu führen.
   eigentliche P2-Logik, als eigenständige, geschwisterartige Funktion (Muster
   `weiterMitValidierungPruefe`/`weiterMitSkriptBau` — kein verschachtelter Aufruf, jede
   gebrauchte Grösse kommt explizit herein statt per Closure): (1) `lieferobjektVon(inh,'3',
-  'claude')` — fehlt es, `null` (nichts zu tun, kein Netzzugriff); (2) `geltendeDatei(
-  dateienNachAblage, kursId, liefClaude)` — `dateienNachAblage` ist der **frisch gelesene**
-  `03_content`-Ordnerinhalt NACH der GPT-Ablage, den der Aufrufer ohnehin schon fürs
-  Cache-Auffrischen braucht (kein zweiter, unnötiger GET, Task-Brief); fehlt eine geltende
-  Claude-Fassung, ebenfalls `null`. (3) Die Claude-`.blocks`-Schwester lesen (Endungstausch,
-  B5-Invariante) und parsen — ein `null`/ein Parse-Fehler wirft eine eigene, klare Meldung
+  'claude')` — fehlt es, `null` (nichts zu tun, kein Netzzugriff); (2) die geltende Claude-Basis
+  über `claudeBasisLaden` laden (**seit Fix-Runde 1**, s. u. — ersetzt einen einfachen
+  `geltendeDatei`+`dateiLesen`-Einzelversuch durch einen Fallback-Scan über
+  `versionenVon(...,'docx')`, absteigend); `null` heisst „keine Claude-Fassung vorhanden". (3) Die
+  Claude-`.blocks` ist damit bereits gelesen UND geparst (Teil des Fallback-Scans) — ein
+  Parse-/Lesefehler auf JEDER Version wirft am Ende einen eigenen, klaren Waisen-Fehler
   (Nebenprodukt, s. u.). (4) `graph.ordnerInhalt(kursId, ab.ordner + '/abbildungen')` +
   `inhalt.illustrationenFehlend(claudeGelesen, abbildungenNamen)` — leer heisst „voll bebildert",
   `null` (nichts zu tun), kein Bau. (5) **EK-Matching**: eine Map `ek -> GPT-Dateiname` aus
   `gptGelesen.kapitel` (`illustrationDateiVon`), dann je Claude-Kapitel mit fehlender Illustration
   ein Blick in dieselbe EK — ein Treffer (`bilderGpt[gptDatei]`, die BEREITS im Speicher liegenden
-  Bytes des GPT-Uploads, kein zweiter Netzzugriff) füllt `bilderNeu[claudeDatei] = {bytes:
+  Bytes des GPT-Uploads, kein zweiter Netzzugriff) füllt `treffer[claudeDatei] = {bytes:
   treffer.bytes}` (ohne logische Masse — derselbe IHDR-Rückfall wie bei jeder hochgeladenen
-  Illustration, `docx-bauen.js`), sonst zählt er als „ohne Match". (6) `rendereDiagrammBilder`
-  füllt `bilderNeu` zusätzlich mit den neu gerenderten Diagrammen der Claude-Fassung — „Neu bauen
-  wie ein normaler Bau" (Task-Brief). (7) `graph.vorlageLaden()` + `docxBauen.baue(vorlage,
-  claudeGelesen, bilderNeu)`. (8) `hochladeZiel(inh,'3',kursId,dateienNachAblage,'claude')` für die
+  Illustration, `docx-bauen.js`), sonst zählt er als „ohne Match". **Ohne einen einzigen Treffer
+  (`n === 0`) bricht die Funktion hier mit `null` ab — kein Nachbau (Fix-Runde 1, Important 2).**
+  (6) **Bereits erfüllte Illustrationen erneut laden (Fix-Runde 1, CRITICAL, s. u.)**: jede
+  referenzierte, aber NICHT (mehr) „fehlende" Illustration (sie liegt schon in `abbildungen/`, aus
+  einem früheren Nachbau-Lauf) wird über `graph.kursDateiRoh` frisch geholt und ebenfalls in
+  `bilderNeu` gelegt — Muster V4 (`weiterMitValidierungPruefe`). (7) `rendereDiagrammBilder` füllt
+  `bilderNeu` zusätzlich mit den neu gerenderten Diagrammen der Claude-Fassung — „Neu bauen wie
+  ein normaler Bau" (Task-Brief). (8) `graph.vorlageLaden()` + `docxBauen.baue(vorlage,
+  claudeGelesen, bilderNeu)`. (9) `hochladeZiel(inh,'3',kursId,dateienNachAblage,'claude')` für die
   NÄCHSTE Claude-Version (`dateienNachAblage` ein zweites Mal wiederverwendet, dieselbe
   Freshness-Begründung), dann docx → **die Claude-blocks UNVERÄNDERT (derselbe roh gelesene
-  Text, nicht neu serialisiert)** → jedes in `bilderNeu` gelandete Bild (Diagramme UND
-  übernommene Illustrationen) nach `{ordner}/abbildungen` — Muster `weiterMitSkriptBau`
-  eins zu eins, nur als eigener, kleinerer Ablauf (kein `geschafft[]`/Teilfehler-Protokoll wie
-  dort — P2 ist ein reines Nebenprodukt, ein Teilfehler mitten in der Claude-Ablage fällt unter
-  dieselbe generische `.catch`-Behandlung des Aufrufers wie jeder andere P2-Fehler).
+  Text, nicht neu serialisiert)** → jedes NEUE Bild (Diagramme UND neu getroffene Illustrationen —
+  wiederverwendete NICHT, Muster V4) nach `{ordner}/abbildungen` — Muster `weiterMitSkriptBau` eins
+  zu eins, **inklusive `geschafft[]`/`zielInfo` (Fix-Runde 1, Important 1a, s. u.)**: ein
+  Teilfehler nach mindestens einem gelungenen Schritt trägt dieselbe I3-Wahrheit („nächste Version
+  daneben, überschreibt die unvollständige nicht, von Hand löschen") wie der Haupt-Upload, statt
+  unter der generischen `.catch`-Behandlung des Aufrufers zu verschwinden.
 
 **Trigger — ausschliesslich der Erfolgspfad von `weiterMitSkriptBau` für Schritt 3 (NICHT der
 Validierungs-Zweig), wenn `gelesen.skript.variante === 'chatgpt'`.** Sitzt im finalen
@@ -6488,14 +6494,17 @@ gebraucht (vorher wurde das Ergebnis verworfen). Läuft NACH `standNachAblage`/`
 VOR dem Setzen der Erfolgsmeldung, damit die Meldung den Nachbau nennen kann (Task-Brief).
 
 **Nebenprodukt-Regel (V7-Muster): ein Fehlschlag von `versucheClaudeUebernahme` bricht den
-GPT-Erfolg NIE ab.** `.catch(function () { state.fehlerHinweis = 'Claude-Fassung nicht neu gesetzt
-— erneuter ChatGPT-Upload holt es nach.'; return null; })` — die GPT-Erfolgsmeldung
-(`state.hinweis`/`state.data.uploadMeldung`) bleibt unverändert stehen, nur der zusätzliche
-Fehlerhinweis erscheint daneben (Muster `state.hinweis` + `state.fehlerHinweis` in EINEM Block,
-Etappe 1e Task 4). Ein Erfolg hängt die Zahlen an die bestehende Erfolgsmeldung an: „ · Claude-
-Fassung {docxName} neu gesetzt mit {n} ChatGPT-Bild(ern)" plus, wenn `m > 0`, „, {m} ohne Match als
-Platzhalter" — Einzahl/Mehrzahl sauber (`n === 1 ? 'Bild' : 'Bilder'`), nur angehängt, wenn
-überhaupt ein Nachbau stattgefunden hat.
+GPT-Erfolg NIE ab.** `.catch(function (e) { state.fehlerHinweis = 'Claude-Fassung nicht neu gesetzt
+— ' + (e && e.message ? e.message : 'unbekannter Fehler.'); return null; })` — **seit Fix-Runde 1
+datengetrieben aus der tatsächlichen Fehlermeldung**, nicht mehr ein einziger, fest verdrahteter
+Satz (der behauptete "erneuter ChatGPT-Upload holt es nach" — bei einem Waisen-Zustand oder einem
+Teilfehler mit bereits abgelegten Dateien war das schlicht falsch, s. Fix-Runde 1 unten). Die
+GPT-Erfolgsmeldung (`state.hinweis`/`state.data.uploadMeldung`) bleibt unverändert stehen, nur der
+zusätzliche Fehlerhinweis erscheint daneben (Muster `state.hinweis` + `state.fehlerHinweis` in
+EINEM Block, Etappe 1e Task 4). Ein Erfolg hängt die Zahlen an die bestehende Erfolgsmeldung an:
+„ · Claude-Fassung {docxName} neu gesetzt mit {n} ChatGPT-Bild(ern)" plus, wenn `m > 0`, „, {m}
+ohne Match als Platzhalter" — Einzahl/Mehrzahl sauber (`n === 1 ? 'Bild' : 'Bilder'`), nur
+angehängt, wenn überhaupt ein Nachbau stattgefunden hat (seit Fix-Runde 1 heisst das: `n > 0`).
 
 **Cache-Invalidierung braucht keinen eigenen Mechanismus.** `graph.hochladen` löscht bei jedem
 Aufruf `state.data.dateien[kursId + '/' + ordner]` selbst (unverändert, `app.js` Zeile ~623) — die
@@ -6552,16 +6561,107 @@ mutierte Fassung KEINEN einzigen Treffer mehr (0 statt 2 bzw. 1); alle anderen 1
 der drei übrigen P2-Fälle, die keinen erfolgreichen Treffer voraussetzen) blieben grün. Danach die
 Zeile wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **942/942 grün**.
 
-**Offen / bewusst nicht Teil von P2:** keine Live-Probe im Browser (ein echter, per Graph
-hochgeladener Nachbau, der tatsächlich in Word öffnet) — dieselbe dokumentierte Grenze wie bei
-jedem vorangegangenen docx-Bau-Task. Kein Weg, EINEN einzelnen Platzhalter gezielt nachzuliefern,
-ohne die ganze Claude-Fassung neu zu bauen — P2 baut bei jedem Treffer immer die GESAMTE Claude-
-Fassung neu (alle Diagramme neu gerendert, alle Illustrationen — auch bereits erfüllte, die gar
-nicht mehr in `fehlend` stehen, werden NICHT erneut anfasst, aber jedes Diagramm schon), analog zu
-jedem anderen „normalen Bau" in diesem Projekt; ein inkrementeller Patch-Mechanismus ist nicht Teil
-dieser Task. Der Fall „mehrere GPT-Uploads hintereinander, jeder mit neuen Bildern" wurde nicht
-geprüft — jeder GPT-Upload löst unabhängig einen eigenen Übernahme-Versuch aus, der jeweils gegen
-die zu diesem Zeitpunkt GELTENDE Claude-Fassung prüft (kein kumulativer Zustand über mehrere
-Läufe hinweg nötig, weil `geltendeDatei`/`illustrationenFehlend` immer den aktuellen Stand lesen).
-Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint sind von dieser Task nicht
-betroffen — P2 ändert reines App-Verhalten, kein Kontraktfeld.
+**Offen / bewusst nicht Teil von P2 (Stand nach Fix-Runde 1, s. u. — der ursprüngliche Absatz an
+dieser Stelle behauptete fälschlich, mehrere GPT-Uploads hintereinander bräuchten keinen
+kumulativen Zustand; genau das war der CRITICAL-Fund der Review, s. u.):** keine Live-Probe im
+Browser (ein echter, per Graph hochgeladener Nachbau, der tatsächlich in Word öffnet) — dieselbe
+dokumentierte Grenze wie bei jedem vorangegangenen docx-Bau-Task. Kein Weg, EINEN einzelnen
+Platzhalter gezielt nachzuliefern, ohne die ganze Claude-Fassung neu zu bauen — P2 baut bei jedem
+Treffer immer die GESAMTE Claude-Fassung neu (alle Diagramme neu gerendert UND alle referenzierten
+Illustrationen — sowohl neu getroffene als auch bereits erfüllte — im `bilder`-Kontrakt an
+`docxBauen.baue` übergeben, seit Fix-Runde 1 zwingend; nur der ERNEUTE UPLOAD nach
+`abbildungen/` bleibt bei bereits erfüllten Illustrationen aus, Muster V4), analog zu jedem
+anderen „normalen Bau" in diesem Projekt; ein inkrementeller Patch-Mechanismus (der nur ein
+einzelnes Bild in einer bestehenden docx ersetzt, ohne alles neu zu bauen) ist nicht Teil dieser
+Task. Der Fall „mehrere GPT-Uploads hintereinander, jeder mit neuen Bildern" IST seit Fix-Runde 1
+geprüft und funktional korrekt (s. u., CRITICAL) — jeder GPT-Upload löst unabhängig einen eigenen
+Übernahme-Versuch aus, der jeweils gegen die zu diesem Zeitpunkt GELTENDE Claude-Fassung prüft;
+kumulativer Zustand wird dabei nicht im Speicher gehalten, sondern bei jedem Lauf frisch aus
+SharePoint (`abbildungen/`-Listing + `graph.kursDateiRoh`) rekonstruiert. Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint sind von dieser Task nicht betroffen — P2
+ändert reines App-Verhalten, kein Kontraktfeld.
+
+### Fix-Runde 1 (unabhängiger Review, 1 Critical + 2 Important + 1 Minor)
+
+**[CRITICAL] Ein zweiter Nachbau-Lauf regressierte eine bereits erfüllte Illustration zu einem
+Platzhalter.** `bilderNeu` wurde nur für Kapitel befüllt, deren Illustration in `fehlend` stand.
+Ein Bild aus einem FRÜHEREN Nachbau-Lauf liegt in `abbildungen/`, ist also nicht mehr „fehlend" —
+seine Bytes wurden aber nie nachgeladen und fehlten deshalb im `bilder`-Kontrakt, den
+`docxBauen.baue` bekommt; seit P1 setzt `docxBauen` für jede fehlende Referenz einen Platzhalter,
+unabhängig davon, ob die Datei tatsächlich existiert. Ein bereits eingebettetes Bild verschwand
+damit bei JEDEM weiteren GPT-Upload sichtbar und dauerhaft aus der neuen Version — genau der
+Serie-über-mehrere-Uploads-Kernfall, den P2 eigentlich lösen sollte.
+
+**Fix:** dasselbe V4-Wiederverwendungsmuster (`weiterMitValidierungPruefe`) angewandt — vor dem
+Bau werden ALLE referenzierten, aber NICHT (mehr) „fehlenden" Illustrationen über
+`graph.kursDateiRoh(kursId, ab.ordner + '/abbildungen', name)` geladen und zusammen mit den neuen
+GPT-Treffern in `bilderNeu` gelegt. Beim Hochladen werden nur die NEUEN Bilder tatsächlich erneut
+nach `abbildungen/` geschrieben (`Object.keys(bilderNeu).filter(name => !wiederverwendet[name])`)
+— ein wiederverwendetes Bild bleibt unangetastet liegen, wird nie dupliziert.
+
+**[IMPORTANT 1] Ein Teilfehler des Nachbaus war nicht I3-konform und konnte die Automatik
+dauerhaft blockieren.** Ohne `geschafft[]`/`zielInfo`: scheiterte der blocks-Upload NACH dem docx,
+blieb eine `_v{N}.docx` ohne `.blocks`-Schwester liegen — und der NÄCHSTE Nachbau-Versuch fand über
+die geltende Fassung genau diese docx, versuchte die nicht existierende `.blocks` zu lesen und
+scheiterte für immer, während die Meldung weiterhin „erneuter Upload holt es nach" behauptete.
+
+**Fix (a) — I3-Muster:** `geschafft[]`/`zielInfo` wie in `weiterMitSkriptBau`; ein Teilfehler nennt
+die unvollständige `Claude-v{N}` und „von Hand löschen (Papierkorb)", exakt der I3-Wortlaut.
+**Fix (b) — Robustheit beim Lesen:** die geltende-Fassung-Suche ist durch `claudeBasisLaden`
+ersetzt — sie scannt `versionenVon(dateien, kursId, liefClaude, 'docx')` (absteigend, höchste
+zuerst) und versucht JEDE Version, bis eine mit lesbarer UND gültiger `.blocks` gefunden ist; erst
+wenn KEINE Version mehr übrig ist, wird der Waisen-Zustand EXPLIZIT gemeldet (`Error` mit
+`.p2Waise = true`, für einen künftigen Aufrufer unterscheidbar) — „Keine Claude-Fassung mit
+lesbarer Blockdatei gefunden ({n} Version(en) geprüft) — Waisen-Zustand: von Hand in SharePoint
+prüfen." Der Aufrufer (`app.js`, Trigger in `weiterMitSkriptBau`) zeigt seither die TATSÄCHLICHE
+Fehlermeldung (`e.message`) statt eines fest verdrahteten, potenziell falschen Satzes.
+
+**[IMPORTANT 2] Der Nachbau lief auch bei null Treffern.** Das Gate war nur `fehlend.length` —
+lieferte der GPT-Upload keinen einzigen EK-Match, entstand trotzdem eine funktional identische
+neue Version (Versions-Churn, und bei jedem weiteren Lauf ein zusätzlicher CRITICAL-Trigger-
+Kandidat). **Fix:** zusätzliche Bedingung `n > 0` direkt nach der EK-Matching-Zählung, VOR dem
+Laden bereits erfüllter Illustrationen — kein Treffer, kein Nachbau, keine Meldungs-Erweiterung.
+
+**[MINOR] webUrl der neuen Claude-Fassung (K3-Muster).** Erfasst (`ziel.webUrl = antwort &&
+antwort.webUrl;`, im Ergebnisobjekt als `result.webUrl` verfügbar), aber bewusst NICHT in
+`uploadMeldung.url` gespiegelt — die bleibt die des GPT-Uploads (Hauptartefakt dieses Vorgangs);
+ein zweiter Link hätte den bestehenden EIN-Feld-Meldungsmechanismus verkompliziert. Der
+Meldungstext trägt den Claude-Namen unverändert wie bisher.
+
+**Tests (`test/hochladen.test.js`, sechs neue/geänderte Fälle):**
+- **CRITICAL** — zwei Kapitel, EK-001 bereits erfüllt (Bild liegt in `abbildungen/`, aus „Lauf 1"),
+  EK-002 noch Platzhalter; der GPT-Upload („Lauf 2") liefert nur ein Bild für EK-002. `docxBauen.
+  baue` wird für den Claude-Nachbau kurzzeitig gewrappt (echte Implementierung dahinter), um den
+  `bilder`-Kontrakt zu inspizieren: BEIDE Illustrationen müssen darin mit Bytes stehen — die neue
+  Version trägt beide Bilder, null Platzhalter für die bereits erfüllte EK; die wiederverwendete
+  Illustration wird dabei NICHT erneut hochgeladen (kein Duplikat).
+- **Important 1a** — `hochladenFehlerAb` lässt den Claude-blocks-Upload (deterministisch der
+  sechste `graph.hochladen`-Aufruf: GPT docx/blocks/Diagramm/Illustration, dann Claude docx,
+  dann blocks) scheitern; die Meldung nennt „Bereits abgelegt … AFL-001_skript-claude_v3.docx",
+  „nächste, vollständige Version daneben", „überschreibt die unvollständige nicht" und
+  „von Hand löschen (Papierkorb)" — der GPT-Erfolg bleibt davon unberührt.
+- **Important 1b** — zwei Fälle: (1) die EINZIGE Claude-Version ist eine Waise (keine lesbare
+  `.blocks`) → `fehlerHinweis` meldet den Waisen-Zustand explizit, OHNE „erneuter … holt es nach"
+  zu behaupten (P2 (d), umbenannt/umformuliert); (2) eine JÜNGERE Waise (v2, keine `.blocks`) neben
+  einer ÄLTEREN, lesbaren Fassung (v1) → der Scan fällt automatisch auf v1 zurück, kein Fehler,
+  Nachbau gelingt normal (neue Fassung v3, da v1 UND v2 bereits vergeben sind).
+- **Important 2** — ein GPT-Upload ohne jeden EK-Treffer → kein zweiter `graph.vorlageLaden()`-
+  Aufruf, kein Versions-Churn, kein Fehlerhinweis (schlicht nichts passiert).
+
+**946 Tests grün** (Baseline 942 + 4 neue `test(...)`-Blöcke: CRITICAL, Important 1a, Important 1b
+Fallback-Erfolgsfall, Important 2 — P2 (d) ist umbenannt/umformuliert, kein neuer Testfall).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Auftrag verlangt):** die Wiederverwendungs-Ladung
+in `versucheClaudeUebernahme` stillgelegt (`Promise.all(/* MUTATIONSPROBE */ [].map(...))` statt
+`erfuelltNamen.map(...)`), `node --test test/hochladen.test.js`:
+```
+ℹ tests 109
+ℹ pass 108
+ℹ fail 1
+
+✖ P2 Fix-Runde 1 (CRITICAL): ein zweiter Nachbau-Lauf regressiert eine bereits erfuellte Illustration NICHT zu einem Platzhalter
+  AssertionError [ERR_ASSERTION]: die bereits erfuellte Illustration EK-001 haette erneut geladen
+  werden muessen (sonst Platzhalter-Regression)
+```
+Genau der neue Zwei-Lauf-Test fiel rot, alle anderen 108 blieben grün; danach die Zeile
+wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **946/946 grün**.

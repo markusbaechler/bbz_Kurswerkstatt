@@ -975,33 +975,64 @@
     }, Promise.resolve());
   }
 
+  /* Fix-Runde 1 (Review, Important 1b): die geltende Claude-Fassung kann
+     eine _vN-docx OHNE lesbare .blocks-Schwester sein — z. B. Rest eines
+     frueheren Nachbau-Teilfehlers (Important 1a) oder eine von Hand
+     geloeschte .blocks. Ein einzelner Lesefehler darf den Nachbau nicht
+     fuer immer blockieren ("erneuter Upload holt es nach" waere sonst
+     dauerhaft falsch, wenn sich am Waisen-Zustand nichts von selbst
+     aendert) — die Funktion faellt deshalb auf die naechstaeltere Version
+     MIT lesbarer, gueltiger .blocks zurueck (versionenVon liefert absteigend
+     sortiert, hoechste zuerst). Erst wenn KEINE Version mehr uebrig ist,
+     wird der Waisen-Zustand EXPLIZIT gemeldet (Error mit .p2Waise = true,
+     falls ein Aufrufer den Fall je unterscheiden moechte) — kein stilles,
+     endloses Scheitern an derselben Datei. `null` (kein Wurf), wenn ueberhaupt
+     keine Claude-docx-Version im Ordner liegt — das ist kein Fehler, sondern
+     "keine Claude-Fassung vorhanden" (unveraendertes Verhalten). */
+  function claudeBasisLaden(kursId, ab, dateienNachAblage, liefClaude) {
+    var alle = root.inhalt.versionenVon(dateienNachAblage, kursId, liefClaude, 'docx');
+    if (!alle.length) return Promise.resolve(null);
+    function versuch(i) {
+      if (i >= alle.length) {
+        var fehler = new Error('Keine Claude-Fassung mit lesbarer Blockdatei gefunden (' +
+          alle.length + ' Version(en) geprüft) — Waisen-Zustand: von Hand in SharePoint prüfen.');
+        fehler.p2Waise = true;
+        return Promise.reject(fehler);
+      }
+      var docxName = alle[i].name;
+      var blocksName = docxName.replace(/\.[a-z0-9]+$/i, '.blocks');
+      return graph.dateiLesen(kursId, ab.ordner, blocksName).then(function (text) {
+        if (text == null) return versuch(i + 1);
+        try {
+          return { docxName: docxName, blocksName: blocksName, text: text,
+                    gelesen: root.skriptLesen.lies(text) };
+        } catch (e) {
+          return versuch(i + 1);
+        }
+      });
+    }
+    return versuch(0);
+  }
+
   /* kursId, ab (Ablage-Info Schritt 3, aus root.inhalt.ablageVon), inh,
      gptGelesen (die soeben geparste GPT-Blockdatei), bilderGpt (der bereits
      gebaute bilder-Kontrakt des GPT-Uploads — traegt die hochgeladenen
      Illustrations-PNGs unter IHREM eigenen Dateinamen), dateienNachAblage
      (frisch gelesener Ordnerinhalt NACH der GPT-Ablage — kein zweiter GET,
      Muster "bereits im Scope liegend wiederverwenden"). Liefert entweder
-     null (nichts zu tun: keine Claude-Fassung, oder voll bebildert) oder
-     {n, m, docxName} fuer die Erfolgsmeldung. Wirft NIE ueber die
-     Node-Fehlerkette hinaus, WOHL ABER innerhalb der Promise — der Aufrufer
-     faengt jeden Fehler mit .catch ab (Nebenprodukt-Muster). */
+     null (nichts zu tun: keine Claude-Fassung, voll bebildert, oder kein
+     einziger EK-Treffer — Fix-Runde 1 Important 2) oder {n, m, docxName}
+     fuer die Erfolgsmeldung. Wirft NIE ueber die Node-Fehlerkette hinaus,
+     WOHL ABER innerhalb der Promise — der Aufrufer faengt jeden Fehler mit
+     .catch ab (Nebenprodukt-Muster). */
   function versucheClaudeUebernahme(kursId, ab, inh, gptGelesen, bilderGpt, dateienNachAblage) {
     var liefClaude = root.inhalt.lieferobjektVon(inh, '3', 'claude');
     if (!liefClaude) return Promise.resolve(null);
-    var claudeName = root.inhalt.geltendeDatei(dateienNachAblage, kursId, liefClaude);
-    if (!claudeName) return Promise.resolve(null);
-    var claudeBlocksName = claudeName.replace(/\.[a-z0-9]+$/i, '.blocks');
 
-    return graph.dateiLesen(kursId, ab.ordner, claudeBlocksName).then(function (text) {
-      if (text == null) {
-        throw new Error('Claude-Blockdatei "' + claudeBlocksName + '" nicht lesbar.');
-      }
-      var claudeGelesen;
-      try {
-        claudeGelesen = root.skriptLesen.lies(text);
-      } catch (e) {
-        throw new Error('Claude-Blockdatei "' + claudeBlocksName + '" nicht lesbar — ' + (e.message || e));
-      }
+    return claudeBasisLaden(kursId, ab, dateienNachAblage, liefClaude).then(function (basis) {
+      if (!basis) return null; /* keine Claude-Fassung vorhanden */
+      var claudeGelesen = basis.gelesen;
+      var text = basis.text;
 
       return graph.ordnerInhalt(kursId, ab.ordner + '/abbildungen').then(function (abbildungen) {
         var abbildungenNamen = (abbildungen || []).map(function (d) { return d.name; });
@@ -1017,55 +1048,133 @@
           if (d) gptEkDatei[kap.ek] = d;
         });
 
-        var bilderNeu = {};
+        var treffer = {};
         var n = 0, m = 0;
         (claudeGelesen.kapitel || []).forEach(function (kap) {
           var claudeDatei = root.inhalt.illustrationDateiVon(kap);
           if (!claudeDatei || fehlend.indexOf(claudeDatei) < 0) return;
           var gptDatei = gptEkDatei[kap.ek];
-          var treffer = gptDatei && bilderGpt[gptDatei];
-          if (treffer) {
-            bilderNeu[claudeDatei] = { bytes: treffer.bytes };
+          var t = gptDatei && bilderGpt[gptDatei];
+          if (t) {
+            treffer[claudeDatei] = { bytes: t.bytes };
             n += 1;
           } else {
             m += 1;
           }
         });
+        /* Fix-Runde 1, Important 2: ohne einen einzigen GPT-Treffer entstuende
+           nur eine funktional identische neue Version (Versions-Churn, und
+           bei jedem weiteren Lauf ein zusaetzlicher Regressions-Kandidat fuer
+           den CRITICAL-Fall unten) — kein Nachbau, keine Meldung. */
+        if (!n) return null;
 
-        var variante = (claudeGelesen.skript && claudeGelesen.skript.variante) || 'claude';
-        var kursSkript = (claudeGelesen.skript && claudeGelesen.skript.kurs) || kursId;
+        /* Fix-Runde 1, CRITICAL: bereits erfuellte Illustrationen
+           (referenziert, aber NICHT (mehr) in `fehlend` — sie liegen schon
+           in abbildungen/, aus einem frueheren Nachbau-Lauf) muessen ERNEUT
+           geladen werden. Ohne das faellt docxBauen.baue() bei IHNEN auf
+           einen Platzhalter zurueck (kein Eintrag im bilder-Kontrakt), obwohl
+           das Bild laengst existiert — ein bereits eingebettetes Bild
+           verschwindet sonst sichtbar UND dauerhaft aus jeder neuen Version.
+           Muster V4 (weiterMitValidierungPruefe): graph.kursDateiRoh je
+           referenzierte, bereits vorhandene Datei. */
+        var erfuelltNamen = [];
+        (claudeGelesen.kapitel || []).forEach(function (kap) {
+          var claudeDatei = root.inhalt.illustrationDateiVon(kap);
+          if (claudeDatei && fehlend.indexOf(claudeDatei) < 0 && erfuelltNamen.indexOf(claudeDatei) < 0) {
+            erfuelltNamen.push(claudeDatei);
+          }
+        });
 
-        return rendereDiagrammBilder(claudeGelesen, variante, kursSkript, bilderNeu)
-          .then(function () { return graph.vorlageLaden(); })
-          .then(function (vorlage) {
-            if (!vorlage) throw new Error('Vorlage konnte nicht geladen werden — erneut versuchen.');
-            return root.docxBauen.baue(vorlage, claudeGelesen, bilderNeu);
-          })
-          .then(function (docxBytes) {
-            var ziel = root.inhalt.hochladeZiel(inh, '3', kursId, dateienNachAblage, 'claude');
-            if (!ziel) throw new Error('Kein Ziel für die neue Claude-Version berechenbar.');
-            var blocksNameNeu = ziel.datei.replace(/\.[a-z0-9]+$/i, '.blocks');
-            var vorher = ziel.zurueckstufen
-              ? graph.umbenennen(kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
-              : Promise.resolve(null);
-            return vorher
-              .then(function () {
-                return graph.hochladen(kursId, ziel.ordner, ziel.datei, new Blob([docxBytes]));
-              })
-              .then(function () {
-                return graph.hochladen(kursId, ziel.ordner, blocksNameNeu,
-                  new Blob([text], { type: 'text/plain;charset=utf-8' }));
-              })
-              .then(function () {
-                return Object.keys(bilderNeu).reduce(function (kette, name) {
-                  return kette.then(function () {
-                    return graph.hochladen(kursId, ab.ordner + '/abbildungen', name,
-                      new Blob([bilderNeu[name].bytes]));
-                  });
-                }, Promise.resolve());
-              })
-              .then(function () { return { n: n, m: m, docxName: ziel.datei }; });
+        return Promise.all(erfuelltNamen.map(function (name) {
+          return graph.kursDateiRoh(kursId, ab.ordner + '/abbildungen', name).then(function (buf) {
+            return { name: name, buf: buf };
           });
+        })).then(function (ergebnisse) {
+          var wiederverwendet = {};
+          ergebnisse.forEach(function (e) {
+            if (e.buf) wiederverwendet[e.name] = { bytes: new Uint8Array(e.buf) };
+          });
+
+          var bilderNeu = {};
+          Object.keys(wiederverwendet).forEach(function (name) { bilderNeu[name] = wiederverwendet[name]; });
+          Object.keys(treffer).forEach(function (name) { bilderNeu[name] = treffer[name]; });
+
+          var variante = (claudeGelesen.skript && claudeGelesen.skript.variante) || 'claude';
+          var kursSkript = (claudeGelesen.skript && claudeGelesen.skript.kurs) || kursId;
+
+          /* Fix-Runde 1, Important 1a (I3-Muster): geschafft[]/zielInfo wie
+             im Haupt-Upload (weiterMitSkriptBau) — ein Teilfehler nach
+             mindestens einem gelungenen Schritt hinterliesse sonst eine
+             unvollstaendige Version, an der ein spaeterer Nachbau-Versuch
+             (ueber claudeBasisLaden) scheitern koennte, ohne dass die Meldung
+             sagt, dass von Hand aufgeraeumt werden muss. */
+          var geschafft = [];
+          var zielInfo = null;
+
+          return rendereDiagrammBilder(claudeGelesen, variante, kursSkript, bilderNeu)
+            .then(function () { return graph.vorlageLaden(); })
+            .then(function (vorlage) {
+              if (!vorlage) throw new Error('Vorlage konnte nicht geladen werden — erneut versuchen.');
+              return root.docxBauen.baue(vorlage, claudeGelesen, bilderNeu);
+            })
+            .then(function (docxBytes) {
+              var ziel = root.inhalt.hochladeZiel(inh, '3', kursId, dateienNachAblage, 'claude');
+              if (!ziel) throw new Error('Kein Ziel für die neue Claude-Version berechenbar.');
+              zielInfo = ziel;
+              var blocksNameNeu = ziel.datei.replace(/\.[a-z0-9]+$/i, '.blocks');
+              var vorher = ziel.zurueckstufen
+                ? graph.umbenennen(kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
+                : Promise.resolve(null);
+              /* nur NEUE Bilder werden hochgeladen — ein wiederverwendetes
+                 Bild bleibt unveraendert in abbildungen/ liegen (Muster V4). */
+              var bildNamen = Object.keys(bilderNeu).filter(function (name) {
+                return !wiederverwendet[name];
+              });
+              return vorher
+                .then(function () {
+                  return graph.hochladen(kursId, ziel.ordner, ziel.datei, new Blob([docxBytes]));
+                })
+                .then(function (antwort) {
+                  /* MINOR (K3-Muster): die webUrl des Nachbau-docx wird
+                     erfasst, aber NICHT in uploadMeldung.url gespiegelt — die
+                     bleibt die des GPT-Uploads (Hauptartefakt dieses
+                     Vorgangs); ein zweiter Link wuerde den bestehenden
+                     Meldungsmechanismus (EIN uploadMeldung.url-Feld)
+                     verkomplizieren. Bleibt hier fuer eine spaetere Task
+                     nutzbar, ohne dass diese Task etwas daran aendern muss. */
+                  ziel.webUrl = antwort && antwort.webUrl;
+                  geschafft.push(ziel.ordner + '/' + ziel.datei);
+                })
+                .then(function () {
+                  return graph.hochladen(kursId, ziel.ordner, blocksNameNeu,
+                    new Blob([text], { type: 'text/plain;charset=utf-8' }));
+                })
+                .then(function () { geschafft.push(ziel.ordner + '/' + blocksNameNeu); })
+                .then(function () {
+                  return bildNamen.reduce(function (kette, name) {
+                    return kette
+                      .then(function () {
+                        return graph.hochladen(kursId, ab.ordner + '/abbildungen', name,
+                          new Blob([bilderNeu[name].bytes]));
+                      })
+                      .then(function () { geschafft.push(ab.ordner + '/abbildungen/' + name); });
+                  }, Promise.resolve());
+                })
+                .then(function () { return { n: n, m: m, docxName: ziel.datei, webUrl: ziel.webUrl }; });
+            })
+            .catch(function (e) {
+              var msg = e.message || String(e);
+              if (geschafft.length) {
+                var unvollstaendig = zielInfo && typeof zielInfo.version === 'number'
+                  ? ' Die unvollständige Claude-v' + zielInfo.version + ' in SharePoint von Hand löschen (Papierkorb).'
+                  : ' Die unvollständige Claude-Fassung in SharePoint von Hand löschen (Papierkorb).';
+                msg += ' Bereits abgelegt: ' + geschafft.join(', ') + ' — ein erneuter Versuch legt die ' +
+                  'nächste, vollständige Version daneben, er überschreibt die unvollständige nicht.' +
+                  unvollstaendig;
+              }
+              throw new Error(msg);
+            });
+        });
       });
     });
   }
@@ -3404,14 +3513,21 @@
                  unbebilderte Claude-Fassung automatisch neu zu setzen. Ein
                  Fehlschlag bricht den GPT-Erfolg NICHT ab (Nebenprodukt-
                  Muster, V7) — nur state.fehlerHinweis traegt den Nachzugs-
-                 Hinweis, die GPT-Erfolgsmeldung bleibt unveraendert. */
+                 Hinweis, die GPT-Erfolgsmeldung bleibt unveraendert.
+                 Fix-Runde 1 (Important 1a/1b): der Hinweis war bisher EIN
+                 fest verdrahteter Satz ("erneuter ChatGPT-Upload holt es
+                 nach") — der ist bei einem Waisen-Zustand (claudeBasisLaden)
+                 oder einem Teilfehler MIT bereits abgelegten Dateien
+                 (I3-Muster) schlicht falsch: ein erneuter Versuch traefe auf
+                 dieselbe Datei und scheiterte identisch. Die konkrete
+                 Fehlermeldung traegt die Wahrheit jetzt selbst. */
               var istGptUpload = !istValidierungBau && gelesen.skript &&
                 gelesen.skript.variante === 'chatgpt';
               var uebernahme = istGptUpload
                 ? versucheClaudeUebernahme(k.kursId, ab, inh, gelesen, bilder, dateienNachAblage)
-                  .catch(function () {
-                    state.fehlerHinweis = 'Claude-Fassung nicht neu gesetzt — erneuter ChatGPT-Upload ' +
-                      'holt es nach.';
+                  .catch(function (e) {
+                    state.fehlerHinweis = 'Claude-Fassung nicht neu gesetzt — ' +
+                      (e && e.message ? e.message : 'unbekannter Fehler.');
                     return null;
                   })
                 : Promise.resolve(null);

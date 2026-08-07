@@ -404,6 +404,7 @@ require('../docx-bauen.js');
 const { zipSchreiben } = require('../zip-schreiben.js');
 const { skriptLesen } = require('../skript-lesen.js');
 const { diagrammZeichnen } = require('../diagramm-zeichnen.js');
+const { docxBauen } = require('../docx-bauen.js');
 
 /* Eine minimale, aber gueltige docx-Vorlage (word/document.xml mit
    sectPr, [Content_Types].xml, leere rels) — genug fuer docxBauen.baue(),
@@ -1204,7 +1205,14 @@ test('P2 (c): Claude-Fassung ist bereits voll bebildert — kein Nachbau', async
     'keine neue Claude-Version haette entstehen duerfen');
 });
 
-test('P2 (d): Claude-Blockdatei nicht lesbar — GPT-Erfolg bleibt unveraendert, fehlerHinweis nennt den Nachzugs-Hinweis', async () => {
+/* Fix-Runde 1, Important 1b: geprueft wird explizit der Waisen-Zustand, wenn
+   ALLE Claude-docx-Versionen ohne lesbare .blocks-Schwester bleiben — hier
+   gibt es nur EINE Version, die scheitert, der Fallback-Scan hat also nichts
+   Aelteres, auf das er zurueckfallen koennte. Die Meldung darf NICHT mehr
+   suggerieren, ein erneuter ChatGPT-Upload wuerde das automatisch heilen
+   (Review-Finding: das waere hier dauerhaft falsch — derselbe Waisen-Zustand
+   traefe jedes Mal erneut zu). */
+test('P2 (d): Claude-Blockdatei nicht lesbar (einzige Version) — GPT-Erfolg bleibt unveraendert, fehlerHinweis meldet den Waisen-Zustand explizit', async () => {
   const l = await hochladenLaufB5(3, [blockDatei('gpt.blocks', blockText({ variante: 'chatgpt' }))],
     {
       dossier: DOSSIER_OK,
@@ -1219,9 +1227,48 @@ test('P2 (d): Claude-Blockdatei nicht lesbar — GPT-Erfolg bleibt unveraendert,
   assert.strictEqual(l.meldung, '', 'der GPT-Upload selbst bleibt unangetastet: ' + l.meldung);
   assert.match(l.hinweis || '', /Hochgeladen als AFL-001_skript-chatgpt_v1\.docx/);
   assert.doesNotMatch(l.hinweis || '', /Claude-Fassung/);
-  assert.match(l.fehlerHinweis || '', /Claude-Fassung nicht neu gesetzt — erneuter ChatGPT-Upload holt es nach\./);
+  assert.match(l.fehlerHinweis || '', /Claude-Fassung nicht neu gesetzt — /);
+  assert.match(l.fehlerHinweis || '', /Waisen-Zustand/);
+  assert.doesNotMatch(l.fehlerHinweis || '', /erneuter ChatGPT-Upload holt es nach/,
+    'darf keine automatische Heilung suggerieren, die hier nicht eintritt');
   assert.ok(!l.hochladenRufe.some(function (r) { return /skript-claude/.test(r.datei); }),
     'ohne lesbare Claude-Fassung darf nichts fuer Claude hochgeladen werden');
+});
+
+/* Fix-Runde 1, Important 1b (Gegenprobe zum Waisen-Test): eine juengere
+   Version ohne lesbare blocks (v2, z. B. Rest eines fruehen Teilfehlers)
+   darf den Nachbau nicht blockieren, solange eine AELTERE Version (v1) noch
+   eine lesbare, gueltige .blocks traegt — der Scan faellt automatisch
+   darauf zurueck, kein Waisen-Fehler, kein manuelles Eingreifen noetig. */
+test('P2 Fix-Runde 1 (Important 1b): eine Waisen-docx (juengste Version) faellt auf die naechstaeltere lesbare Fassung zurueck', async () => {
+  const claudeTextV1 = blockTextMehrereKapitel({
+    variante: 'claude',
+    kapitel: [{ ek: 'AFL-001-EK-001', illustrationDatei: 'claude-illu-1.png' }]
+  });
+  const gptText = blockTextMehrereKapitel({
+    variante: 'chatgpt',
+    kapitel: [{ ek: 'AFL-001-EK-001', illustrationDatei: 'gpt-bild-1.png' }]
+  });
+  const l = await hochladenLaufB5(3,
+    [blockDatei('gpt.blocks', gptText), pngDateiMitBytes('gpt-bild-1.png', [7, 7, 7])],
+    {
+      dossier: DOSSIER_OK,
+      variante: 'chatgpt',
+      dateienImOrdner: [
+        { name: 'AFL-001_skript-claude_v1.docx' },
+        { name: 'AFL-001_skript-claude_v1.blocks' },
+        { name: 'AFL-001_skript-claude_v2.docx' } /* Waise: keine v2.blocks */
+      ],
+      blocksTexte: { 'AFL-001_skript-claude_v1.blocks': claudeTextV1 }
+      /* absichtlich KEIN Eintrag fuer v2.blocks -> graph.dateiLesen liefert null */
+    });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.doesNotMatch(l.fehlerHinweis || '', /Waisen-Zustand/, 'der Fallback auf v1 haette greifen sollen');
+  /* naechste Version nach v1 UND v2 (beide bereits vergeben) ist v3. Keine
+     Komma-Fortsetzung ("… Bild,") erwartet — dieses EK hat einen Treffer,
+     kein "ohne Match"-Rest. */
+  assert.match(l.hinweis || '', /Claude-Fassung AFL-001_skript-claude_v3\.docx neu gesetzt mit 1 ChatGPT-Bild\b/);
+  assert.doesNotMatch(l.hinweis || '', /ohne Match/);
 });
 
 test('P2 (e): ein EK ohne GPT-Match — die Meldung nennt "ohne Match als Platzhalter"', async () => {
@@ -1257,6 +1304,142 @@ test('P2 (e): ein EK ohne GPT-Match — die Meldung nennt "ohne Match als Platzh
     'der gefundene Treffer haette hochgeladen werden muessen');
   assert.ok(!l.hochladenRufe.some(function (r) { return r.datei === 'claude-illu-2.png'; }),
     'ohne GPT-Treffer bleibt der Platzhalter — kein Upload fuer claude-illu-2.png');
+});
+
+/* ---------- P2 Fix-Runde 1 (Review, 1 Critical + 2 Important + 1 Minor) ----------
+   CRITICAL: eine bereits erfuellte Illustration (Bild aus einem FRUEHEREN
+   Nachbau-Lauf, liegt schon in abbildungen/) regressierte beim naechsten
+   Nachbau zu einem Platzhalter — bilderNeu wurde nur fuer NEUE Treffer
+   befuellt, ein bereits erfuelltes Bild fehlte deshalb im bilder-Kontrakt,
+   den docxBauen.baue() bekommt, und docxBauen faellt seit P1 bei einem
+   fehlenden Eintrag auf einen Platzhalter zurueck. */
+test('P2 Fix-Runde 1 (CRITICAL): ein zweiter Nachbau-Lauf regressiert eine bereits erfuellte Illustration NICHT zu einem Platzhalter', async () => {
+  const claudeText = blockTextMehrereKapitel({
+    variante: 'claude',
+    kapitel: [
+      { ek: 'AFL-001-EK-001', illustrationDatei: 'claude-illu-1.png' }, /* bereits erfuellt (Lauf 1) */
+      { ek: 'AFL-001-EK-002', illustrationDatei: 'claude-illu-2.png' }  /* noch Platzhalter */
+    ]
+  });
+  const gptText = blockTextMehrereKapitel({
+    variante: 'chatgpt',
+    kapitel: [
+      { ek: 'AFL-001-EK-001' }, /* kein GPT-Bild fuer EK-001 — soll auch nicht gebraucht werden */
+      { ek: 'AFL-001-EK-002', illustrationDatei: 'gpt-bild-2.png' }
+    ]
+  });
+
+  const echtBaue = docxBauen.baue;
+  let gesehenerClaudeBilderArg = null;
+  docxBauen.baue = function (vorlage, gelesen, bilder) {
+    if (gelesen && gelesen.skript && gelesen.skript.variante === 'claude') {
+      gesehenerClaudeBilderArg = bilder;
+    }
+    return echtBaue(vorlage, gelesen, bilder);
+  };
+
+  try {
+    const l = await hochladenLaufB5(3,
+      [blockDatei('gpt.blocks', gptText), pngDateiMitBytes('gpt-bild-2.png', [99, 98, 97])],
+      {
+        dossier: DOSSIER_OK,
+        variante: 'chatgpt',
+        dateienImOrdner: [
+          { name: 'AFL-001_skript-claude_v2.docx' },
+          { name: 'AFL-001_skript-claude_v2.blocks' }
+        ],
+        dateienJeOrdner: { '03_content/abbildungen': [{ name: 'claude-illu-1.png' }] },
+        blocksTexte: { 'AFL-001_skript-claude_v2.blocks': claudeText },
+        wiederverwendungsBilder: { '03_content/abbildungen/claude-illu-1.png': new Uint8Array([1, 2, 3]) }
+      });
+
+    assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+    assert.match(l.hinweis || '', /Claude-Fassung AFL-001_skript-claude_v3\.docx neu gesetzt mit 1 ChatGPT-Bild\b/);
+    assert.doesNotMatch(l.hinweis || '', /ohne Match/, 'EK-001 ist kein "ohne Match"-Fall — sie war nie Platzhalter');
+
+    assert.ok(gesehenerClaudeBilderArg, 'docxBauen.baue haette fuer die neue Claude-Fassung aufgerufen werden muessen');
+    assert.ok(gesehenerClaudeBilderArg['claude-illu-1.png'] && gesehenerClaudeBilderArg['claude-illu-1.png'].bytes,
+      'die bereits erfuellte Illustration EK-001 haette erneut geladen werden muessen (sonst Platzhalter-Regression)');
+    assert.ok(gesehenerClaudeBilderArg['claude-illu-2.png'] && gesehenerClaudeBilderArg['claude-illu-2.png'].bytes,
+      'die neu getroffene Illustration EK-002 haette dabei sein muessen');
+
+    assert.ok(!l.hochladenRufe.some(function (r) { return r.datei === 'claude-illu-1.png'; }),
+      'die WIEDERVERWENDETE Illustration wird NICHT erneut hochgeladen (Muster V4 — sie liegt unveraendert bereits dort)');
+    assert.ok(l.hochladenRufe.some(function (r) { return r.datei === 'claude-illu-2.png'; }),
+      'die neu getroffene Illustration wird hochgeladen');
+  } finally {
+    docxBauen.baue = echtBaue;
+  }
+});
+
+/* IMPORTANT 1a: ein Teilfehler des Nachbaus (blocks scheitert NACH dem docx)
+   muss dieselbe I3-Wahrheit nennen wie der Haupt-Upload — sonst bliebe eine
+   unvollstaendige Claude-v{N} (docx ohne blocks) liegen, an der ein
+   naechster Nachbau-Versuch scheitern koennte, ohne dass irgendwer erfaehrt,
+   dass von Hand aufgeraeumt werden muss. */
+test('P2 Fix-Runde 1 (Important 1a): Teilfehler beim Nachbau (blocks scheitert nach docx) nennt die I3-Wahrheit', async () => {
+  const claudeText = blockTextMehrereKapitel({
+    variante: 'claude',
+    kapitel: [{ ek: 'AFL-001-EK-001', illustrationDatei: 'claude-illu-1.png' }]
+  });
+  const gptText = blockTextMehrereKapitel({
+    variante: 'chatgpt',
+    kapitel: [{ ek: 'AFL-001-EK-001', illustrationDatei: 'gpt-bild-1.png' }]
+  });
+  /* Aufrufreihenfolge (deterministisch): GPT docx(1) blocks(2) diagramm(3)
+     illustration(4) — dann Claude docx(5) blocks(6) … Der 6. Aufruf (Claude-
+     blocks) soll scheitern. */
+  const l = await hochladenLaufB5(3,
+    [blockDatei('gpt.blocks', gptText), pngDateiMitBytes('gpt-bild-1.png', [5, 5, 5])],
+    {
+      dossier: DOSSIER_OK,
+      variante: 'chatgpt',
+      dateienImOrdner: [
+        { name: 'AFL-001_skript-claude_v2.docx' },
+        { name: 'AFL-001_skript-claude_v2.blocks' }
+      ],
+      blocksTexte: { 'AFL-001_skript-claude_v2.blocks': claudeText },
+      hochladenFehlerAb: 6
+    });
+  assert.strictEqual(l.meldung, '', 'der GPT-Upload selbst bleibt unangetastet: ' + l.meldung);
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_skript-chatgpt_v1\.docx/,
+    'der GPT-Erfolg darf vom Claude-Teilfehler nicht ueberschrieben werden');
+  assert.match(l.fehlerHinweis || '', /Claude-Fassung nicht neu gesetzt — /);
+  assert.match(l.fehlerHinweis || '', /Bereits abgelegt.*AFL-001_skript-claude_v3\.docx/);
+  assert.match(l.fehlerHinweis || '', /nächste, vollständige Version daneben/);
+  assert.match(l.fehlerHinweis || '', /überschreibt die unvollständige nicht/);
+  assert.match(l.fehlerHinweis || '', /unvollständige Claude-v3 in SharePoint von Hand löschen \(Papierkorb\)/);
+});
+
+/* IMPORTANT 2: ohne einen einzigen EK-Treffer entstuende nur eine funktional
+   identische neue Version — reiner Versions-Churn und ein zusaetzlicher
+   Trigger fuer den CRITICAL-Fall bei jedem weiteren Lauf. Kein Treffer, kein
+   Nachbau. */
+test('P2 Fix-Runde 1 (Important 2): kein einziger EK-Treffer — kein Nachbau, kein Versions-Churn', async () => {
+  const claudeText = blockTextMehrereKapitel({
+    variante: 'claude',
+    kapitel: [{ ek: 'AFL-001-EK-001', illustrationDatei: 'claude-illu-1.png' }]
+  });
+  const gptText = blockTextMehrereKapitel({
+    variante: 'chatgpt',
+    kapitel: [{ ek: 'AFL-001-EK-999' }] /* andere EK, keine Illustration im GPT-Upload */
+  });
+  const l = await hochladenLaufB5(3, [blockDatei('gpt.blocks', gptText)],
+    {
+      dossier: DOSSIER_OK,
+      variante: 'chatgpt',
+      dateienImOrdner: [
+        { name: 'AFL-001_skript-claude_v1.docx' },
+        { name: 'AFL-001_skript-claude_v1.blocks' }
+      ],
+      blocksTexte: { 'AFL-001_skript-claude_v1.blocks': claudeText }
+    });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.fehlerHinweis, null, 'kein Fehlschlag — nur kein Nachbau');
+  assert.doesNotMatch(l.hinweis || '', /Claude-Fassung/);
+  assert.strictEqual(l.rufe.vorlageLaden, 1, 'kein zweiter Bau ohne jeden Treffer — nur der GPT-eigene');
+  assert.ok(!l.hochladenRufe.some(function (r) { return /skript-claude_v2/.test(r.datei); }),
+    'kein Versions-Churn ohne einen einzigen Treffer');
 });
 
 /* ---------- B9-F1: die Dateiauswahl ueberlebt keinen Render (Live-Befund) ----------
