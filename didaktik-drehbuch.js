@@ -15,6 +15,17 @@
    Bilder, KEINE rels-/Content-Types-Aenderungen — das Interaktions-
    Drehbuch ist reiner Text, es gibt nichts einzubetten.
 
+   Das <w:document>-Wurzelelement des Ergebnisses ist der ORIGINALE
+   Oeffnungstag der Vorlagen-document.xml (dokumentTagVon(), wortgleich
+   uebernommen, nicht selbst zusammengebaut) — Live-Defekt-Fix
+   2026-08-07: ein eigener, minimaler Tag mit nur xmlns:w liess das
+   sectPr der echten reference.docx (headerReference/footerReference mit
+   r:id, Praefix "r") mit einem undeklarierten Namespace-Praefix zurueck,
+   Word verweigerte die Datei. Der Original-Tag deklariert IMMER jeden
+   Praefix, der irgendwo im Dokument vorkommt — robust gegen jede
+   Vorlage, nicht nur die heute bekannten Namespaces. Details an der
+   Funktion selbst.
+
    Styles der Vorlage (styleIds, nicht die Namen — deutsches Word
    eindeutscht beim Speichern die eingebauten Kennungen, s.
    docx-bauen.js-Kommentarkopf): Titel (Titelkopf), berschrift1
@@ -44,10 +55,7 @@
   var STYLE_FEHLVORSTELLUNG = 'Fehlvorstellung';
   var STYLE_QUELLE = 'Quelle';
 
-  /* Kein r:/wp:/a:/pic:-Namespace noetig — dieses Dokument bettet keine
-     Bilder ein (anders als docx-bauen.js), reiner Fliesstext. */
-  var DOC_KOPF = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">';
+  var XML_PROLOG = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
   /* ---------- XML-Escaping — eigene Kopie (Task-Brief: Module teilen
      keinen Code ueber Globals hinaus, jedes fuehrt seine eigene
@@ -96,6 +104,28 @@
     var alle = xml.match(/<w:sectPr[\s\S]*?<\/w:sectPr>/g);
     if (!alle || !alle.length) return null;
     return alle[alle.length - 1];
+  }
+
+  /* ---------- Original <w:document>-Oeffnungstag der Vorlage ----------
+     Live-Defekt (2026-08-07, Fix-Runde 2): der urspruengliche, minimale
+     Tag deklarierte NUR xmlns:w — die echte reference.docx traegt in
+     ihrem sectPr aber <w:headerReference r:id="…"/>/<w:footerReference
+     r:id="…"/> (Praefix "r"), weil sectPr unveraendert aus der Vorlage
+     uebernommen wird (sectPrVon() oben). Ohne xmlns:r-Deklaration am
+     Dokument-Wurzelelement verweigerte Word die Datei mit "'r' is an
+     undeclared prefix" (XmlException). Fix: statt einen eigenen,
+     geratenen Namespace-Satz zu deklarieren (fragil — ein kuenftiger
+     mc:Ignorable-Praefix oder ein weiteres, heute unbekanntes Namespace
+     koennte denselben Fehler erneut ausloesen), wird der ORIGINALE
+     Oeffnungstag der Vorlagen-document.xml wortgleich uebernommen: Word
+     deklariert dort per OOXML-Konvention IMMER jeden Namespace-Praefix,
+     der irgendwo im Dokument vorkommt — also auch im kopierten sectPr —,
+     inklusive mc:Ignorable-Kompatibilitaetsattributen. Das macht die
+     Uebernahme robust gegen JEDEN Namespace, den eine echte Vorlage
+     traegt, nicht nur die heute bekannten (r/wp/a/pic). */
+  function dokumentTagVon(xml) {
+    var m = String(xml || '').match(/<w:document\b[^>]*>/);
+    return m ? m[0] : null;
   }
 
   /* ---------- Titelkopf ---------- */
@@ -182,8 +212,9 @@
      gelesen = Ergebnis von didaktikLesen.lies() (kopf, contracts, punkte);
      contentGelesen = skriptLesen.lies() der geltenden content_final.blocks
      (liefert Kapitel-Titel/-Nummern fuer den Match ueber ek, s.
-     kapitelVon()). Wirft, wenn die Vorlage kein word/document.xml oder
-     kein <w:sectPr> traegt — Muster docx-bauen.js baue(). */
+     kapitelVon()). Wirft, wenn die Vorlage kein word/document.xml, kein
+     <w:document>-Wurzelelement oder kein <w:sectPr> traegt — Muster
+     docx-bauen.js baue(). */
   async function baue(vorlageArrayBuffer, gelesen, contentGelesen) {
     var zip = Z().oeffne(vorlageArrayBuffer);
     if (!zip.eintraege['word/document.xml']) {
@@ -191,6 +222,11 @@
     }
 
     var vorlageXml = await zip.lies('word/document.xml');
+    var dokumentTag = dokumentTagVon(vorlageXml);
+    if (!dokumentTag) {
+      throw new Error('didaktikDrehbuch.baue: Vorlage document.xml enthaelt kein <w:document>-' +
+        'Wurzelelement.');
+    }
     var sectPr = sectPrVon(vorlageXml);
     if (!sectPr) {
       throw new Error('didaktikDrehbuch.baue: Vorlage document.xml enthaelt kein <w:sectPr> — ' +
@@ -198,7 +234,9 @@
     }
 
     var body = bodyAbsaetze(gelesen, contentGelesen);
-    var docXml = DOC_KOPF + '<w:body>' + body + sectPr + '</w:body></w:document>';
+    /* dokumentTag traegt ALLE Namespace-/mc:Ignorable-Deklarationen der
+       Vorlage — s. dokumentTagVon() oben (Live-Defekt-Fix). */
+    var docXml = XML_PROLOG + dokumentTag + '<w:body>' + body + sectPr + '</w:body></w:document>';
 
     /* Alle Vorlagen-Teile ausser word/document.xml byte-identisch
        uebernehmen (liesBytes) — KEINE rels-/Content-Types-Aenderungen,

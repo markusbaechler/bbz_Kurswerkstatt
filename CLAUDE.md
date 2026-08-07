@@ -6210,3 +6210,80 @@ freigabepflichtiger Redaktionsschritt, nicht Teil dieser Task. Das reale
 `ablage-kontrakt.json`/`schritte.json` in SharePoint führt `pruefung: 'interaktion'` für
 Schritt 5 seit D8 bereits live (s. „Stand 2026-08-06" oben) — F3 baut direkt darauf auf, kein
 Weg-B-Vorbehalt mehr nötig.
+
+### Fix-Runde 1 (Review): zwei veraltete Kommentare auf den F3-Stand gebracht
+
+Zwei Kommentarblöcke, die F3 selbst nicht anfasste, widersprachen dem neuen Code daneben:
+`controller.didaktikNachladen`s Kommentar behauptete „gibt es hier KEINEN Endungstausch" —
+F3 führt genau diesen ein, sobald neben der `.blocks` ein `.docx` liegt; der
+`geprueftPflichtDidaktik`-Kommentar behauptete „Anders als Schritt 3/4 baut Schritt 5 KEIN
+Word … keine Vorlage geladen" — seit F3 baut Schritt 5 das Interaktions-Drehbuch als Word,
+inklusive `graph.vorlageLaden()`. Beide Blöcke auf den F3-Stand gebracht — reine
+Kommentarkorrektur, kein Code geändert (`node --test` unverändert **934/934 grün**).
+
+### Fix-Runde 2 (Live-Defekt, Critical): das gebaute Word öffnete nicht — undeklariertes
+### Namespace-Präfix im übernommenen sectPr
+
+**Live-Befund (2026-08-07), per XML-Validierung belegt:** ein mit F3 gebautes Interaktions-
+Drehbuch liess sich in Word nicht öffnen. Root Cause: `didaktikDrehbuch.baue()` baute das
+`<w:document>`-Wurzelelement bisher selbst, mit einem **minimalen, geratenen** Namespace-Satz
+(nur `xmlns:w`) — übernahm dabei aber das `sectPr` der Vorlage **unverändert**
+(`sectPrVon()`, byte-treu aus `word/document.xml` kopiert). Die echte `reference.docx` trägt
+in ihrem `sectPr` jedoch `<w:headerReference r:id="rId8"/>`/`<w:footerReference
+r:id="rId9"/>` — das Präfix `r` blieb am selbst gebauten Wurzelelement undeklariert. Word
+verweigerte die Datei mit `XmlException: 'r' is an undeclared prefix` (Position 55525, im
+`sectPr`). Die Test-Mini-Vorlage (`test/didaktikdrehbuch.test.js` `vorlageBauen()`) hatte
+weder eine Kopf- noch eine Fusszeile im `sectPr` — die Fehlerklasse „Test-Vorlage zu minimal,
+echte Vorlage trägt header/footer" blieb dadurch unentdeckt, obwohl `docx-bauen.js` (B4)
+genau dasselbe `sectPr`-Übernahmemuster fährt: dort funktioniert es nur, weil dessen
+hartkodierter Namespace-Satz `xmlns:r` zufällig mit abdeckt (Bilder-Einbettung braucht `r:embed`
+ohnehin).
+
+**Fix, robust statt geraten:** `dokumentTagVon(xml)` extrahiert den **originalen**
+`<w:document …>`-Öffnungstag der Vorlagen-`document.xml` per Regex (`/<w:document\b[^>]*>/`)
+und übernimmt ihn **wortgleich** als Wurzelelement des Ergebnisses — statt eines selbst
+gebauten, geratenen Tags. Der Original-Tag deklariert per OOXML-Konvention **immer** jeden
+Namespace-Präfix, der irgendwo im Dokument vorkommt (also auch im kopierten `sectPr`),
+inklusive `mc:Ignorable`-Kompatibilitätsattributen — das macht die Übernahme robust gegen
+**jeden** Namespace, den eine echte Vorlage trägt, nicht nur die heute bekannten (`r`). Fehlt
+ein `<w:document>`-Wurzelelement in der Vorlage: neuer, eigener Abbruch (Muster
+`docx-bauen.js`). **Keine weitere Stelle in `didaktik-drehbuch.js` betroffen** — `sectPr`
+(unverändert byte-treu übernommen) und der neu extrahierte `dokumentTag` sind die einzigen
+zwei Stellen, an denen Vorlagen-XML in frisch gebautes Markup eingebettet wird; jeder andere
+Vorlagen-Teil reicht ohnehin unverändert über `liesBytes()` durch (kein
+Re-Serialisierungsrisiko). `docx-bauen.js` selbst trägt dieselbe latente Fehlerklasse
+theoretisch weiter (hartkodierter Fünf-Namespace-Satz statt Extraktion) — bewusst NICHT Teil
+dieser Fix-Runde (out of scope, dort bislang „live bewiesen" funktionsfähig gegen dieselbe
+Vorlage, B4/B9); ein möglicher Folgefund für eine spätere Runde.
+
+**Test (`test/didaktikdrehbuch.test.js`, neu):** eine erweiterte Test-Vorlage
+(`vorlageBauen({mitHeaderFooterRef:true})`) trägt `xmlns:r` am Wurzelelement UND echte
+`headerReference`/`footerReference` mit `r:id` im `sectPr` — genau der Fall, an dem die
+echte `reference.docx` scheiterte. Der neue Test liest die ERWARTETEN
+`xmlns:`-Deklarationen aus der Vorlage selbst (derselbe Lesepfad wie die Produktion —
+`zipLesen.oeffne`/`lies`, kein zweites, von Hand gepflegtes Duplikat) und prüft (a) das
+Ergebnis-Wurzelelement trägt GENAU dieselbe Deklarationsmenge (`deepStrictEqual`,
+String-Vergleich) und (b) `r:id` kommt im Ergebnis nur vor, wenn `xmlns:r` am Wurzelelement
+deklariert ist — die eigentliche Root-Cause-Probe. **935 Tests grün** (Baseline 934 + 1).
+
+**Mutationsprobe (tatsächlich ausgeführt):** die Original-Tag-Übernahme durch den alten,
+minimalen Tag ersetzt (`'<w:document xmlns:w="…">'`, nur `xmlns:w`), `node --test
+test/didaktikdrehbuch.test.js`:
+```
+ℹ tests 10
+ℹ pass 9
+ℹ fail 1
+
+✖ F3 Fix-Runde 2: header/footerReference mit r:id — das Ergebnis deklariert xmlns:r (und jede weitere Vorlagen-Deklaration) am Wurzelelement
+  AssertionError [ERR_ASSERTION]: das Ergebnis-Wurzelelement sollte GENAU die xmlns:-Deklarationen der Vorlage tragen
+  + actual - expected
+
+    [
+  -   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"',
+      'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    ]
+```
+Genau der eine neue Regressionstest fiel rot, alle anderen neun blieben grün; komplette Suite
+in demselben Zustand erneut geprüft: `node --test` → **934/935 grün, genau der eine Test
+rot**. Danach die Original-Tag-Übernahme wiederhergestellt, komplette Suite erneut geprüft:
+`node --test` → **935/935 grün**.

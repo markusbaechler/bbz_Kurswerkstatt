@@ -28,12 +28,24 @@ const STYLES_XML = '<w:styles>' +
   '<w:style w:styleId="Quelle"><w:name w:val="Quelle"/></w:style>' +
   '</w:styles>';
 
+/* opts.mitHeaderFooterRef (Fix-Runde 2, Live-Defekt 2026-08-07): baut eine
+   Vorlage, deren <w:document>-Wurzelelement zusaetzlich xmlns:r deklariert
+   UND deren sectPr echte headerReference/footerReference MIT r:id traegt —
+   genau der Fall, an dem die echte reference.docx (Kopf-/Fusszeile) scheiterte,
+   waehrend die einfache vorlageBauen()-Vorlage ohne diese Felder das Problem
+   nie zeigte. */
 function vorlageBauen(opts) {
   opts = opts || {};
+  const NS_R = ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+  const wurzel = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"' +
+    (opts.mitHeaderFooterRef ? NS_R : '');
+  const headerFooterRefs = opts.mitHeaderFooterRef
+    ? '<w:headerReference r:type="default" r:id="rId8"/><w:footerReference r:type="default" r:id="rId9"/>'
+    : '';
   const sectPr = opts.ohneSectPr ? '' :
-    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+    '<w:sectPr>' + headerFooterRefs + '<w:pgSz w:w="11906" w:h="16838"/>' +
     '<w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417"/></w:sectPr>';
-  const docXml = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+  const docXml = '<?xml version="1.0"?><w:document ' + wurzel + '>' +
     '<w:body><w:p><w:r><w:t>Alter Inhalt, wird ersetzt</w:t></w:r></w:p>' +
     sectPr +
     '</w:body></w:document>';
@@ -43,6 +55,12 @@ function vorlageBauen(opts) {
   ];
   const buf = zipSchreiben.baue(eintraege);
   return buf.buffer;
+}
+
+/* Alle xmlns:X="…"-Deklarationen eines Oeffnungstags — fuer den
+   String-Vergleich "das Ergebnis traegt ALLE Deklarationen der Vorlage". */
+function xmlnsDeklarationen(tag) {
+  return (tag.match(/xmlns:[A-Za-z0-9]+="[^"]*"/g) || []).slice().sort();
 }
 
 /* Eigene Kopie der Escaping-Regel (Task-Brief: Module teilen keinen Code
@@ -284,4 +302,53 @@ test('F3 (g): findet sich im Content kein Kapitel mit derselben ek, faellt H1 au
 
   assert.ok(hatAbsatzMitStilUndText(xml, 'berschrift1', 'AFL-001-EK-999'), 'H1 sollte auf die ek zurueckfallen');
   assert.ok(xml.indexOf('Kapitel  ·') < 0, 'kein halb ausgefuelltes "Kapitel · "-Muster erwartet');
+});
+
+/* ---------- Fix-Runde 2 (Live-Defekt 2026-08-07): das Wurzelelement
+   uebernimmt ALLE Namespace-Deklarationen der Vorlage — nicht nur einen
+   festen, geratenen Satz. Root Cause: die echte reference.docx traegt in
+   ihrem sectPr <w:headerReference r:id="…"/>/<w:footerReference r:id="…"/>
+   (Praefix "r"); ein minimaler, selbst gebauter <w:document>-Tag mit nur
+   xmlns:w liess "r" undeklariert -> Word verweigerte die Datei ("'r' is an
+   undeclared prefix"). Die einfache vorlageBauen()-Standardvorlage (kein
+   mitHeaderFooterRef) zeigt das Problem NIE, weil ihr sectPr keine
+   Referenzen mit fremdem Praefix traegt — genau die Luecke, die Fix-Runde
+   2 schliesst. ---------- */
+test('F3 Fix-Runde 2: header/footerReference mit r:id — das Ergebnis deklariert xmlns:r (und jede weitere Vorlagen-Deklaration) am Wurzelelement', async () => {
+  const vorlage = vorlageBauen({ mitHeaderFooterRef: true });
+
+  /* Die ERWARTETEN Deklarationen kommen aus der Vorlage selbst (derselbe
+     Lesepfad wie die Produktion: zipLesen.oeffne -> lies), nicht aus einer
+     zweiten, im Test von Hand gepflegten Kopie — sonst koennte der Test
+     unbemerkt von vorlageBauen() abdriften. */
+  const vorlageZip = zipLesen.oeffne(vorlage);
+  const vorlageXml = await vorlageZip.lies('word/document.xml');
+  const vorlageTag = (vorlageXml.match(/<w:document\b[^>]*>/) || [])[0];
+  assert.ok(vorlageTag, 'Testvoraussetzung: die Vorlage traegt ein <w:document>-Wurzelelement');
+  const erwarteteDeklarationen = xmlnsDeklarationen(vorlageTag);
+  assert.ok(erwarteteDeklarationen.indexOf('xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"') >= 0,
+    'Testvoraussetzung: die Vorlage selbst deklariert xmlns:r');
+
+  const gelesen = didaktikLesen.lies(didaktikText());
+  assert.deepStrictEqual(gelesen.fehler, [], 'Testvoraussetzung: Fixture selbst fehlerfrei');
+  const contentGelesen = skriptLesen.lies(contentText());
+
+  const out = await didaktikDrehbuch.baue(vorlage, gelesen, contentGelesen);
+  const zip = zipLesen.oeffne(out.buffer);
+  const xml = await zip.lies('word/document.xml');
+  const ergebnisTag = (xml.match(/<w:document\b[^>]*>/) || [])[0];
+  assert.ok(ergebnisTag, 'das Ergebnis sollte ein <w:document>-Wurzelelement tragen');
+
+  /* (a) das Ergebnis traegt ALLE xmlns:-Deklarationen der Vorlage —
+     String-Vergleich der Deklarationsmenge (Auftrag). */
+  assert.deepStrictEqual(xmlnsDeklarationen(ergebnisTag), erwarteteDeklarationen,
+    'das Ergebnis-Wurzelelement sollte GENAU die xmlns:-Deklarationen der Vorlage tragen');
+
+  /* (b) r:id kommt im Ergebnis nur vor, wenn xmlns:r deklariert ist —
+     die eigentliche Root-Cause-Probe: das kopierte sectPr traegt r:id,
+     das waere ohne (a) ein undeklariertes Praefix. */
+  const traegtRId = /\br:id="/.test(xml);
+  const traegtXmlnsR = /xmlns:r="/.test(ergebnisTag);
+  assert.ok(traegtRId, 'Testvoraussetzung: das kopierte sectPr sollte r:id tragen (headerReference/footerReference)');
+  assert.ok(traegtXmlnsR, 'r:id ohne eine xmlns:r-Deklaration am Wurzelelement waere ein undeklariertes Praefix (Live-Defekt)');
 });
