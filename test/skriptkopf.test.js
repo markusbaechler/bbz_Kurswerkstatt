@@ -60,9 +60,13 @@ test('mit vollem extras traegt der Kopf Variante, Version, basiert_auf, Zielname
      ODER katalog:, und katalog: wird seit I1 nicht mehr beworben. */
   assert.match(kopf, /datei:.*IMMER Pflicht/, 'datei: ist jetzt IMMER Pflicht, nicht mehr optional');
   assert.doesNotMatch(kopf, /katalog:/, 'katalog: darf nicht mehr beworben werden (I1)');
-  /* Handoff-Satz Weg Claude (extras.variante 'claude'): eine Person erzeugt
-     das Bild separat, der Chat selbst liefert kein PNG. */
-  assert.match(kopf, /eine Person erzeugt das Bild danach/, 'Handoff-Satz fuer den Claude-Weg fehlt');
+  /* Handoff-Satz Weg Claude (extras.variante 'claude'), seit P1 (2026-08-07,
+     Entscheid Markus): die Werkstatt setzt selbst einen Platzhalter statt
+     eine Person vorher ein Bild erzeugen zu lassen — der Chat selbst
+     liefert kein PNG. */
+  assert.match(kopf, /die Bilder musst du nicht erzeugen/, 'Handoff-Satz fuer den Claude-Weg fehlt (P1)');
+  assert.match(kopf, /gestalteten Platzhalter/, 'Platzhalter-Hinweis im Claude-Handoff fehlt (P1)');
+  assert.match(kopf, /aus der ChatGPT-Variante oder werden später ergänzt/, 'P1-Nachlieferungssatz fehlt');
   assert.doesNotMatch(kopf, /liefere das PNG im selben Upload gleich mit/i,
     'die ChatGPT-Formulierung darf im Claude-Weg nicht auftauchen');
   assert.match(kopf, /FACHQUELLEN \(verbindlich/, 'Modus-Satz (quellengestuetzt) fehlt');
@@ -113,15 +117,15 @@ test('C1: Handoff-Satz Weg ChatGPT — der Chat darf das PNG selbst mitliefern',
   );
   assert.match(kopf, /liefere das PNG im selben Upload gleich mit/i, 'ChatGPT-Handoff-Satz fehlt');
   assert.match(kopf, /GENAU unter dem in datei: genannten Namen/);
-  assert.doesNotMatch(kopf, /eine Person erzeugt das Bild danach/,
-    'die Claude-Formulierung darf im ChatGPT-Weg nicht auftauchen');
+  assert.doesNotMatch(kopf, /die Bilder musst du nicht erzeugen/,
+    'die Claude-Formulierung (P1) darf im ChatGPT-Weg nicht auftauchen');
 });
 
 test('C1: ohne extras.variante (Default) gilt der Claude-Handoff, kein ChatGPT-Versprechen', () => {
   const d = dossier.neu('VL-002');
   d.regulatorik = { stand: '1.1.2026' };
   const kopf = inhalt.skriptPromptKopf({ kursId: 'VL-002' }, d);
-  assert.match(kopf, /eine Person erzeugt das Bild danach/);
+  assert.match(kopf, /die Bilder musst du nicht erzeugen/);
   assert.doesNotMatch(kopf, /liefere das PNG im selben Upload gleich mit/i);
 });
 

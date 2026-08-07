@@ -1136,11 +1136,14 @@
        hinstellte, liess jeden Claude-Weg-Upload mit Illustration am Gate
        scheitern. Der Handoff-Satz unterscheidet seither nach
        extras.variante: bei 'chatgpt' liefert der Chat das PNG im selben
-       Upload mit, sonst (u. a. 'claude') erzeugt eine Person das Bild
-       danach separat und speichert es GENAU unter dem genannten
-       datei:-Namen. Der Wortlaut dieses Prompt-Kopfs selbst ist sonst
-       nicht Teil von B5/B6 (Werkzeug-/Prompt-Texte sind ein eigener,
-       freigabepflichtiger Schritt, s. CLAUDE.md "Offen").
+       Upload mit, sonst (u. a. 'claude') muss NIEMAND vorher ein Bild
+       erzeugen — seit P1 (2026-08-07, Entscheid Markus) setzt die
+       Kurswerkstatt beim Bau selbst einen gestalteten Platzhalter mit der
+       szene:-Regie; das endgueltige Bild kommt aus der ChatGPT-Variante
+       oder wird spaeter ergaenzt (der Claude-Weg funktioniert damit mit
+       der Blockdatei ALLEIN). Der Wortlaut dieses Prompt-Kopfs selbst ist
+       sonst nicht Teil von B5/B6/P1 (Werkzeug-/Prompt-Texte sind ein
+       eigener, freigabepflichtiger Schritt, s. CLAUDE.md "Offen").
 
        Rahmen und gemeinsame Saetze NICHT dupliziert (Konvention 9): Kurs/
        Kompetenzfeld-Zeilen wie in briefingPromptKopf/lernzielePromptKopf,
@@ -1216,9 +1219,17 @@
         z.push('Kannst du selbst Bilder erzeugen: liefere das PNG im selben Upload gleich mit, ' +
                'GENAU unter dem in datei: genannten Namen.');
       } else {
-        z.push('Du selbst lieferst kein PNG — eine Person erzeugt das Bild danach mit dem ' +
-               'Stil-Prompt in einem Bild-Werkzeug und speichert es GENAU unter dem in datei: ' +
-               'genannten Namen, bevor sie hochlädt.');
+        /* P1 (2026-08-07, Entscheid Markus): der Claude-Weg muss mit der
+           Blockdatei ALLEIN funktionieren — vorher verlangte dieser Satz,
+           dass VOR dem Hochladen eine Person das Bild separat erzeugt
+           (Sackgasse ohne diesen Zwischenschritt). Die Werkstatt setzt seit
+           P1 selbst einen gestalteten Platzhalter mit der szene:-Regie; das
+           endgueltige Bild kommt aus der ChatGPT-Variante oder wird
+           spaeter ergaenzt (P2). */
+        z.push('Du selbst lieferst kein PNG — die Bilder musst du nicht erzeugen: die ' +
+               'Kurswerkstatt setzt beim Bauen einen gestalteten Platzhalter mit deiner szene:-Regie ' +
+               'ein; die endgültigen Bilder kommen aus der ChatGPT-Variante oder werden später ' +
+               'ergänzt.');
       }
       z.push('');
       z.push('=== ENDE DER ANGABEN ===');
@@ -1762,10 +1773,18 @@
     /* Welche ###ILLUSTRATION-Referenzen (B6: ein bekannter, optionaler
        Schema-Baustein, s. skript-schema.js) im Upload FEHLEN — dieselbe
        "datei:"-Feldsyntax wie docxBauen.illustrationAbsatz() dort liest
-       (Parity, s. Kommentar dort). Anders als im gebauten Word (wo eine
-       fehlende Illustration einfach nichts einfuegt) ist eine referenzierte,
-       aber nicht mitgelieferte Illustration beim UPLOAD ein Fehler — der
-       Chat hat sie versprochen, aber nicht mitgeschickt.
+       (Parity, s. Kommentar dort).
+
+       P1 (2026-08-07, Entscheid Markus): eine referenzierte, aber nicht
+       mitgelieferte Illustration ist seither KEIN Upload-Fehler mehr — der
+       Claude-Weg von Schritt 3 muss mit der Blockdatei ALLEIN funktionieren.
+       docxBauen.baue() setzt fuer eine fehlende Referenz einen gestalteten
+       Platzhalter mit der szene:-Bildidee, der Upload laeuft durch. Diese
+       Funktion selbst bleibt bestehen: der Schritt-4-Zweig
+       (weiterMitValidierungPruefe, app.js) nutzt sie weiterhin, um VOR dem
+       Bau zu ermitteln, welche Illustrationen sich noch aus
+       03_content/abbildungen wiederverwenden lassen — was danach immer noch
+       fehlt, wird ebenfalls zum Platzhalter statt eines Abbruchs.
 
        illustrationenFehlend(gelesen, hochgeladeneNamen) -> string[] der
        fehlenden Dateinamen.

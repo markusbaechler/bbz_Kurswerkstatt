@@ -6287,3 +6287,136 @@ Genau der eine neue Regressionstest fiel rot, alle anderen neun blieben grün; k
 in demselben Zustand erneut geprüft: `node --test` → **934/935 grün, genau der eine Test
 rot**. Danach die Original-Tag-Übernahme wiederhergestellt, komplette Suite erneut geprüft:
 `node --test` → **935/935 grün**.
+
+## Task P1 „Platzhalter": der Claude-Weg von Schritt 3 funktioniert mit der Blockdatei ALLEIN
+
+**Entscheid Markus, 2026-08-07:** eine referenzierte, aber nicht mitgelieferte Illustration
+(`###ILLUSTRATION`, `datei:` gesetzt) durfte den Upload von Schritt 3 (und, nach gescheiterter
+Wiederverwendung, Schritt 4) nicht mehr blockieren — der Claude-Weg liefert seit B6/C1 immer
+`datei:` (er kann selbst kein PNG erzeugen), musste bislang aber trotzdem warten, bis eine Person
+das Bild separat erzeugt und VOR dem Hochladen unter genau diesem Namen abgelegt hatte. Ohne
+diesen Zwischenschritt scheiterte jeder Claude-Weg-Upload mit Illustration am Gate
+(`inhalt.illustrationenFehlend`, B5/V4) — ein struktureller Bypass-Zwang, den P1 auflöst.
+
+**`docx-bauen.js`, `illustrationAbsatz(k, ctx)`: fehlt das referenzierte Bild in `bilder`, wird
+seither ein gestalteter Platzhalter gesetzt statt nichts.** Absatz im Stil `DeepDive` (derselbe
+graue Vertiefungs-Kasten der Vorlage) mit dem Text „Illustration folgt — Bildidee: {szene}"
+(aus der `szene:`-Feldzeile, wie `datei:` per Regex aus dem Rohtext gelesen) bzw. „Illustration
+folgt." ohne gesetzte `szene:`. **Gilt NUR für ILLUSTRATION** — ein fehlendes Bild einer
+nicht-tabellarischen `###ABBILDUNG` (Diagramm) bleibt weiterhin ein harter Abbruch in `baue()`:
+Diagramme rendert die App immer selbst, dort ist Fehlen ein echter Fehler, kein legitimer
+Zwischenstand. `baue()` zählt die gesetzten Platzhalter (`ctx.platzhalter`) und hängt die Zahl
+additiv an den zurückgegebenen `Uint8Array` (`ergebnis.platzhalter`) — **kein API-Bruch**: `.buffer`
+bleibt für jeden bestehenden Aufrufer/Test unverändert lesbar, nur ein neuer, optionaler Schlüssel
+kommt dazu (Alternative zu einem zweiten Rückgabeformat `{bytes, platzhalter}`, das ~30 bestehende
+Testaufrufe hätte umschreiben müssen, ohne einen Mehrwert für diese Task).
+
+**`app.js` — zwei Abbruchpfade entfernt, ein Zähler ergänzt.** Der Schritt-3-Zweig
+(`pruefeUndBaueBlock`) ruft `inhalt.illustrationenFehlend` seither nicht mehr zum Abbrechen —
+`weiterMitSkriptBau` läuft direkt, docxBauen setzt die Platzhalter selbst. Der Schritt-4-Zweig
+(`weiterMitValidierungPruefe`, V4) versucht wie bisher zuerst die Wiederverwendung aus
+`03_content/abbildungen`; was auch dort nicht liegt, bricht nicht mehr ab, sondern bleibt einfach
+aus `wiederverwendet` weg — derselbe Platzhalter-Mechanismus wie in Schritt 3, ein fehlender
+Eintrag in `bilder` IST bereits die Bedingung dafür. `inhalt.illustrationenFehlend` selbst bleibt
+bestehen (Konvention 9): der Schritt-4-Zweig nutzt sie weiterhin, um VOR dem Bau zu ermitteln,
+welche Illustrationen sich noch wiederverwenden lassen — nur der Abbruch bei einem Rest ist
+entfallen. Eine neue Closure-Variable `platzhalterZahl` (in `weiterMitSkriptBau`, gesetzt sobald
+`docxBauen.baue()` zurückkommt) trägt die Zahl bis in die Erfolgsmeldung: „… — {n} Illustration(en)
+als Platzhalter (Bildidee im Dokument)" — Einzahl/Mehrzahl sauber, nur bei `n ≥ 1` angehängt. Die
+Lehre aus dem Debug-Task (Etappe-4-Livebefund 3, „still nichts geschrieben" darf nie unbemerkt
+bleiben) gilt auch hier: ein bewusst unvollständiges Ergebnis wird explizit ausgewiesen, nicht
+stillschweigend als „vollständig" gemeldet.
+
+**Werkzeug-Prosa (`produktion/_zentral/prompt-bibliothek/skript-inhaltskontrakt.txt`, Weg B, kein
+Git — `_verlauf`-Kopie `output/tools/_verlauf/skript-inhaltskontrakt_vor-p1-platzhalter.txt` vor
+der Änderung angelegt): an den zwei Stellen, die den Claude-Weg-Handoff beschreiben
+(`ILLUSTRATIONEN IM CHAT-WEG` und `--- ILLUSTRATION --- / STIL`), ersetzt „kannst du das nicht (Weg
+Claude), erzeugt eine Person das Bild danach mit dem Stil-Prompt … bevor sie hochlädt" den neuen
+Satz: „lieferst du NUR die Blockdatei — die Bilder musst du nicht erzeugen: die Kurswerkstatt setzt
+beim Bauen einen gestalteten Platzhalter mit deiner `szene:`-Regie ein; die endgültigen Bilder
+kommen aus der ChatGPT-Variante oder werden später ergänzt." **Die Grammatik selbst bleibt
+unangetastet** — `datei:` ist weiterhin IMMER Pflicht (C1), `katalog:` weiterhin nicht beworben
+(I1); die Selbstprüfungs-Guards in `build-skript.cjs` (`IMMER Pflicht`/`BEIDE Pflicht`,
+`katalog:`-Verbot) blieben deshalb unverändert scharf und liessen den Generator ohne
+Anpassung durchlaufen. `inhalt.skriptPromptKopf` (App, Claude-Handoff-Zweig) trägt denselben Satz.
+`node build-skript.cjs` produktiv gelaufen, beide Chat-Fassungen gegengelesen (kein
+„Person erzeugt das Bild danach" mehr, `datei:`-Pflicht unverändert vorhanden).
+
+**Tests:** `test/docxbauen.test.js` (4 Fälle: kein Platzhalter ohne `datei:`-Zeile, Platzhalter mit
+`szene:` im DeepDive-Kasten inkl. Fremdwert-Probe (`<`, `&`, `"`, Umlaut), Platzhalter ohne
+`szene:` zeigt nur den Kurztext, ein mitgeliefertes Bild zählt `platzhalter === 0` — plus die
+bestehende Abbruch-Probe für ein fehlendes Diagramm-Bild bleibt unverändert als Beleg, dass P1
+NUR ILLUSTRATION betrifft). `test/hochladen.test.js` (2 umbenannte/umgeschriebene Fälle,
+dokumentierter Regelwechsel: „B5 (g)" hiess vorher „… Abbruch (B6-Vorgriff, tolerant)", „V4 (c)"
+vorher „… Abbruch, kein Bau" — beide laufen jetzt durch und prüfen die Platzhalter-Meldung).
+`test/skriptkopf.test.js` (3 Assertions umgeschrieben auf den neuen Wortlaut). Werkzeuge:
+`test/build-skript.test.js` (2 neue Fälle: der neue Claude-Handoff-Satz in beiden Fassungen, die
+alte Formulierung darf nirgends mehr auftauchen; `datei:`-Pflicht/`katalog:`-Verbot bleiben
+unverändert bestehen). **App: 937 Tests grün** (Baseline 935 + 2 netto: `docxbauen.test.js` +3/-1,
+`hochladen.test.js` ±0 (2 umgeschrieben, kein neuer Testfall)). **Werkzeuge: 459 Tests grün**
+(Baseline 457 + 2).
+
+**Mutationsproben (tatsächlich ausgeführt, je einzeln, danach wiederhergestellt):**
+
+1. `docx-bauen.js`, den Platzhalter-Zweig in `illustrationAbsatz` auf `return '';` gestutzt (kein
+   Zählen, kein Kasten mehr), `node --test test/docxbauen.test.js`:
+   ```
+   ℹ tests 32
+   ℹ pass 30
+   ℹ fail 2
+
+   ✖ baue(): P1 — datei: referenziert, aber kein Bild mitgeliefert: gestalteter Platzhalter …
+   ✖ baue(): P1 — ohne szene: zeigt der Platzhalter nur den Kurztext, keinen Bildidee-Satz
+   ```
+   Genau die zwei neuen P1-Tests fielen rot, alle anderen 30 blieben grün; danach
+   wiederhergestellt.
+2. `app.js`, Schritt-3-Zweig — die alte Abbruchlogik (`illustrationenFehlend` + `klemmtSichtbar`)
+   probeweise wieder eingesetzt, `node --test test/hochladen.test.js`:
+   ```
+   ℹ tests 100
+   ℹ pass 99
+   ℹ fail 1
+
+   ✖ P1: eine referenzierte, aber nicht mitgelieferte Illustration bricht den Schritt-3-Upload
+     NICHT mehr ab — Platzhalter statt Abbruch
+   ```
+   Genau der eine Schritt-3-Test fiel rot, alle anderen 99 blieben grün; danach
+   wiederhergestellt.
+3. `app.js`, Schritt-4-Zweig (`weiterMitValidierungPruefe`) — dieselbe alte Abbruchlogik für die
+   Wiederverwendung probeweise wieder eingesetzt, `node --test test/hochladen.test.js`:
+   ```
+   ℹ tests 100
+   ℹ pass 99
+   ℹ fail 1
+
+   ✖ V4 (c) P1: referenzierte Illustration weder im Upload noch in 03_content/abbildungen —
+     Platzhalter statt Abbruch
+   ```
+   Genau der eine Schritt-4-Test fiel rot, alle anderen 99 blieben grün; danach
+   wiederhergestellt.
+4. Werkzeuge — die Quelldatei probeweise auf den Vor-P1-Stand zurückgesetzt (aus der
+   `_verlauf`-Kopie), `node build-skript.cjs` neu gelaufen, `node --test test/build-skript.test.js`:
+   ```
+   ℹ tests 24
+   ℹ pass 23
+   ℹ fail 1
+
+   ✖ P1: beide Chat-Fassungen sagen dem Claude-Weg, dass die Bilder nicht selbst erzeugt werden
+     muessen — die Werkstatt setzt Platzhalter
+   ```
+   Genau der eine neue Wortlaut-Test fiel rot, alle anderen 23 blieben grün; danach die
+   Quelldatei aus der Sicherung (`/tmp`) wiederhergestellt (byte-identisch geprüft, `diff` leer),
+   `node build-skript.cjs` erneut produktiv gelaufen (identische Dateigrössen wie vor der Probe),
+   beide Suiten komplett erneut geprüft: App `node --test` → **937/937 grün**, Werkzeuge
+   `node --test test/*.test.js` → **459/459 grün**.
+
+**Offen / bewusst nicht Teil von P1 (Vorgriff auf P2):** eine hochgeladene, aber referenziert
+fehlende Illustration wird in der Erfolgsmeldung als Zahl ausgewiesen, aber es gibt noch keinen
+Weg, ein Platzhalter-Kapitel NACHTRÄGLICH mit einem echten Bild zu vervollständigen (kein erneuter
+Teil-Upload, der nur die Bilder nachreicht) — die Blockdatei müsste dafür heute erneut vollständig
+hochgeladen werden. `inhalt.illustrationenFehlend` bleibt deshalb bewusst bestehen (s. o.), als
+Grundlage für einen späteren P2-Nachreiche-Weg. Keine Live-Probe im Browser (ein echtes, per Graph
+gebautes Word mit einem sichtbaren DeepDive-Platzhalter) — dieselbe dokumentierte Grenze wie bei
+jedem vorangegangenen docx-Bau-Task (B1/B3/B4/B9/F3). Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint sind von dieser Task nicht betroffen — P1
+ändert reines App-/Prompt-Verhalten, kein Kontraktfeld.

@@ -2979,15 +2979,21 @@
          alte Meldung behauptete hier faelschlich ein sicheres Ueberschreiben
          fuer alle drei Ablage-Schritte; die unvollstaendige Fassung bleibt
          liegen und gehoert von Hand in den SharePoint-Papierkorb, s. der
-         Meldetext unten). */
+         Meldetext unten).
+
+         P1 (2026-08-07, Entscheid Markus): eine referenzierte, aber nicht
+         mitgelieferte Illustration bricht den Upload seither NICHT mehr ab
+         — der Claude-Weg von Schritt 3 muss mit der Blockdatei ALLEIN
+         funktionieren. docxBauen.baue() setzt dafuer selbst einen
+         gestalteten Platzhalter (docx-bauen.js, illustrationAbsatz) und
+         zaehlt sie in `.platzhalter`; die Erfolgsmeldung nennt die Zahl. */
       /* V4 (Etappe 4): der Schritt-4-Zweig des Blockdatei-Gates. Laedt und
          parst die BEIDEN geltenden Schritt-3-Basisvarianten (kein Netz/DOM in
          inhalt.js, deshalb hier) und ruft inhalt.validierungPruefe (V2)
-         gegen sie auf. Anders als Schritt 3 (illustrationenFehlend bricht
-         sofort ab) versucht Schritt 4 eine referenzierte, aber nicht im
-         eigenen Upload mitgelieferte Illustration zuerst aus
-         03_content/abbildungen WIEDERZUVERWENDEN — erst wenn sie auch dort
-         fehlt, ist es ein Abbruch (Task-Brief: "Bild-Wiederverwendung"). */
+         gegen sie auf. Eine referenzierte, aber nicht im eigenen Upload
+         mitgelieferte Illustration wird zuerst aus 03_content/abbildungen
+         WIEDERZUVERWENDEN versucht — fehlt sie auch dort, wird sie (wie in
+         Schritt 3) zum Platzhalter statt eines Abbruchs (P1, s. o.). */
       function weiterMitValidierungPruefe(gelesen, blockText, pngKandidaten, dSkript) {
         var ab3 = root.inhalt.ablageVon(inh, '3', k.kursId);
         /* Frisch lesen, nicht nur Cache — die Basis-Fassungen duerfen nicht
@@ -3045,23 +3051,24 @@
                nicht mitgelieferte Illustration muss nicht neu entstehen —
                sie darf unveraendert aus dem Schritt-3-Ordner stammen. Ordner
                aus dem Kontrakt (ab3.ordner) + '/abbildungen', nichts
-               hartkodiert (Muster inhalt.quellenOrdner). Nicht gefunden ->
-               Abbruch mit dem Dateinamen. */
+               hartkodiert (Muster inhalt.quellenOrdner).
+               P1 (2026-08-07, Entscheid Markus): was auch dort nicht liegt,
+               bricht seither NICHT mehr ab — es bleibt schlicht aus
+               `wiederverwendet` weg, docxBauen.baue() setzt dafuer denselben
+               gestalteten Platzhalter wie in Schritt 3 (docx-bauen.js,
+               illustrationAbsatz). Kein zweiter Abbruchpfad noetig: ein
+               fehlender Eintrag in `bilder` IST bereits die Bedingung fuer
+               den Platzhalter. */
             var quellOrdner = ab3.ordner + '/abbildungen';
             Promise.all(fehlendeNamen.map(function (name) {
               return graph.kursDateiRoh(k.kursId, quellOrdner, name).then(function (buf) {
                 return { name: name, buf: buf };
               });
             })).then(function (ergebnisse) {
-              var nichtGefunden = ergebnisse.filter(function (e) { return !e.buf; })
-                .map(function (e) { return e.name; });
-              if (nichtGefunden.length) {
-                klemmtSichtbar('Nicht hochgeladen: Illustration(en) weder im Upload noch in ' +
-                  quellOrdner + ' gefunden — ' + nichtGefunden.join(', ') + '.');
-                return;
-              }
               var wiederverwendet = {};
-              ergebnisse.forEach(function (e) { wiederverwendet[e.name] = new Uint8Array(e.buf); });
+              ergebnisse.forEach(function (e) {
+                if (e.buf) wiederverwendet[e.name] = new Uint8Array(e.buf);
+              });
               weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten,
                 { istValidierung: true, wiederverwendeteBilder: wiederverwendet, dossier: dSkript });
             }).catch(function (e) { klemmtSichtbar(e.message || String(e)); });
@@ -3100,6 +3107,11 @@
            die Versionsnummer des Ziels — die lebt nur innerhalb des naechsten
            .then(dateien)-Closures (ziel), deshalb hier gemerkt, sobald bekannt. */
         var zielInfo = null;
+        /* P1: die Zahl der von docxBauen.baue() gesetzten Illustrations-
+           Platzhalter — bekannt, sobald der Bau fertig ist (der naechste
+           .then(docxBytes)-Schritt unten), gebraucht erst in der
+           Erfolgsmeldung ganz am Ende derselben Promise-Kette. */
+        var platzhalterZahl = 0;
 
         /* Diagramme rendern (B3), je ABBILDUNG ausser vergleichstabelle —
            dieselbe Reihenfolge (Kapitel, dann Abbildung je Kapitel), in der
@@ -3167,7 +3179,10 @@
             return root.docxBauen.baue(vorlage, gelesen, bilder);
           })
           .then(function (docxBytes) {
-            /* Ab hier ist gebaut — jetzt erst Netzzugriffe zum Ablegen. */
+            /* Ab hier ist gebaut — jetzt erst Netzzugriffe zum Ablegen.
+               P1: docxBauen.baue() haengt die Zahl gesetzter Illustrations-
+               Platzhalter additiv an die Bytes (kein API-Bruch). */
+            platzhalterZahl = docxBytes.platzhalter || 0;
             knopf.textContent = 'wird hochgeladen …';
             delete state.data.dateien[schl];
             return graph.ordnerInhalt(k.kursId, ab.ordner).then(function (dateien) {
@@ -3274,6 +3289,13 @@
               delete state.data.review[k.kursId];
               var erfolgstext = 'Hochgeladen als ' + ergebnis.ziel.datei + ' (+ ' + ergebnis.blocksName +
                 ', ' + bz + ' Bild' + (bz === 1 ? '' : 'er') + ')' +
+                /* P1: mindestens ein Illustrations-Platzhalter wird explizit
+                   ausgewiesen — "still nichts geschrieben" darf nach der
+                   Debug-Task-Lehre (Etappe-4-Livebefund 3) nie unbemerkt
+                   bleiben, auch nicht bei einer bewusst unvollstaendigen
+                   Illustration. */
+                (platzhalterZahl ? ' — ' + platzhalterZahl + ' Illustration' +
+                  (platzhalterZahl === 1 ? '' : 'en') + ' als Platzhalter (Bildidee im Dokument)' : '') +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
               /* B9-F3: dieselbe persistente Meldung wie im xlsx-/mbz-Pfad oben.
                  K3: url zeigt auf das docx (ergebnis.ziel), nicht auf blocks
@@ -3860,17 +3882,14 @@
                 befund.fehler.join(' · '));
               return;
             }
-            /* Referenzierte Illustrationen muessen im selben Upload liegen
-               (B6, tolerant gegenueber einer ILLUSTRATION ohne datei:-Feld
-               — s. inhalt.illustrationenFehlend). */
-            var pngNamen = pngKandidaten.map(function (p) { return p.name; });
-            var fehlendeIllustrationen = root.inhalt.illustrationenFehlend(gelesen, pngNamen);
-            if (fehlendeIllustrationen.length) {
-              klemmtSichtbar('Nicht hochgeladen: referenzierte Illustration(en) fehlen im Upload ' +
-                '— ' + fehlendeIllustrationen.join(', ') + '.');
-              return;
-            }
-
+            /* P1 (2026-08-07, Entscheid Markus): eine referenzierte, aber
+               nicht im selben Upload mitgelieferte Illustration bricht den
+               Upload NICHT mehr ab — der Claude-Weg von Schritt 3 muss mit
+               der Blockdatei ALLEIN funktionieren. docxBauen.baue() (B6,
+               tolerant gegenueber einer ILLUSTRATION ohne datei:-Feld —
+               s. inhalt.illustrationenFehlend) setzt fuer eine fehlende
+               Referenz seither einen gestalteten Platzhalter mit der
+               szene:-Bildidee statt nichts einzufuegen. */
             weiterMitSkriptBau(gelesen, befund.hinweise, blockText, pngKandidaten);
           })
           .catch(function (e) {

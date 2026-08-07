@@ -405,6 +405,9 @@ test('baue(): ohne <w:sectPr> in der Vorlage wird abgelehnt', async () => {
   await assert.rejects(() => docxBauen.baue(buffer, gelesenFixture(), bilderFixture()), /sectPr/);
 });
 
+/* P1 (2026-08-07) betrifft NUR ILLUSTRATION — ein fehlendes Diagramm-Bild
+   (ABBILDUNG, von der App selbst gerendert) bleibt weiterhin ein harter
+   Abbruch, unveraendert seit B4. */
 test('baue(): fehlt ein Bild fuer eine nicht-tabellarische Abbildung, wird abgebrochen', async () => {
   const { buffer } = vorlageBauen();
   await assert.rejects(() => docxBauen.baue(buffer, gelesenFixture(), {}), /Bild fehlt/);
@@ -424,20 +427,52 @@ test('baue(): ILLUSTRATION an Hero-Position, wenn datei: gesetzt UND in bilder v
   const posHero = xml.indexOf('Eine Szene.'); // HERO-Inhalt aus der Fixture
   assert.ok(posIllu >= 0 && posHero >= 0 && posIllu < posHero,
     'Illustration sollte vor dem Hero-Absatz stehen');
+  assert.strictEqual(out.platzhalter, 0, 'ein mitgeliefertes Bild sollte KEINEN Platzhalter zaehlen');
 });
 
-test('baue(): ILLUSTRATION ohne "datei:"-Feld oder ohne passendes Bild wird stillschweigend uebersprungen', async () => {
+test('baue(): ILLUSTRATION ohne "datei:"-Feld bleibt leer — kein Platzhalter ohne Dateireferenz', async () => {
   const { buffer } = vorlageBauen();
   const gelesen1 = gelesenFixture();
   gelesen1.kapitel[0].teile.ILLUSTRATION = 'keine datei-Zeile hier';
   const out1 = await docxBauen.baue(buffer, gelesen1, bilderFixture());
   assert.ok(out1 instanceof Uint8Array); // kein Wurf
+  assert.strictEqual(out1.platzhalter, 0, 'ohne datei:-Zeile gibt es nichts, was ein Platzhalter vertreten koennte');
+});
 
-  const gelesen2 = gelesenFixture();
-  gelesen2.kapitel[0].teile.ILLUSTRATION = 'datei: fehlt-in-bilder.png';
-  const out2 = await docxBauen.baue(buffer, gelesen2, bilderFixture());
-  const xml2 = await docXmlAus(out2);
-  assert.strictEqual(xml2.indexOf('fehlt-in-bilder.png'), -1);
+/* P1 (2026-08-07, Entscheid Markus): der Claude-Weg von Schritt 3 muss mit
+   der Blockdatei ALLEIN funktionieren — eine referenzierte, aber nicht
+   mitgelieferte Illustration bricht den Bau seither NICHT mehr ab (dieser
+   Test ersetzt die vorherige "wird stillschweigend uebersprungen"-Erwartung
+   fuer genau diesen Fall — dokumentierter Regelwechsel, kein Nebeneffekt). */
+test('baue(): P1 — datei: referenziert, aber kein Bild mitgeliefert: gestalteter Platzhalter (DeepDive) mit der Bildidee (szene:) statt Abbruch', async () => {
+  const { buffer } = vorlageBauen();
+  const gelesen = gelesenFixture();
+  gelesen.kapitel[0].teile.ILLUSTRATION =
+    'datei: fehlt-in-bilder.png\nszene: Beratung am Küchentisch, <ohne> & "Zahlen"';
+  const out = await docxBauen.baue(buffer, gelesen, bilderFixture());
+  assert.strictEqual(out.platzhalter, 1, 'genau ein Platzhalter haette gezaehlt werden muessen');
+  const xml = await docXmlAus(out);
+  assert.strictEqual(xml.indexOf('fehlt-in-bilder.png'), -1,
+    'der Dateiname selbst gehoert nicht in den sichtbaren Platzhalter-Text');
+  assert.ok(xml.indexOf('w:pStyle w:val="DeepDive"') >= 0,
+    'der Platzhalter sollte im DeepDive-Kasten (grauer Vertiefungs-Kasten der Vorlage) stehen');
+  assert.ok(xml.indexOf('Illustration folgt') >= 0, 'der Platzhalter-Ansagetext fehlt');
+  assert.ok(
+    xml.indexOf('Beratung am K&#252;chentisch, &lt;ohne&gt; &amp; &quot;Zahlen&quot;') >= 0 ||
+    xml.indexOf('Beratung am Küchentisch, &lt;ohne&gt; &amp; &quot;Zahlen&quot;') >= 0,
+    'die szene: sollte escaped im Platzhalter-Text stehen (Fremdwert-Probe): ' + xml
+  );
+});
+
+test('baue(): P1 — ohne szene: zeigt der Platzhalter nur den Kurztext, keinen Bildidee-Satz', async () => {
+  const { buffer } = vorlageBauen();
+  const gelesen = gelesenFixture();
+  gelesen.kapitel[0].teile.ILLUSTRATION = 'datei: fehlt-in-bilder.png';
+  const out = await docxBauen.baue(buffer, gelesen, bilderFixture());
+  assert.strictEqual(out.platzhalter, 1);
+  const xml = await docXmlAus(out);
+  assert.ok(xml.indexOf('Illustration folgt.') >= 0);
+  assert.strictEqual(xml.indexOf('Bildidee'), -1, 'ohne szene: darf kein Bildidee-Satz stehen');
 });
 
 /* Seit skript-schema.js ILLUSTRATION als eigenen Baustein fuehrt (B6), laeuft

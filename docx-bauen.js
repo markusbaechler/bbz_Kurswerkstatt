@@ -49,7 +49,22 @@
    bildAbsatzAusEintrag) proportional auf die Textbreite der Vorlage herunter,
    NIE hoch — kleinere Bilder bleiben unveraendert. Die Textbreite kommt aus
    demselben sectPr, das ohnehin aus der Vorlage uebernommen wird
-   (`textbreiteEmuVon()`), mit dokumentiertem Fallback. */
+   (`textbreiteEmuVon()`), mit dokumentiertem Fallback.
+
+   Platzhalter statt Abbruch (Task P1, 2026-08-07, Entscheid Markus): der
+   Claude-Weg von Schritt 3 muss mit der Blockdatei ALLEIN funktionieren —
+   eine referenzierte ("datei:"), aber nicht mitgelieferte Illustration
+   bricht den Bau seither NICHT mehr ab. `illustrationAbsatz()` setzt
+   stattdessen einen gestalteten Platzhalter (Stil `DeepDive`, derselbe
+   graue Kasten wie ein Vertiefungstext) mit der `szene:`-Bildidee. Das gilt
+   NUR fuer ILLUSTRATION (B6) — ein fehlendes Bild einer nicht-tabellarischen
+   `###ABBILDUNG` (Diagramm) bleibt weiterhin ein harter Abbruch: Diagramme
+   rendert die App immer selbst, dort ist Fehlen ein echter Fehler, kein
+   legitimer Zwischenstand. `baue()` zaehlt die gesetzten Platzhalter
+   (`ctx.platzhalter`) und haengt die Zahl als zusaetzliche, nicht-
+   destruktive Eigenschaft an den zurueckgegebenen Uint8Array
+   (`ergebnis.platzhalter`) — kein API-Bruch fuer bestehende Aufrufer/Tests,
+   die `out.buffer` weiterhin unveraendert lesen. */
 (function (root) {
   'use strict';
 
@@ -77,6 +92,7 @@
   var STYLE_H1 = 'berschrift1';
   var STYLE_H2 = 'berschrift2';
   var STYLE_QUELLE = 'Quelle';
+  var STYLE_DEEPDIVE = 'DeepDive'; /* P1: Platzhalter-Kasten fuer eine fehlende Illustration */
 
   var NS_R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
   var REL_IMAGE_TYPE = NS_R + '/image';
@@ -413,12 +429,17 @@
      Baustein (kein stil — kein Kasten, sondern ein Bild an der
      Hero-Position); skript-lesen.js validiert datei:/katalog: als
      Pflicht-ODER und legt den Rohtext in k.teile.ILLUSTRATION ab, genau wie
-     bei DEFINITION/ERKLAERUNG. Dieser Absatz-Bauer bleibt trotzdem
-     tolerant — fehlt der Teil, das Feld "datei:" oder die Datei in
-     `bilder` (z. B. weil nur katalog: gesetzt ist, ohne mitgelieferte
-     Datei), wird schlicht nichts eingefuegt, kein Fehler, kein Abbruch:
-     die eigentliche Pflicht-Pruefung (datei: ODER katalog:, Zeichen-
-     Erlaubnisliste, Nie-Fakten-Regel) sitzt bereits in skript-lesen.js. */
+     bei DEFINITION/ERKLAERUNG. Fehlt der Teil ganz, oder faengt er keine
+     "datei:"-Zeile (z. B. weil nur katalog: gesetzt ist — I1, Fixwave
+     2026-08-04), wird schlicht nichts eingefuegt, kein Fehler, kein
+     Abbruch, kein Platzhalter: ohne benannte Datei gibt es keine Referenz,
+     die ein Platzhalter vertreten koennte. Ist "datei:" gesetzt, die Datei
+     in `bilder` aber NICHT vorhanden, setzt P1 (2026-08-07, Entscheid
+     Markus) seither einen gestalteten Platzhalter statt nichts — der
+     Claude-Weg von Schritt 3 muss mit der Blockdatei ALLEIN funktionieren,
+     ohne dass jemand vorher ein Bild erzeugen und hochladen muss. Die
+     eigentliche Pflicht-Pruefung (datei: ODER katalog:, Zeichen-
+     Erlaubnisliste, Nie-Fakten-Regel) sitzt weiterhin in skript-lesen.js. */
   function illustrationAbsatz(k, ctx) {
     var roh = k.teile && k.teile.ILLUSTRATION;
     if (!roh) return '';
@@ -427,7 +448,13 @@
     var dateiname = m[1].trim();
     if (!dateiname) return '';
     var eintrag = ctx.bilder[dateiname];
-    if (!eintrag || !eintrag.bytes) return '';
+    if (!eintrag || !eintrag.bytes) {
+      ctx.platzhalter += 1;
+      var sm = String(roh).match(/^szene:[ \t]*(.+)$/m);
+      var szene = sm ? sm[1].trim() : '';
+      var platzhalterText = szene ? ('Illustration folgt — Bildidee: ' + szene) : 'Illustration folgt.';
+      return pAbsatz(platzhalterText, STYLE_DEEPDIVE);
+    }
     return bildAbsatzAusEintrag(dateiname, eintrag, ctx, ILLUSTRATION_BREITENANTEIL);
   }
 
@@ -540,7 +567,12 @@
      der Review: breite/hoehe sind die LOGISCHEN Masse, Vorrang vor dem
      PNG-IHDR). Wirft, wenn die Vorlage kein word/document.xml, kein
      [Content_Types].xml oder kein <w:sectPr> traegt, oder wenn ein
-     nicht-tabellarisches ABBILDUNG-Bild in `bilder` fehlt. */
+     nicht-tabellarisches ABBILDUNG-Bild (Diagramm) in `bilder` fehlt — eine
+     fehlende ILLUSTRATION (B6) wirft seit P1 NICHT mehr, sie wird zu einem
+     gestalteten Platzhalter (s. Kommentarkopf). Der zurueckgegebene
+     Uint8Array traegt zusaetzlich `.platzhalter` (Zahl der gesetzten
+     Illustrations-Platzhalter, 0 wenn keine) — additiv, `.buffer` bleibt
+     wie gehabt lesbar, kein API-Bruch fuer bestehende Aufrufer. */
   async function baue(vorlageArrayBuffer, gelesen, bilder) {
     bilder = bilder || {};
     var zip = Z().oeffne(vorlageArrayBuffer);
@@ -564,7 +596,7 @@
     var ctx = {
       kurs: gelesen.skript.kurs, variante: gelesen.skript.variante, bilder: bilder,
       relIds: {}, naechsteRid: naechsteRidAus(relsXml),
-      bildNr: 0, docPrZaehler: 0, neueBilder: [],
+      bildNr: 0, docPrZaehler: 0, neueBilder: [], platzhalter: 0,
       textbreiteEmu: textbreiteEmuVon(sectPr) /* B9-F2: Deckel auf den Satzspiegel */
     };
 
@@ -596,7 +628,13 @@
       eintraege.push({ name: 'word/media/' + b.dateiname, daten: b.bytes });
     });
 
-    return ZS().baue(eintraege);
+    var ergebnis = ZS().baue(eintraege);
+    /* P1: additiv am Uint8Array angehaengt, kein zweites Rueckgabe-Format —
+       `.buffer` bleibt fuer jeden bestehenden Aufrufer/Test unveraendert
+       lesbar, `.platzhalter` ist neu und wird nur von Aufrufern gelesen,
+       die es kennen (app.js, weiterMitSkriptBau). */
+    ergebnis.platzhalter = ctx.platzhalter;
+    return ergebnis;
   }
 
   var docxBauen = { baue: baue, bildDateiname: bildDateiname };

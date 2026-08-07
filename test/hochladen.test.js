@@ -759,26 +759,35 @@ test('B5 (f) Wortbudget unter 500: Abbruch', async () => {
   assert.match(l.meldung, /Wortbudget/);
 });
 
-/* (g) referenziertes Bild fehlt — "soweit bis B6 abbildbar" (Task-Brief):
-   ###ILLUSTRATION ist heute kein bekannter Baustein, ein echter Text damit
-   waere schon in (c) (gelesen.fehler) abgefangen. skriptLesen.lies() wird
-   deshalb NUR fuer diesen einen Test temporaer umhuellt — echter Text wird
-   echt geparst, danach wird eine ILLUSTRATION-Referenz nachtraeglich
-   angehaengt (Muster test/docxbauen.test.js: gelesen.kapitel[].teile.
-   ILLUSTRATION wird dort ebenfalls direkt gesetzt statt geparst). */
-test('B5 (g) referenzierte Illustration fehlt im Upload: Abbruch (B6-Vorgriff, tolerant)', async () => {
+/* (g) referenziertes Bild fehlt — ###ILLUSTRATION ist heute kein bekannter
+   Baustein, ein echter Text damit waere schon in (c) (gelesen.fehler)
+   abgefangen. skriptLesen.lies() wird deshalb NUR fuer diesen einen Test
+   temporaer umhuellt — echter Text wird echt geparst, danach wird eine
+   ILLUSTRATION-Referenz nachtraeglich angehaengt (Muster
+   test/docxbauen.test.js: gelesen.kapitel[].teile.ILLUSTRATION wird dort
+   ebenfalls direkt gesetzt statt geparst).
+
+   P1 (2026-08-07, Entscheid Markus) — dokumentierter Regelwechsel: dieser
+   Test hiess bis dahin "… Abbruch (B6-Vorgriff, tolerant)" und pruefte
+   genau das — der Claude-Weg von Schritt 3 muss aber mit der Blockdatei
+   ALLEIN funktionieren, eine fehlende Illustration darf den Upload nicht
+   mehr blockieren. Der Upload laeuft seither durch, docxBauen setzt einen
+   gestalteten Platzhalter, die Erfolgsmeldung nennt die Zahl. */
+test('P1: eine referenzierte, aber nicht mitgelieferte Illustration bricht den Schritt-3-Upload NICHT mehr ab — Platzhalter statt Abbruch', async () => {
   const echtLies = skriptLesen.lies;
   skriptLesen.lies = function (text) {
     const g = echtLies(text);
-    g.kapitel[0].teile.ILLUSTRATION = 'datei: szene.png';
+    g.kapitel[0].teile.ILLUSTRATION = 'datei: szene.png\nszene: Eine Bildidee ohne Zahlen';
     return g;
   };
   try {
     const l = await hochladenLaufB5(3, [blockDatei('egal.blocks', blockText())], { dossier: DOSSIER_OK });
-    assert.strictEqual(l.hochladenRufe.length, 0);
-    assert.strictEqual(l.rufe.ordnerInhalt, 0);
-    assert.match(l.meldung, /Illustration/);
-    assert.match(l.meldung, /szene\.png/);
+    assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+    assert.strictEqual(l.hochladenRufe.length, 3,
+      'docx + blocks + ein Diagramm-Bild — die fehlende Illustration bleibt Platzhalter, kein eigener Upload');
+    assert.ok(!l.hochladenRufe.some(function (r) { return r.datei === 'szene.png'; }),
+      'fuer die fehlende Illustration selbst darf nichts hochgeladen werden');
+    assert.match(l.hinweis || '', /1 Illustration als Platzhalter/, 'die Erfolgsmeldung nennt die Platzhalter-Zahl nicht');
   } finally {
     skriptLesen.lies = echtLies;
   }
@@ -1552,7 +1561,9 @@ test('K3 (e): Nicht-https-Wert wird nicht als Link gerendert (Guard)', () => {
    (inhalt.validierungPruefe, V2) — geladen und geparst in
    weiterMitValidierungPruefe (app.js). Eine referenzierte, aber nicht
    mitgelieferte Illustration wird zuerst aus 03_content/abbildungen
-   WIEDERVERWENDET, statt sofort wie in Schritt 3 abzuweisen. */
+   WIEDERVERWENDET; was auch dort fehlt, wird seit P1 (2026-08-07, Entscheid
+   Markus) zum gestalteten Platzhalter, genau wie in Schritt 3 — kein
+   Abbruch mehr in keinem der beiden Schritte. */
 
 const { dossier } = require('../dossier.js');
 
@@ -1656,7 +1667,12 @@ test('V4 (b) Bild-Wiederverwendung: referenzierte Illustration kommt aus 03_cont
   assert.strictEqual(JSON.parse(l.ablegenRufe[0].text).status.content, 'validiert');
 });
 
-test('V4 (c) referenzierte Illustration weder im Upload noch in 03_content/abbildungen: Abbruch, kein Bau', async () => {
+/* P1 (2026-08-07, Entscheid Markus) — dokumentierter Regelwechsel: dieser
+   Test hiess bis dahin "… Abbruch, kein Bau" und pruefte genau das. Seit P1
+   bricht eine referenzierte Illustration, die weder im Upload noch in
+   03_content/abbildungen liegt, den Bau nicht mehr ab — sie wird zum
+   gestalteten Platzhalter, wie in Schritt 3. */
+test('V4 (c) P1: referenzierte Illustration weder im Upload noch in 03_content/abbildungen — Platzhalter statt Abbruch', async () => {
   const l = await hochladenLaufB5(4,
     [blockDatei('egal.blocks', blockText4({ illustration: 'datei: fehlt.png\nszene: Eine Szene' }))],
     {
@@ -1667,11 +1683,12 @@ test('V4 (c) referenzierte Illustration weder im Upload noch in 03_content/abbil
         'AFL-001_skript-chatgpt_v1.blocks': basisText('chatgpt')
       }
     });
-  assert.strictEqual(l.hochladenRufe.length, 0, 'trotz fehlender Wiederverwendung wurde etwas hochgeladen');
-  assert.strictEqual(l.rufe.vorlageLaden, 0, 'kein Bau ohne aufgeloeste Bilder');
-  assert.match(l.meldung, /weder im Upload noch in/);
-  assert.match(l.meldung, /03_content\/abbildungen/);
-  assert.match(l.meldung, /fehlt\.png/);
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.rufe.vorlageLaden, 1, 'der Bau haette trotz fehlendem Bild laufen sollen');
+  assert.strictEqual(l.hochladenRufe.length, 3,
+    'docx + blocks + EIN Diagramm-Bild — kein eigener Upload fuer die fehlende Illustration');
+  assert.ok(!l.hochladenRufe.some(function (r) { return r.datei === 'fehlt.png'; }));
+  assert.match(l.hinweis || '', /1 Illustration als Platzhalter/);
 });
 
 test('V4 (d) Variante fehlt (kein Datei-Fund in 03_content fuer beide Basen): Abbruch VOR jedem Bau', async () => {
