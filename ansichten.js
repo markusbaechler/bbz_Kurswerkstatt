@@ -1367,7 +1367,9 @@
           ? '<p class="dim">Die Blockdatei mit den Interaktions-Contracts &mdash; eine Datei, ' +
             'keine Bilder. Wie sie auf deinem Rechner heisst, spielt keine Rolle. ' +
             (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +
-            'Du tippst keinen Pfad und keinen Dateinamen.</p>'
+            'Du tippst keinen Pfad und keinen Dateinamen. Die Werkstatt setzt daraus ' +
+            'zus&auml;tzlich das Interaktions-Drehbuch (Word) f&uuml;r die fachliche ' +
+            'Durchsicht.</p>'
           : '<p class="dim">Wie die Datei auf deinem Rechner heisst, spielt keine Rolle &mdash; ' +
             'abgelegt wird sie unter dem Namen aus dem Ablage-Kontrakt. ' +
             (hziel && hziel.version ? 'Das wird Version ' + hziel.version + '. ' : '') +

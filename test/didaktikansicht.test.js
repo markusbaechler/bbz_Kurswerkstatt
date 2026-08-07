@@ -333,3 +333,47 @@ test('didaktikNachladen: nach einem Fehler ruft ein zweiter Aufruf tatsaechlich 
   assert.strictEqual(state.data.didaktik['DBS-001'], null,
     'der zweite Versuch fand keine Datei — null ist das korrekte Ergebnis (kein Lieferobjekt gefunden)');
 });
+
+/* ---------- F3 (Etappe 5, Entscheid Markus 2026-08-07): Endungstausch ----------
+   Seit dem Interaktions-Drehbuch liegt neben der .blocks ein .docx unter
+   demselben Versionsstamm (05_didaktik) — geltendeDatei() ist endung-blind
+   und kann je nach Ordner-Reihenfolge den docx-Namen liefern.
+   didaktikNachladen() MUSS trotzdem die .blocks lesen (Muster
+   reviewNachladen), sonst liest die Contracts-Ansicht Word-Bytes als
+   Blocktext und zeigt einen Parse-Fehler. */
+test('F3 (l): geltendeDatei liefert den docx-Namen — didaktikNachladen liest trotzdem die .blocks (Endungstausch)', async () => {
+  vorbereitenController();
+  const lief = inhalt.ablageVon(INHALT, '5', 'DBS-001').lieferobjekt;
+  const stamm = 'DBS-001_' + lief + '_v1';
+
+  graph.ordnerInhalt = function (kursId, ordner) {
+    if (ordner === '05_didaktik') {
+      /* Das .docx steht ZUERST im Ordner — geltendeDatei() (endung-blind,
+         "erster Treffer mit der hoechsten Nummer gewinnt") liefert damit
+         GENAU den docx-Namen, nicht die .blocks. */
+      return Promise.resolve([{ name: stamm + '.docx' }, { name: stamm + '.blocks' }]);
+    }
+    return Promise.resolve([]);
+  };
+  let gelesenerDateiname = null;
+  graph.dateiLesen = function (kursId, ordner, name) {
+    gelesenerDateiname = name;
+    if (name === stamm + '.blocks') {
+      return Promise.resolve(didaktikText({ contracts: [contractText({ ek: 'DBS-001-EK-001' })] }));
+    }
+    /* Wuerde didaktikNachladen den docx-Namen unveraendert an dateiLesen
+       reichen, kaeme hier Word-Bytes zurueck (in diesem Test simuliert
+       durch einen Text, den didaktikLesen.lies() NICHT versteht — der
+       Test faellt dann ueber die falsche Assertion unten, nicht durch
+       einen Crash hier). */
+    return Promise.resolve('kein-blocks-format');
+  };
+
+  await controller.didaktikNachladen('DBS-001');
+
+  assert.strictEqual(gelesenerDateiname, stamm + '.blocks',
+    'graph.dateiLesen haette mit der .blocks-Endung aufgerufen werden muessen, nicht mit .docx');
+  const r = state.data.didaktik['DBS-001'];
+  assert.ok(r, 'kein Didaktik-Objekt im Cache — Endungstausch fehlt oder das Ergebnis wurde verworfen');
+  assert.strictEqual(r.contracts[0].ek, 'DBS-001-EK-001');
+});

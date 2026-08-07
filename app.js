@@ -1609,7 +1609,16 @@
       return graph.ordnerInhalt(kursId, ablage.ordner).then(function (dateien) {
         var name = root.inhalt.geltendeDatei(dateien, kursId, ablage.lieferobjekt);
         if (!name) return null;
-        return graph.dateiLesen(kursId, ablage.ordner, name);
+        /* F3: seit der Werkstatt zusaetzlich das Interaktions-Drehbuch
+           (.docx) neben der .blocks ablegt (derselbe Versionsstamm),
+           liefert geltendeDatei() (endung-blind) je nach Ordner-Reihenfolge
+           auch den docx-Namen zurueck — Endungstausch wie reviewNachladen
+           (Endung von .docx auf .blocks, unabhaengig davon, was
+           geltendeDatei geliefert hat). Ohne diesen Fix liest die
+           Contracts-Ansicht nach dem ersten F3-Upload Word-Bytes als
+           Blocktext und zeigt einen Parse-Fehler. */
+        var blocksName = name.replace(/\.[a-z0-9]+$/i, '.blocks');
+        return graph.dateiLesen(kursId, ablage.ordner, blocksName);
       }).then(function (text) {
         var gelesen = null;
         if (text) {
@@ -3345,36 +3354,78 @@
 
       /* Schritt 4: der freigegebene Content, gegen den Schritt 5 geprueft
          wird (didaktikPruefe braucht ihn, s. u.) — reine Ableitung, nichts
-         hartkodiert (Muster A3/V3/D4-Kontrakt-Nachlade-Kommentare). */
-      function weiterMitDidaktikAblage(gelesenDidaktik, text) {
-        knopf.textContent = 'wird hochgeladen …';
-        delete state.data.dateien[schl];
-        graph.ordnerInhalt(k.kursId, ab.ordner)
-          .then(function (dateien) {
-            var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
-            if (!ziel) {
-              throw new Error('Für diesen Schritt ist kein Hochladen vorgesehen.');
+         hartkodiert (Muster A3/V3/D4-Kontrakt-Nachlade-Kommentare).
+
+         F3 (Etappe 5, Entscheid Markus 2026-08-07): die Werkstatt baut beim
+         Upload zusaetzlich das Interaktions-Drehbuch (.docx) fuer
+         Fachverantwortliche ohne Werkstatt-Zugang — Bau-vor-Ablage
+         (B5-Muster): erst graph.vorlageLaden() + didaktikDrehbuch.baue(),
+         ERST DANACH jeder Netzzugriff zum Ablegen. contentGelesen kommt als
+         expliziter Parameter herein (Muster dSkript in B5/V4 —
+         Geschwister-Funktionen teilen keine Closures). Ablage-Reihenfolge
+         docx ZUERST, dann blocks (Entscheid Markus "vor dem Blocks-Teil",
+         Muster Schritt 3/4) — geschafft[]/zielInfo wie B5 fuer die
+         Teilfehler-Meldung (I3-Muster) im abschliessenden .catch. */
+      function weiterMitDidaktikAblage(gelesenDidaktik, text, contentGelesen) {
+        knopf.textContent = 'wird gebaut …';
+        var geschafft = [];
+        var zielInfo = null;
+
+        graph.vorlageLaden()
+          .then(function (vorlage) {
+            if (!vorlage) {
+              /* I2-Wortlaut (Fixwave 2026-08-04) — graph.vorlageLaden()
+                 cacht nur einen Erfolg, ein erneuter Versuch laedt erneut. */
+              throw new Error('Vorlage konnte nicht geladen werden — erneut versuchen.');
             }
-            return graph.hochladen(k.kursId, ziel.ordner, ziel.datei,
-              new Blob([text], { type: 'text/plain;charset=utf-8' })).then(function (antwort) {
-              ziel.webUrl = antwort && antwort.webUrl;
-              return ziel;
+            return root.didaktikDrehbuch.baue(vorlage, gelesenDidaktik, contentGelesen);
+          })
+          .then(function (docxBytes) {
+            /* Ab hier ist gebaut — jetzt erst Netzzugriffe zum Ablegen. */
+            knopf.textContent = 'wird hochgeladen …';
+            delete state.data.dateien[schl];
+            return graph.ordnerInhalt(k.kursId, ab.ordner).then(function (dateien) {
+              var ziel = root.inhalt.hochladeZiel(inh, n, k.kursId, dateien, gewaehlt);
+              if (!ziel) {
+                throw new Error('Für diesen Schritt ist kein Hochladen vorgesehen.');
+              }
+              zielInfo = ziel;
+              /* ziel.datei traegt bereits die .blocks-Endung aus dem
+                 Kontrakt (ext); docxName ist derselbe Stamm mit .docx
+                 (B5-Invariante — docx und blocks teilen den Stamm). */
+              var blocksName = ziel.datei;
+              var docxName = ziel.datei.replace(/\.[a-z0-9]+$/i, '.docx');
+              return graph.hochladen(k.kursId, ziel.ordner, docxName, new Blob([docxBytes]))
+                .then(function (antwort) {
+                  /* K3: die webUrl des Menschen-Artefakts (das Interaktions-
+                     Drehbuch, nicht die Blockdatei — das Wort ist das, was
+                     Fachverantwortliche oeffnen). */
+                  ziel.webUrl = antwort && antwort.webUrl;
+                  geschafft.push(ziel.ordner + '/' + docxName);
+                })
+                .then(function () {
+                  return graph.hochladen(k.kursId, ziel.ordner, blocksName,
+                    new Blob([text], { type: 'text/plain;charset=utf-8' }));
+                })
+                .then(function () { geschafft.push(ziel.ordner + '/' + blocksName); })
+                .then(function () { return { ziel: ziel, blocksName: blocksName, docxName: docxName }; });
             });
           })
-          .then(function (ziel) {
+          .then(function (ergebnis) {
             var neu = graph.standNachAblage(k, +n);
             var weiter = neu ? graph.standSetzenRoh(k, neu) : Promise.resolve();
-            return weiter.then(function () { return ziel; });
+            return weiter.then(function () { return ergebnis; });
           })
-          .then(function (ziel) {
-            /* Punkte-Rueckschreibung — EIN controller.dossierSchreiben-Mutator
-               (Task-Brief), der jeden ###PUNKTE-Eintrag ueber den was-Wortlaut
-               im Dossier sucht (Identitaets-Guard-Muster, wie
-               controller.offenEntscheiden/offenVerschieben — NIE einen zum
-               Klickzeitpunkt gemerkten Index verwenden, der Mutator laeuft
-               zum AUSFUEHRUNGSZEITPUNKT der Warteschlange). Ein zwischen-
-               zeitlich bereits entschiedener/verschobener Punkt (fehlt dann
-               in kopie.offen) wird uebersprungen und gezaehlt, statt
+          .then(function (ergebnis) {
+            /* Punkte-Rueckschreibung — UNVERAENDERT: EIN
+               controller.dossierSchreiben-Mutator (Task-Brief), der jeden
+               ###PUNKTE-Eintrag ueber den was-Wortlaut im Dossier sucht
+               (Identitaets-Guard-Muster, wie controller.offenEntscheiden/
+               offenVerschieben — NIE einen zum Klickzeitpunkt gemerkten
+               Index verwenden, der Mutator laeuft zum
+               AUSFUEHRUNGSZEITPUNKT der Warteschlange). Ein zwischenzeitlich
+               bereits entschiedener/verschobener Punkt (fehlt dann in
+               kopie.offen) wird uebersprungen und gezaehlt, statt
                abzubrechen — die Ablage ist schon geschehen. */
             var wer = auth.kontoName();
             var wann = new Date().toISOString().slice(0, 10);
@@ -3403,28 +3454,29 @@
               punkteZahlen = z;
               return kopie;
             }).then(function () {
-              return { ziel: ziel, punkte: punkteZahlen };
+              return { ergebnis: ergebnis, punkte: punkteZahlen };
             }).catch(function (e) {
               /* Ein Fehlschlag der Rueckschreibung bricht die Ablage NICHT ab
-                 — die Datei liegt schon (Task-Brief). */
-              return { ziel: ziel, punkte: null };
+                 — die Dateien liegen schon (Task-Brief). */
+              return { ergebnis: ergebnis, punkte: null };
             });
           })
-          .then(function (ergebnis) {
+          .then(function (final) {
             return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
               state.data.dateiAuswahl = null;
               /* D6: die frisch abgelegte Fassung macht den geladenen
                  Contracts-Cache veraltet — dieselbe Ueberlegung wie beim
                  Review-Cache in weiterMitSkriptBau (V5/V4). */
               delete state.data.didaktik[k.kursId];
-              var ziel = ergebnis.ziel;
+              var ziel = final.ergebnis.ziel;
               var anzahl = (gelesenDidaktik.contracts || []).length;
               /* Wortlaut woertlich aus dem Task-Brief — "Interaktions-Contracts"
                  bleibt Plural, unabhaengig von n (wie eine Masseinheit). */
-              var erfolgstext = 'Hochgeladen als ' + ziel.datei + ' — ' + anzahl +
+              var erfolgstext = 'Hochgeladen als ' + final.ergebnis.blocksName +
+                ' + Interaktions-Drehbuch ' + final.ergebnis.docxName + ' — ' + anzahl +
                 ' Interaktions-Contracts';
-              if (ergebnis.punkte) {
-                var pz = ergebnis.punkte;
+              if (final.punkte) {
+                var pz = final.punkte;
                 erfolgstext += ' · Punkte: ' + pz.e + ' entschieden, ' + pz.v + ' verschoben' +
                   (pz.u ? ', ' + pz.u + ' nicht mehr gefunden' : '') + '.';
               } else {
@@ -3440,7 +3492,20 @@
             });
           })
           .catch(function (e) {
-            klemmtSichtbar('Nicht hochgeladen. ' + (e.message || e));
+            var text = 'Nicht hochgeladen. ' + (e.message || e);
+            if (geschafft.length) {
+              /* I3-Muster (Fixwave 2026-08-04): docx UND blocks sind
+                 VERSIONIERT — ein erneuter Versuch legt die naechste,
+                 vollstaendige Version daneben, er ueberschreibt die
+                 unvollstaendige NICHT. */
+              var unvollstaendig = zielInfo && typeof zielInfo.version === 'number'
+                ? ' Die unvollständige v' + zielInfo.version + ' in SharePoint von Hand löschen (Papierkorb).'
+                : ' Die unvollständige Fassung in SharePoint von Hand löschen (Papierkorb).';
+              text += ' Bereits abgelegt: ' + geschafft.join(', ') + ' — ein erneuter Versuch legt ' +
+                'die nächste, vollständige Version daneben, er überschreibt die unvollständige ' +
+                'nicht.' + unvollstaendig;
+            }
+            klemmtSichtbar(text);
           });
       }
 
@@ -3493,7 +3558,7 @@
                 return;
               }
 
-              weiterMitDidaktikAblage(gelesenDidaktik, text);
+              weiterMitDidaktikAblage(gelesenDidaktik, text, contentGelesen);
             });
           })
           .catch(function (e) {

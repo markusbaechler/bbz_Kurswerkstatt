@@ -40,6 +40,7 @@ Liegen in `../IT_Architektur_bbz/output/specs/`. Bei Widerspruch gilt diese Reih
 | `skript-lesen.js` | Parst die ###-Bloecke eines Selbstlernskripts gegen `skript-schema.js` (Etappe 3b, Task B2) |
 | `didaktik-schema.js` | Die kanonische Grammatik der Interaktions-Contracts (Schritt 5) — reine Daten (Etappe 5, Task D1) |
 | `didaktik-lesen.js` | Parst die ###-Bloecke einer Interaktions-Contract-Datei gegen `didaktik-schema.js` — eigene Grammatik, nie durch `skript-lesen.js` gelesen (Etappe 5, Task D1) |
+| `didaktik-drehbuch.js` | Baut das Interaktions-Drehbuch (Word) aus den geparsten Interaktions-Contracts — Ansicht fuer Fachverantwortliche, nie eine zweite Wahrheit (Etappe 5, Task F3) |
 | `diagramm-zeichnen.js` | Zeichnet die sechs Bild-Diagrammtypen als SVG-String und wandelt SVG zu PNG (Browser-only) (Etappe 3b, Task B3) |
 | `docx-bauen.js` | Baut das Word-Dokument direkt gegen die Vorlage (Zip/OOXML, kein Pandoc) — Kern der Baustrecke (Etappe 3b, Task B4) |
 | `inhalt.js` | Laedt und prueft die vier Dateien aus Kursproduktion/_zentral |
@@ -6041,3 +6042,171 @@ wiederhergestellt (`git diff ansichten.js` leer), komplette Suite erneut geprüf
 nach dem nachgeholten Deploy) — zeigt sie das Symptom erneut, ist der nächste Verdächtige die
 konkrete Browser-Umgebung (Theme/Forced Colors/Zoom), nicht der HTML-Aufbau; die neuen Tests
 halten die HTML-Seite ab jetzt fest.
+
+## Etappe 5 / Task F3: Interaktions-Drehbuch — die Werkstatt setzt beim Schritt-5-Upload
+## zusätzlich ein Word für Dritte
+
+**Entscheid Markus (2026-08-07):** Die Interaktions-Contracts brauchen eine Fassung für
+Fachverantwortliche ohne Werkstatt-Zugang — ein **Interaktions-Drehbuch** (Word), das je
+Kapitel das intendierte Lernerlebnis zeigt: Zielhandlung, Einstiegsfrage, was die Person
+einstellt, was sie sieht, der Aha-Moment, die Auflösung — plus Kernaussage, Denkfehler und
+Stütztext. Genau wie bei Schritt 3/4 gilt „Inhalt vom Modell, Form vom Werkzeug": die
+Werkstatt baut das Word selbst, beim Upload, aus den bereits geparsten Interaktions-Contracts
+— kein zweiter Prompt, kein zweites Artefakt, das der Chat liefern müsste.
+
+**Vokabular strikt: „Interaktions-Drehbuch" — nie nur „Drehbuch".** „Drehbuch" allein gehört
+Schritt 2 (Lernziele-Drehbuch, das Contract-Excel) — dieselbe Verwechslungsgefahr wie bei
+„Contract"/„Interaktions-Contract" (Etappe 5, global-constraints.md).
+
+**Das Interaktions-Drehbuch ist eine ANSICHT der Contracts, nie eine zweite Wahrheit.**
+Massgebend für Schritt 6 bleibt ausschliesslich die `.blocks`-Datei — genau wie das gebaute
+Word aus Schritt 3/4 nie die Blockdatei als Quelle ersetzt (B4/B5/V4). Ändert sich ein
+Contract, entsteht beim nächsten Upload ein neues Word; das alte Word wird nie von Hand
+nachgezogen.
+
+**`didaktik-drehbuch.js` (neu, UMD, Global `root.didaktikDrehbuch`) — GENAU das Muster von
+`docx-bauen.js` (B4, Etappe 3b), aber ohne Bilder.** `didaktikDrehbuch.baue(vorlageArrayBuffer,
+gelesen, contentGelesen) -> Promise<Uint8Array>`: öffnet die Vorlage mit `zip-lesen.js`, ersetzt
+NUR `word/document.xml`, reicht jeden anderen Vorlagen-Teil byte-identisch durch (`liesBytes`),
+verpackt mit `zip-schreiben.js`. `gelesen` ist das Ergebnis von `didaktikLesen.lies()` (`kopf`,
+`contracts`, `punkte`); `contentGelesen` das Ergebnis von `skriptLesen.lies()` der geltenden
+`content_final.blocks` — liefert Kapitel-Titel/-Nummern für den H1-Match über die `ek`. Fehlt
+`<w:sectPr>` in der Vorlage: Abbruch mit klarer Meldung (Muster `docx-bauen.js`). **Kein
+rels-/Content-Types-Umbau, keine `media/`-Ablage** — anders als `docx-bauen.js` bettet dieses
+Modul keine Bilder ein, das Interaktions-Drehbuch ist reiner Text; es gibt nichts anzupassen.
+`didaktik-drehbuch.js` führt eine **eigene Kopie** der XML-Escaping-Funktion (Konvention:
+Module teilen keinen Code über Globals hinaus) — mit **fünf** Zeichen statt der vier in
+`docx-bauen.js` (`&`, `<`, `>`, `"`, **und `'`** — Task-Brief-Vorgabe, Muster
+`helpers.escapeHtml` in `app.js`).
+
+**Dokumentaufbau, styleIds wie `docx-bauen.js` (die styleId, nicht der Name — deutsches Word
+eindeutscht die eingebauten Kennungen, s. `docx-bauen.js`-Kommentarkopf):**
+- Titel-Absatz (`Titel`): `Interaktions-Drehbuch · {kurs}`, darunter ohne Stil `Basis:
+  {basiert_auf} · {n} Interaktions-Contracts` und der Satz „Ansicht der Interaktions-Contracts
+  — massgebend ist die .blocks-Datei; die endgültige Aufgabenform gestaltet Schritt 6."
+- Je Contract (Dokumentreihenfolge): H1 (`berschrift1`) `Kapitel {nr} · {titel}` — **Match über
+  `kapitel.ek`** gegen `contentGelesen.kapitel`; kein Treffer → H1 = die `ek` selbst (kein
+  „Kapitel N · " davor). Meta-Zeile (`Quelle`): `{ek} · Interaktionstyp: {typ}`.
+- Dramaturgie als sechs beschriftete Absätze (fetter Run als Präfix + normaler Text, Muster
+  `wissenscheckAbsaetze`/`pAbsatzMitFettPraefix` in `docx-bauen.js`), OHNE eigenen pStyle:
+  `Zielhandlung:` / `Einstiegsfrage:` (`vorhersage`) / `Du stellst ein:` (`steuert`) / `Du
+  siehst:` (`beobachtet`) / `Der Aha-Moment:` (`aha`) / `Auflösung:` (`konsequenz`) — jede Zeile
+  nur, wenn der Wert nicht leer ist (`fettZeileWennGesetzt`), nie `undefined` gerendert.
+- `{kernaussage}` als eigener Absatz im Stil `Merksatz` (der Kasten der Vorlage), OHNE eigene
+  Beschriftung — der Wert steht für sich.
+- `Typischer Denkfehler: {denkfehler}` im Stil `Fehlvorstellung`, `Stütztext: {stuetztext}` im
+  Stil `Quelle` — Label und Wert in EINEM literalen String, kein fetter Präfix-Run (anders als
+  bei der Dramaturgie: der Task-Brief nennt den Fett-Präfix ausdrücklich nur für die sechs
+  Dramaturgie-Zeilen).
+- Bei `typ === 'fliesstext'`: statt der sechs Dramaturgie-Zeilen genau EIN Absatz „Bewusste
+  Ausnahme ohne Interaktion — Begründung: {begruendung}" im Stil `Fehlvorstellung` —
+  Merksatz/Denkfehler/Stütztext folgen unverändert wie bei jedem anderen Typ (`kernaussage`/
+  `denkfehler`/`stuetztext` sind bei JEDEM Contract Pflicht, `didaktik-schema.js`).
+- Am Ende, wenn `gelesen.punkte.length`: H1 „Behandelte offene Punkte", je Punkt ein Absatz
+  `- {punkt}` und darunter — eingerückt (direkte Formatierung `w:ind`, kein Named Style, neuer
+  Helfer `pAbsatzEingerueckt`) — `Entscheid: {entscheid}` bzw. `Verschoben an {verschieben}:
+  {begruendung}`.
+
+**`app.js` — `weiterMitDidaktikAblage` (D5, bestehend) auf Bau-vor-Ablage umgestellt
+(B5-Muster).** Bekommt `contentGelesen` als expliziten dritten Parameter (Muster `dSkript` in
+B5/V4 — Geschwister-Funktionen teilen keine Closures), durchgereicht von
+`weiterMitDidaktikContent`, das es ohnehin schon für `didaktikPruefe` (D2) lädt. Ablauf: erst
+`graph.vorlageLaden()` (bestehender, gecachter Helfer, unverändert seit I2 — Fixwave
+2026-08-04) — `null` → Abbruch mit dem I2-Wortlaut „Vorlage konnte nicht geladen werden —
+erneut versuchen." Dann `didaktikDrehbuch.baue(vorlage, gelesenDidaktik, contentGelesen)` — ein
+Baufehler bricht ab, BEVOR irgendetwas hochgeladen wurde. **Ablage-Reihenfolge: docx ZUERST,
+dann blocks** (Entscheid Markus „vor dem Blocks-Teil", Muster Schritt 3/4) —
+`blocksName = ziel.datei` (trägt durch den Kontrakt-`ext` bereits `.blocks`),
+`docxName = ziel.datei.replace(/\.[a-z0-9]+$/i, '.docx')` (B5-Invariante: gleicher Stamm).
+`geschafft[]`/`zielInfo` wie B5: scheitert die blocks-Ablage NACH dem docx, nennt die
+Fehlermeldung, was schon liegt (I3-Muster: versionierte Dateien — „ein erneuter Versuch legt
+die nächste, vollständige Version daneben, er überschreibt die unvollständige nicht"; beide
+Meldekanäle über `klemmtSichtbar`). `uploadMeldung.url` = die webUrl des **docx** (K3 — das
+Word ist das Menschen-Artefakt, das Fachverantwortliche öffnen; die blocks bleibt das
+Maschinen-Lieferobjekt für Schritt 6). Die Punkte-Rückschreibung (Identitäts-Guard über den
+`was`-Wortlaut, `controller.dossierSchreiben`) ist **unverändert** — sie läuft weiterhin NACH
+der Ablage, unabhängig davon, dass jetzt zwei statt einer Datei liegen. Erfolgsmeldung neu:
+„Hochgeladen als `{blocksName}` + Interaktions-Drehbuch `{docxName}` — `{n}`
+Interaktions-Contracts · Punkte: `{e}` entschieden, `{v}` verschoben[, `{u}` nicht mehr
+gefunden]."
+
+**`controller.didaktikNachladen` (D6, bestehend) — Endungstausch nachgerüstet.** Mit dem docx
+neben der blocks (gleicher Versionsstamm) kann `inhalt.geltendeDatei()` (endung-blind — „erster
+Treffer mit der höchsten Nummer gewinnt", die Ordner-Reihenfolge entscheidet) künftig den
+docx-Namen liefern. Vor dem `graph.dateiLesen` deshalb `name.replace(/\.[a-z0-9]+$/i,
+'.blocks')` — exakt das `reviewNachladen`-Muster (Schritt 4 → 3, dieselbe B5-Invariante). Ohne
+diesen Fix hätte die Contracts-Ansicht nach dem ersten F3-Upload Word-Bytes als Blocktext
+gelesen und einen Parse-Fehler gezeigt.
+
+**`ansichten.js` — der Hinweistext im Schritt-5-Upload-Block** nennt seither zusätzlich: „Die
+Werkstatt setzt daraus zusätzlich das Interaktions-Drehbuch (Word) für die fachliche
+Durchsicht."
+
+**Tests:**
+- `test/didaktikdrehbuch.test.js` (neu, 11 Fälle — die sieben Kernfälle aus dem Task-Brief
+  plus vier ergänzende): (a) H1 mit Kapitel-Titel aus dem Content, Meta-Zeile ek+typ, alle
+  sechs Dramaturgie-Beschriftungen, kernaussage im `Merksatz`-Stil, denkfehler im
+  `Fehlvorstellung`-Stil; (b) fliesstext-Contract zeigt die Begründungs-Zeile statt der
+  Dramaturgie, keine der sechs Beschriftungen taucht auf; (c) XML-Fremdwert-Probe (`&`, `<`,
+  `>` in kernaussage → escaped, kein rohes `<`/`>` im XML); (d) Punkte-Sektion mit `entscheid`
+  UND `verschoben` (plus eine Gegenprobe: ohne Punkte fehlt die Sektion ganz); (e) `styles.xml`
+  byte-identisch durchgereicht (`liesBytes`-Vergleich gegen den `TextEncoder`-kodierten
+  Original-String), `sectPr` genau einmal im Ergebnis; (f) Vorlage ohne `sectPr` → Abbruch
+  (plus eine Gegenprobe: Vorlage ganz ohne `word/document.xml` → eigener Abbruch); (g) ohne
+  Content-Match fällt H1 auf die `ek` zurück, kein halb ausgefülltes „Kapitel · "-Muster. Alle
+  Fixtures über die ECHTEN Parser (`didaktikLesen.lies()`/`skriptLesen.lies()`), kein Handbau
+  der `gelesen`-Objekte — Muster jeder Etappe-4/5-Testdatei.
+- `test/hochladen.test.js` — der D5-Harness (`hochladenLaufD5`) bekommt einen
+  `graph.vorlageLaden`-Fake (Standard: eine gültige Mini-Vorlage über `zipSchreiben.baue`,
+  `opts.vorlage` überschreibt sie komplett — `null` simuliert einen Fehlschlag,
+  `vorlageBauenD5({ohneDocument:true})` einen Baufehler) sowie `opts.webUrls`/
+  `opts.hochladenFehlerAb` (Muster `hochladenLaufB5`, K3/I3). Die beiden bestehenden D5-Tests
+  (a)/(g) sind auf ZWEI Uploads (docx zuerst, dann blocks) und den neuen Erfolgstext
+  umgestellt — reine Fixture-/Assertions-Drift, kein neuer Testfall. Vier neue Fälle unter
+  „F3 (…)" (die Task-Brief-Nummerierung (h)–(k), mit `F3`- statt `D5`-Präfix, weil „D5 (h)"
+  bereits für den bestehenden Ansichts-Test vergeben ist): (h) Erfolg → docx VOR blocks in
+  `hochladenRufe`, `uploadMeldung.url` = die webUrl DES DOCX (nicht der blocks — belegt über
+  unterschiedliche `opts.webUrls` je Aufrufindex), Meldung nennt beide Namen; (i) Vorlage
+  `null` → NICHTS abgelegt, kein Dossier-Schreibvorgang, I2-Wortlaut; (j) Baufehler (Vorlage
+  ohne `word/document.xml`) → NICHTS abgelegt; (k) blocks scheitert NACH docx
+  (`hochladenFehlerAb: 2`) → Meldung nennt das bereits abgelegte docx (`geschafft`) plus den
+  Nächste-Version-Hinweis, kein Dossier-Schreibvorgang.
+- `test/didaktikansicht.test.js` — ein neuer Fall „F3 (l)": `graph.ordnerInhalt` liefert das
+  `.docx` VOR der `.blocks` im selben Versionsstamm (`geltendeDatei()` liefert dadurch
+  nachweislich den docx-Namen), `didaktikNachladen` ruft `graph.dateiLesen` trotzdem mit der
+  `.blocks`-Endung auf und cacht ein gültiges, geparstes Ergebnis.
+
+**934 Tests grün** (Baseline nach der Etappe-6-Fast-Follow-Runde F2 920 + 14 neue: 11 in
+`didaktikdrehbuch.test.js`, 4 „F3 (h)"–„F3 (k)" in `hochladen.test.js` — die beiden
+umgestellten Bestandstests (a)/(g) zählen nicht neu —, 1 „F3 (l)" in
+`didaktikansicht.test.js`).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Task-Brief verlangt):** den Endungstausch in
+`controller.didaktikNachladen` entfernt (`var blocksName = name;` statt des `.replace(...)`),
+`node --test test/didaktikansicht.test.js`:
+```
+ℹ tests 18
+ℹ pass 17
+ℹ fail 1
+
+✖ F3 (l): geltendeDatei liefert den docx-Namen — didaktikNachladen liest trotzdem die .blocks (Endungstausch)
+  AssertionError [ERR_ASSERTION]: graph.dateiLesen haette mit der .blocks-Endung aufgerufen werden muessen, nicht mit .docx
+  + actual - expected
+
+  + 'DBS-001_umsetzung_v1.docx'
+  - 'DBS-001_umsetzung_v1.blocks'
+```
+Genau der eine neue F3-Test fiel rot, alle anderen 17 blieben grün; komplette Suite in
+demselben Zustand erneut geprüft: `node --test` → **933/934 grün, genau der eine Test rot**.
+Danach die Zeile wiederhergestellt, komplette Suite erneut geprüft: `node --test` →
+**934/934 grün**.
+
+**Offen / bewusst nicht Teil von F3:** keine Live-Probe im Browser (ein echtes, per Graph
+hochgeladenes Interaktions-Drehbuch, das tatsächlich in Word öffnet) — dieselbe dokumentierte
+Grenze wie bei jedem vorangegangenen docx-Bau-Task (B1/B3/B4/B9). Die Werkzeug-Texte
+(`werkzeuge.json`/SharePoint, `guide-3`) erwähnen das Interaktions-Drehbuch nicht — wie bei
+jedem UI-seitigen Nachzug (Task Z6/Z8, Etappe-2-Task-8-Nachzug) ein separater,
+freigabepflichtiger Redaktionsschritt, nicht Teil dieser Task. Das reale
+`ablage-kontrakt.json`/`schritte.json` in SharePoint führt `pruefung: 'interaktion'` für
+Schritt 5 seit D8 bereits live (s. „Stand 2026-08-06" oben) — F3 baut direkt darauf auf, kein
+Weg-B-Vorbehalt mehr nötig.

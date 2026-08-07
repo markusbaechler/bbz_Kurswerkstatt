@@ -1824,14 +1824,37 @@ test('V7 (c): 412/409 beim Register-Schreiben löst genau EIN frisches Lesen + e
 
 /* ---------- D5 (Etappe 5): Upload-Weg Schritt 5 — Gate, Pruefkette, Ablage,
    Punkte-Rueckschreibung ----------
-   Schritt 5 (Interaktions-Contracts) baut — anders als Schritt 3/4 — KEIN
-   Word: die Blockdatei selbst wird abgelegt, kein docxBauen, kein Diagramm,
-   keine Illustrationen. Eigener, schlankerer Test-Harness statt
-   hochladenLaufB5 (der Vorlage/PNG-Rendering mockt, das D5 nicht braucht). */
+   Schritt 5 (Interaktions-Contracts) legt die Blockdatei selbst ab — kein
+   Diagramm, keine Illustrationen (anders als Schritt 3/4). Eigener,
+   schlankerer Test-Harness statt hochladenLaufB5 (der PNG-Rendering mockt,
+   das D5 nicht braucht).
+
+   F3 (Etappe 5, Entscheid Markus 2026-08-07): seit dem Interaktions-
+   Drehbuch baut der Ablage-Weg zusaetzlich ein Word (didaktikDrehbuch.baue,
+   ueber graph.vorlageLaden — derselbe gecachte Helfer wie Schritt 3/4) —
+   der Harness braucht deshalb eine Mini-Vorlage (Muster
+   test/docxbauen.test.js vorlageBauen(), hier ohne rels/Content-Types, das
+   Drehbuch bettet keine Bilder ein) und einen graph.vorlageLaden-Fake. */
 
 require('../didaktik-schema.js');
 require('../didaktik-lesen.js');
 const { didaktikLesen } = require('../didaktik-lesen.js');
+require('../didaktik-drehbuch.js');
+
+/* Mini-Vorlage fuer didaktikDrehbuch.baue() — Standardfall: gueltiges
+   word/document.xml mit <w:sectPr>. opts.ohneDocument liefert eine Vorlage
+   OHNE word/document.xml (Baufehler-Fall, Test (j)). */
+function vorlageBauenD5(opts) {
+  opts = opts || {};
+  if (opts.ohneDocument) {
+    return zipSchreiben.baue([{ name: 'word/styles.xml', daten: '<w:styles/>' }]).buffer;
+  }
+  const sectPr = '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/>' +
+    '<w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417"/></w:sectPr>';
+  const docXml = '<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">' +
+    '<w:body><w:p><w:r><w:t>Alter Inhalt, wird ersetzt</w:t></w:r></w:p>' + sectPr + '</w:body></w:document>';
+  return zipSchreiben.baue([{ name: 'word/document.xml', daten: docXml }]).buffer;
+}
 
 function worteD5(n, praefix) {
   const w = [];
@@ -1949,7 +1972,7 @@ async function hochladenLaufD5(dateiListe, opts) {
   const meldung = { textContent: '', hidden: true };
   const hochladenRufe = [];
   const ablegenRufe = [];
-  const rufe = { ordnerInhalt: 0, dateiLesen: 0 };
+  const rufe = { ordnerInhalt: 0, dateiLesen: 0, vorlageLaden: 0 };
 
   state.data.inhalt = opts.inhalt || JSON.parse(JSON.stringify(INHALT));
   state.data.kurse = [{ kursId: 'AFL-001', kurstitel: 'Anlagefondslizenz',
@@ -1986,9 +2009,23 @@ async function hochladenLaufD5(dateiListe, opts) {
     return Promise.resolve(Object.prototype.hasOwnProperty.call(texte, datei) ? texte[datei] : null);
   };
   graph.hochladen = function (kursId, ordner, datei, blob) {
+    /* K3-Testhilfe (Muster hochladenLaufB5): opts.webUrls, Index nach
+       Aufruf-Reihenfolge (docx zuerst, dann blocks) — simuliert die
+       Graph-Antwort mit webUrl je Datei. */
+    const indexVorDemPush = hochladenRufe.length;
     hochladenRufe.push({ ordner: ordner, datei: datei, blob: blob });
     if (opts.beimHochladen) opts.beimHochladen();
+    /* I3-Testhilfe (Muster hochladenLaufB5): ab dem N-ten Aufruf (1-basiert)
+       schlaegt graph.hochladen fehl — Teilfehler-Pfad (geschafft.length > 0,
+       ein SPAETERER Ablage-Schritt scheitert). */
+    if (opts.hochladenFehlerAb && hochladenRufe.length >= opts.hochladenFehlerAb) {
+      return Promise.reject(new Error('Graph 500'));
+    }
     if (opts.hochladenWirft) return Promise.reject(opts.hochladenWirft);
+    if (opts.webUrls) {
+      const url = opts.webUrls[indexVorDemPush];
+      return Promise.resolve(url !== undefined ? { webUrl: url } : {});
+    }
     if (opts.webUrl) return Promise.resolve({ webUrl: opts.webUrl });
     return Promise.resolve({});
   };
@@ -1996,6 +2033,15 @@ async function hochladenLaufD5(dateiListe, opts) {
     ablegenRufe.push({ kursId: kursId, ordner: ordner, datei: datei, text: text });
     if (opts.ablegenWirft) return Promise.reject(opts.ablegenWirft);
     return Promise.resolve({ eTag: 'test-etag' });
+  };
+  /* F3: graph.vorlageLaden — Standard eine gueltige Mini-Vorlage.
+     opts.vorlage === null simuliert einen Fehlschlag (Test (i));
+     opts.vorlage (gesetzt, kein null) ueberschreibt die Standard-Vorlage
+     komplett (Test (j): eine Vorlage ohne word/document.xml). */
+  graph.vorlageLaden = function () {
+    rufe.vorlageLaden++;
+    if (Object.prototype.hasOwnProperty.call(opts, 'vorlage')) return Promise.resolve(opts.vorlage);
+    return Promise.resolve(vorlageBauenD5());
   };
   graph.standNachAblage = function () { return null; };
   graph.standSetzenRoh = function () { return Promise.resolve(); };
@@ -2037,10 +2083,13 @@ test('D5 (a): sauber — Datei abgelegt, Dossier-Mutator entscheidet 1 + verschi
   });
 
   assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
-  assert.strictEqual(l.hochladenRufe.length, 1, 'genau EIN Upload — die Blockdatei selbst, kein Word');
+  /* F3: ZWEI Uploads — das gebaute Interaktions-Drehbuch (docx) ZUERST,
+     dann die Blockdatei (Entscheid Markus "vor dem Blocks-Teil", Muster
+     Schritt 3/4). */
+  assert.strictEqual(l.hochladenRufe.length, 2, 'ZWEI Uploads erwartet — docx (Interaktions-Drehbuch) ZUERST, dann blocks');
   assert.deepStrictEqual(
     l.hochladenRufe.map(function (r) { return r.ordner + '/' + r.datei; }),
-    ['05_didaktik/AFL-001_umsetzung_v1.blocks']
+    ['05_didaktik/AFL-001_umsetzung_v1.docx', '05_didaktik/AFL-001_umsetzung_v1.blocks']
   );
 
   assert.strictEqual(l.ablegenRufe.length, 1, 'genau EIN Dossier-Schreibvorgang (Netzwerk-Ebene)');
@@ -2060,7 +2109,7 @@ test('D5 (a): sauber — Datei abgelegt, Dossier-Mutator entscheidet 1 + verschi
     'auth.kontoName() faellt in Node auf Kurswerkstatt zurueck (kein MSAL-Client)');
   assert.match(geschriebenesDossier.entschieden[0].wann, /^\d{4}-\d{2}-\d{2}$/);
 
-  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_umsetzung_v1\.blocks/);
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_umsetzung_v1\.blocks \+ Interaktions-Drehbuch AFL-001_umsetzung_v1\.docx/);
   assert.match(l.hinweis || '', /1 Interaktions-Contracts/);
   assert.match(l.hinweis || '', /1 entschieden, 1 verschoben\./);
   assert.strictEqual(l.uploadMeldung && l.uploadMeldung.typ, 'ok');
@@ -2185,7 +2234,7 @@ test('D5 (g): ein Punkt ist zum Schreibzeitpunkt zwischenzeitlich weg — die Ab
   });
 
   assert.strictEqual(l.meldung, '', 'die Ablage selbst darf nicht scheitern: ' + l.meldung);
-  assert.strictEqual(l.hochladenRufe.length, 1, 'die Datei wird trotzdem hochgeladen');
+  assert.strictEqual(l.hochladenRufe.length, 2, 'docx und blocks werden trotzdem hochgeladen');
   assert.strictEqual(l.ablegenRufe.length, 1);
   const geschriebenesDossier = JSON.parse(l.ablegenRufe[0].text);
   assert.deepStrictEqual(geschriebenesDossier.entschieden, [], 'nichts wurde entschieden — der Punkt war schon weg');
@@ -2201,4 +2250,108 @@ test('D5 (h): Ansicht — accept=".blocks,.txt" OHNE multiple NUR an Schritt 5, 
   const h3 = ansichten.einSchritt(INHALT, AFL, 3, null, { ordnerFehlt: false, dateien: [] });
   assert.ok(/id="datei"[^>]*\bmultiple\b/.test(h3), 'Schritt 3 haette weiterhin multiple tragen sollen');
   assert.ok(/accept="\.blocks,\.txt,\.png,\.zip"/.test(h3), 'Schritt 3 haette weiterhin das Blockstrecken-accept tragen sollen');
+});
+
+/* ---------- F3 (Etappe 5, Entscheid Markus 2026-08-07): das Interaktions-
+   Drehbuch — die Werkstatt baut beim Schritt-5-Upload zusaetzlich ein Word
+   fuer Fachverantwortliche. Task-Brief-Tests (h)-(k), F3-Praefix statt
+   D5-Praefix, weil "D5 (h)" oben bereits fuer den bestehenden
+   Ansichts-Test vergeben ist. ---------- */
+
+test('F3 (h): Erfolg — docx VOR blocks in hochladenRufe, uploadMeldung.url = docx-webUrl, Meldung nennt beide Namen', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText },
+    /* Index 0 = docx (erster Upload), Index 1 = blocks — unterschiedliche
+       webUrls je Datei, damit der Test beweist, dass uploadMeldung.url
+       GENAU die des docx traegt, nie die der blocks. */
+    webUrls: ['https://sp.example/docx-url', 'https://sp.example/blocks-url']
+  });
+
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.deepStrictEqual(
+    l.hochladenRufe.map(function (r) { return r.ordner + '/' + r.datei; }),
+    ['05_didaktik/AFL-001_umsetzung_v1.docx', '05_didaktik/AFL-001_umsetzung_v1.blocks']
+  );
+  assert.strictEqual(l.uploadMeldung && l.uploadMeldung.url, 'https://sp.example/docx-url',
+    'uploadMeldung.url sollte die webUrl des docx (Interaktions-Drehbuch) tragen, nicht die der blocks');
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_umsetzung_v1\.blocks \+ Interaktions-Drehbuch AFL-001_umsetzung_v1\.docx — 1 Interaktions-Contracts/);
+});
+
+test('F3 (i): Vorlage nicht ladbar (null) — NICHTS wird abgelegt', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText },
+    vorlage: null
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 0, 'kein Upload — die Vorlage fehlt, kein Bau moeglich');
+  assert.strictEqual(l.ablegenRufe.length, 0, 'auch kein Dossier-Schreibvorgang — es gibt nichts zurueckzuschreiben');
+  assert.match(l.meldung, /Vorlage konnte nicht geladen werden — erneut versuchen\./, 'I2-Wortlaut');
+  assert.match(l.fehlerHinweis || '', /Vorlage konnte nicht geladen werden/);
+});
+
+test('F3 (j): Baufehler (Vorlage ohne word/document.xml) — NICHTS wird abgelegt', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText },
+    vorlage: vorlageBauenD5({ ohneDocument: true })
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 0, 'kein Upload — der Bau selbst ist schon gescheitert');
+  assert.strictEqual(l.ablegenRufe.length, 0);
+  assert.match(l.meldung, /document\.xml/);
+});
+
+test('F3 (k): blocks scheitert NACH docx — Meldung nennt das abgelegte docx (geschafft) + Naechste-Version-Hinweis', async () => {
+  const contentText = contentTextD5([{ ek: 'AFL-001-EK-001' }]);
+  const didaktikText = didaktikTextD5({
+    contracts: [contractTextD5({ ek: 'AFL-001-EK-001', nr: 1 })]
+  });
+
+  const l = await hochladenLaufD5([blockDatei('egal.blocks', didaktikText)], {
+    dossier: dossierD5([]),
+    dateienJeOrdner: {
+      '04_validierung': [datei('AFL-001_content_final.docx')],
+      '05_didaktik': []
+    },
+    contentTexte: { 'AFL-001_content_final.blocks': contentText },
+    /* Ab dem ZWEITEN graph.hochladen-Aufruf (1-basiert) schlaegt es fehl —
+       das docx (Aufruf 1) gelingt, die blocks-Datei (Aufruf 2) nicht. */
+    hochladenFehlerAb: 2
+  });
+
+  assert.strictEqual(l.hochladenRufe.length, 2, 'docx gelang, blocks wurde versucht');
+  assert.strictEqual(l.ablegenRufe.length, 0, 'kein Dossier-Schreibvorgang — die Ablage brach vorher ab');
+  assert.match(l.meldung, /AFL-001_umsetzung_v1\.docx/, 'das bereits abgelegte docx sollte in der Meldung genannt sein');
+  assert.match(l.meldung, /nächste, vollständige Version daneben/);
+  assert.match(l.meldung, /überschreibt die unvollständige nicht/);
+  assert.match(l.fehlerHinweis || '', /AFL-001_umsetzung_v1\.docx/);
 });
