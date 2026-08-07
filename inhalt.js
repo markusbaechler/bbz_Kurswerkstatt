@@ -26,6 +26,18 @@
     return gefunden;
   }
 
+  /* Die datei:-Feldzeile einer ###ILLUSTRATION — EINE Stelle fuer die Regel
+     (Konvention 9): illustrationenFehlend (unten) UND app.js (P2, Etappe 6
+     „Bilderpaket" — GPT-Bilder fuer eine Claude-Fassung uebernehmen, EK-
+     gematcht, NIE ueber Dateinamen) lesen dieselbe Feldzeile aus demselben
+     Regex. null ohne gesetztes datei:-Feld. */
+  function illustrationDateiVon(kapitel) {
+    var roh = kapitel && kapitel.teile && kapitel.teile.ILLUSTRATION;
+    if (!roh) return null;
+    var m = String(roh).match(/^datei:[ \t]*(.+)$/m);
+    return m ? m[1].trim() : null;
+  }
+
   /* Lazy-Accessor (Muster S() in skript-lesen.js/docx-bauen.js, Z() in
      xlsx-lesen.js): root.skriptSchema ist gesetzt, sobald skript-schema.js
      vorher geladen/ge-required wurde. blocksPruefe() braucht nur
@@ -1801,15 +1813,17 @@
       var fehlt = [];
       var kapitel = (gelesen && Array.isArray(gelesen.kapitel)) ? gelesen.kapitel : [];
       kapitel.forEach(function (k) {
-        var roh = k.teile && k.teile.ILLUSTRATION;
-        if (!roh) return;
-        var m = String(roh).match(/^datei:[ \t]*(.+)$/m);
-        if (!m) return;
-        var name = m[1].trim();
+        var name = illustrationDateiVon(k);
         if (name && !vorhanden[name]) fehlt.push(name);
       });
       return fehlt;
     },
+
+    /* Oeffentlich gemacht fuer app.js (P2, Etappe 6 „Bilderpaket") — dieselbe
+       Regel wie illustrationenFehlend oben nutzt, nur pro Kapitel statt fuer
+       die ganze Liste (Konvention 9: eine Quelle statt einer zweiten Kopie
+       des Regex in app.js). */
+    illustrationDateiVon: illustrationDateiVon,
 
     /* Ziffern-Zahlen in einem Text zaehlen — s. Kommentar bei der privaten
        Funktion zahlenImText() oben (Regel 4b der Regressionsbremse). Hier

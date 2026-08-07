@@ -481,6 +481,51 @@ function blockText(opts) {
   return zeilen.join('\n');
 }
 
+/* P2 (Bilderpaket, Etappe 6): mehrere Kapitel in EINER Blockdatei, je
+   Kapitel optional eine ###ILLUSTRATION mit datei:-Feld — Grundlage fuer die
+   EK-gematchte Bilduebernahme (die braucht mindestens zwei EKs, um einen
+   Match von einem Nicht-Match zu unterscheiden). Jedes Kapitel traegt die
+   zwoelf Pflichtbausteine INKLUSIVE der Pflicht-ABBILDUNG (kompositions-
+   leiste) — anders als blockText() oben (ein Kapitel) baut diese Funktion
+   `opts.kapitel.length` Kapitel aus derselben Vorlage. */
+function blockTextMehrereKapitel(opts) {
+  opts = opts || {};
+  const kurs = opts.kurs || 'AFL-001';
+  const variante = opts.variante || 'claude';
+  const n = opts.woerterJeTeil || 90;
+  const zeilen = [
+    '###SKRIPT kurs=' + kurs + ' | variante=' + variante + ' | titel=Testtitel | rechtsstand=1.1.2026',
+    '###QUELLEN',
+    'gelesen: BSV Mitteilungen Nr. 168, 01.01.2026 Q-001'
+  ];
+  (opts.kapitel || []).forEach(function (kap, i) {
+    const nr = i + 1;
+    zeilen.push('###KAPITEL nr=' + nr + ' | ek=' + kap.ek + ' | titel=Kapitel ' + nr +
+      ' | bloom=2 | richtzeit=25');
+    zeilen.push('###HERO', woerter(n, 'hero'));
+    if (kap.illustrationDatei) {
+      zeilen.push('###ILLUSTRATION', 'datei: ' + kap.illustrationDatei, 'szene: Eine Bildidee');
+    }
+    zeilen.push(
+      '###STORY', woerter(n, 'story'),
+      '###DEFINITION', woerter(n, 'def'),
+      '###ERKLAERUNG', woerter(n, 'erkl'),
+      '###FEHLVORSTELLUNG', woerter(n, 'fehl'),
+      '###BEISPIEL', woerter(n, 'bsp'),
+      '###ABBILDUNG typ=kompositions-leiste | titel=Verteilung ' + nr,
+      'werte: Teil eins 1 | Teil zwei 2',
+      '###INTERAKTION', woerter(30, 'inter'),
+      '###MERKSATZ', woerter(30, 'merk'),
+      '###DEEPDIVE', woerter(30, 'deep'),
+      '###WISSENSCHECK', 'frage: Was trifft zu?', 'a) nichts', 'b) alles',
+      'loesung: b', 'begruendung: weil es so ist',
+      '###ABSCHLUSS', woerter(30, 'schluss'),
+      '###ENDE-KAPITEL'
+    );
+  });
+  return zeilen.join('\n');
+}
+
 function blockDatei(name, textOderFehler) {
   return {
     name: name,
@@ -496,6 +541,16 @@ function pngDatei(name) {
   return {
     name: name,
     arrayBuffer: function () { return Promise.resolve(new Uint8Array([1, 2, 3, 4]).buffer); }
+  };
+}
+
+/* P2 (Bilderpaket): wie pngDatei(), aber mit EIGENEN Bytes je Datei — noetig,
+   um zu beweisen, dass die Claude-Uebernahme die Bytes des per EK
+   GEMATCHTEN GPT-Bilds traegt (nicht irgendeines, nicht per Dateiname). */
+function pngDateiMitBytes(name, werte) {
+  return {
+    name: name,
+    arrayBuffer: function () { return Promise.resolve(new Uint8Array(werte).buffer); }
   };
 }
 
@@ -1049,6 +1104,159 @@ test('K2 Fix-Runde 1: der .blocks-Upload erhaelt ein echtes Blob-faehiges Objekt
     assert.strictEqual(typeof r.blob.size, 'number', r.datei + ': .size fehlt');
     assert.strictEqual(typeof r.blob.slice, 'function', r.datei + ': .slice fehlt');
   });
+});
+
+/* ---------- P2 (Bilderpaket, Etappe 6, Entscheid Markus 2026-08-07) ----------
+   Beim ChatGPT-Upload in Schritt 3 prueft die Werkstatt automatisch, ob eine
+   Claude-Fassung existiert und ob sie noch Illustrations-Platzhalter (P1)
+   traegt — wenn ja, setzt sie automatisch eine NEUE Claude-Version, die
+   Platzhalter mit den soeben hochgeladenen ChatGPT-Bildern gefuellt, EK-
+   gematcht (NIE ueber Dateinamen). Ein Fehlschlag bricht den GPT-Erfolg NIE
+   ab (V7-Nebenprodukt-Muster). Async-Helferfunktion await'et hochladenLaufB5,
+   liest also den ECHTEN Blob-Inhalt zur Beweisfuehrung des EK-Matchings. */
+
+async function blobBytes(blob) {
+  return Array.from(new Uint8Array(await blob.arrayBuffer()));
+}
+
+test('P2 (a): GPT-Upload mit Bildern fuellt eine unbebilderte Claude-Fassung neu, EK-gematcht (nie ueber Dateinamen)', async () => {
+  const claudeText = blockTextMehrereKapitel({
+    variante: 'claude',
+    kapitel: [
+      { ek: 'AFL-001-EK-001', illustrationDatei: 'claude-illu-1.png' },
+      { ek: 'AFL-001-EK-002', illustrationDatei: 'claude-illu-2.png' }
+    ]
+  });
+  const gptText = blockTextMehrereKapitel({
+    variante: 'chatgpt',
+    kapitel: [
+      { ek: 'AFL-001-EK-001', illustrationDatei: 'gpt-bild-1.png' },
+      { ek: 'AFL-001-EK-002', illustrationDatei: 'gpt-bild-2.png' }
+    ]
+  });
+  const l = await hochladenLaufB5(3,
+    [blockDatei('gpt.blocks', gptText),
+     pngDateiMitBytes('gpt-bild-1.png', [11, 12, 13]),
+     pngDateiMitBytes('gpt-bild-2.png', [21, 22, 23])],
+    {
+      dossier: DOSSIER_OK,
+      variante: 'chatgpt',
+      dateienImOrdner: [
+        { name: 'AFL-001_skript-claude_v1.docx' },
+        { name: 'AFL-001_skript-claude_v1.blocks' }
+      ],
+      blocksTexte: { 'AFL-001_skript-claude_v1.blocks': claudeText }
+    });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.fehlerHinweis, null, 'kein Nebenprodukt-Fehlschlag erwartet');
+  assert.match(l.hinweis || '', /Claude-Fassung AFL-001_skript-claude_v2\.docx neu gesetzt mit 2 ChatGPT-Bildern/);
+  assert.doesNotMatch(l.hinweis || '', /ohne Match/, 'beide EKs haben einen GPT-Treffer');
+
+  const claudeDocx = l.hochladenRufe.find(function (r) { return r.datei === 'AFL-001_skript-claude_v2.docx'; });
+  const claudeBlocks = l.hochladenRufe.find(function (r) { return r.datei === 'AFL-001_skript-claude_v2.blocks'; });
+  assert.ok(claudeDocx, 'die neue Claude-docx-Version haette abgelegt werden muessen');
+  assert.strictEqual(claudeDocx.ordner, '03_content');
+  assert.ok(claudeBlocks, 'die neue Claude-blocks-Version haette abgelegt werden muessen');
+  assert.strictEqual(await claudeBlocks.blob.text(), claudeText,
+    'die Claude-blocks muessen unveraendert (Text) weiterwandern, nicht neu serialisiert werden');
+
+  const illu1 = l.hochladenRufe.find(function (r) { return r.datei === 'claude-illu-1.png'; });
+  const illu2 = l.hochladenRufe.find(function (r) { return r.datei === 'claude-illu-2.png'; });
+  assert.ok(illu1, 'claude-illu-1.png (EK-001) haette hochgeladen werden muessen');
+  assert.ok(illu2, 'claude-illu-2.png (EK-002) haette hochgeladen werden muessen');
+  assert.strictEqual(illu1.ordner, '03_content/abbildungen');
+  assert.deepStrictEqual(await blobBytes(illu1.blob), [11, 12, 13],
+    'claude-illu-1.png (EK-001) haette die Bytes von gpt-bild-1.png (EK-001) tragen muessen');
+  assert.deepStrictEqual(await blobBytes(illu2.blob), [21, 22, 23],
+    'claude-illu-2.png (EK-002) haette die Bytes von gpt-bild-2.png (EK-002) tragen muessen, NICHT die von gpt-bild-1.png');
+});
+
+test('P2 (b): keine Claude-Fassung vorhanden — kein Nachbau, Meldung ohne Zusatz', async () => {
+  const l = await hochladenLaufB5(3, [blockDatei('gpt.blocks', blockText({ variante: 'chatgpt' })), ],
+    { dossier: DOSSIER_OK, variante: 'chatgpt', dateienImOrdner: [] });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.strictEqual(l.fehlerHinweis, null);
+  assert.doesNotMatch(l.hinweis || '', /Claude-Fassung/);
+  assert.strictEqual(l.rufe.dateiLesen, 0, 'ohne gefundene Claude-Fassung wird nie gelesen');
+});
+
+test('P2 (c): Claude-Fassung ist bereits voll bebildert — kein Nachbau', async () => {
+  const claudeText = blockTextMehrereKapitel({
+    variante: 'claude',
+    kapitel: [{ ek: 'AFL-001-EK-001', illustrationDatei: 'claude-illu-1.png' }]
+  });
+  const l = await hochladenLaufB5(3, [blockDatei('gpt.blocks', blockText({ variante: 'chatgpt' }))],
+    {
+      dossier: DOSSIER_OK,
+      variante: 'chatgpt',
+      dateienImOrdner: [
+        { name: 'AFL-001_skript-claude_v1.docx' },
+        { name: 'AFL-001_skript-claude_v1.blocks' },
+        { name: 'claude-illu-1.png' }
+      ],
+      blocksTexte: { 'AFL-001_skript-claude_v1.blocks': claudeText }
+    });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.doesNotMatch(l.hinweis || '', /Claude-Fassung/);
+  assert.strictEqual(l.rufe.dateiLesen, 1, 'die Claude-Fassung wurde gelesen, aber nichts fehlt');
+  assert.strictEqual(l.rufe.vorlageLaden, 1, 'die Vorlage haette nur fuer den GPT-Bau geladen werden duerfen');
+  assert.ok(!l.hochladenRufe.some(function (r) { return /skript-claude_v2/.test(r.datei); }),
+    'keine neue Claude-Version haette entstehen duerfen');
+});
+
+test('P2 (d): Claude-Blockdatei nicht lesbar — GPT-Erfolg bleibt unveraendert, fehlerHinweis nennt den Nachzugs-Hinweis', async () => {
+  const l = await hochladenLaufB5(3, [blockDatei('gpt.blocks', blockText({ variante: 'chatgpt' }))],
+    {
+      dossier: DOSSIER_OK,
+      variante: 'chatgpt',
+      dateienImOrdner: [
+        { name: 'AFL-001_skript-claude_v1.docx' },
+        { name: 'AFL-001_skript-claude_v1.blocks' }
+      ]
+      /* blocksTexte bewusst leer: graph.dateiLesen liefert fuer die Claude-
+         .blocks null zurueck ("nicht gefunden"). */
+    });
+  assert.strictEqual(l.meldung, '', 'der GPT-Upload selbst bleibt unangetastet: ' + l.meldung);
+  assert.match(l.hinweis || '', /Hochgeladen als AFL-001_skript-chatgpt_v1\.docx/);
+  assert.doesNotMatch(l.hinweis || '', /Claude-Fassung/);
+  assert.match(l.fehlerHinweis || '', /Claude-Fassung nicht neu gesetzt — erneuter ChatGPT-Upload holt es nach\./);
+  assert.ok(!l.hochladenRufe.some(function (r) { return /skript-claude/.test(r.datei); }),
+    'ohne lesbare Claude-Fassung darf nichts fuer Claude hochgeladen werden');
+});
+
+test('P2 (e): ein EK ohne GPT-Match — die Meldung nennt "ohne Match als Platzhalter"', async () => {
+  const claudeText = blockTextMehrereKapitel({
+    variante: 'claude',
+    kapitel: [
+      { ek: 'AFL-001-EK-001', illustrationDatei: 'claude-illu-1.png' },
+      { ek: 'AFL-001-EK-002', illustrationDatei: 'claude-illu-2.png' }
+    ]
+  });
+  const gptText = blockTextMehrereKapitel({
+    variante: 'chatgpt',
+    kapitel: [
+      { ek: 'AFL-001-EK-001', illustrationDatei: 'gpt-bild-1.png' },
+      { ek: 'AFL-001-EK-002' } /* keine Illustration fuer diese EK im GPT-Upload */
+    ]
+  });
+  const l = await hochladenLaufB5(3,
+    [blockDatei('gpt.blocks', gptText), pngDateiMitBytes('gpt-bild-1.png', [11, 12, 13])],
+    {
+      dossier: DOSSIER_OK,
+      variante: 'chatgpt',
+      dateienImOrdner: [
+        { name: 'AFL-001_skript-claude_v1.docx' },
+        { name: 'AFL-001_skript-claude_v1.blocks' }
+      ],
+      blocksTexte: { 'AFL-001_skript-claude_v1.blocks': claudeText }
+    });
+  assert.strictEqual(l.meldung, '', 'kein Fehler erwartet: ' + l.meldung);
+  assert.match(l.hinweis || '', /Claude-Fassung AFL-001_skript-claude_v2\.docx neu gesetzt mit 1 ChatGPT-Bild,/);
+  assert.match(l.hinweis || '', /1 ohne Match als Platzhalter/);
+  assert.ok(l.hochladenRufe.some(function (r) { return r.datei === 'claude-illu-1.png'; }),
+    'der gefundene Treffer haette hochgeladen werden muessen');
+  assert.ok(!l.hochladenRufe.some(function (r) { return r.datei === 'claude-illu-2.png'; }),
+    'ohne GPT-Treffer bleibt der Platzhalter — kein Upload fuer claude-illu-2.png');
 });
 
 /* ---------- B9-F1: die Dateiauswahl ueberlebt keinen Render (Live-Befund) ----------

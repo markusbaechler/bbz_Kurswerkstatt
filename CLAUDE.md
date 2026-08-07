@@ -6420,3 +6420,148 @@ gebautes Word mit einem sichtbaren DeepDive-Platzhalter) — dieselbe dokumentie
 jedem vorangegangenen docx-Bau-Task (B1/B3/B4/B9/F3). Das reale
 `ablage-kontrakt.json`/`schritte.json` in SharePoint sind von dieser Task nicht betroffen — P1
 ändert reines App-/Prompt-Verhalten, kein Kontraktfeld.
+
+## Task P2 „Bilderpaket" — die Claude-Fassung holt ChatGPT-Bilder automatisch nach
+
+**Entscheid Markus, 2026-08-07:** P1 lässt den Claude-Weg von Schritt 3 mit reinen
+Illustrations-Platzhaltern (DeepDive-Kasten, `szene:`-Bildidee) durchlaufen — Claude selbst kann
+keine Bilder erzeugen. P2 schliesst die entstehende Lücke automatisch: **beim ChatGPT-Upload**
+prüft die Werkstatt, ob für denselben Kurs bereits eine Claude-Fassung existiert und ob sie noch
+Platzhalter trägt — wenn ja, setzt sie automatisch eine **neue** Claude-Version, in der die
+Platzhalter durch die soeben hochgeladenen ChatGPT-Bilder ersetzt sind. Das Matching läuft
+**ausschliesslich über die Eingangskompetenz (EK)**, nie über Dateinamen — Claude und ChatGPT
+benennen ihre Illustrationen unabhängig voneinander, ein Dateinamen-Vergleich fände nie etwas.
+
+**`inhalt.illustrationDateiVon(kapitel)` (neu, `inhalt.js`) — die datei:-Feldzeile einer
+`###ILLUSTRATION`, an EINER Stelle (Konvention 9).** Bisher lag dieser Regex inline in
+`illustrationenFehlend` (B5/V4/P1); P2 braucht dieselbe Extraktion PRO Kapitel (nicht nur die
+Liste der fehlenden Namen) für das EK-Matching in `app.js`. `illustrationenFehlend` ist auf den
+Aufruf dieses neuen Helfers umgestellt (rein mechanisches Refactoring, ihr Verhalten ist
+unverändert — die bestehende Testsuite dafür bleibt der Beleg) und der Helfer selbst öffentlich
+gemacht, damit `app.js` ihn ruft, statt eine zweite Kopie des Regex zu führen.
+
+**`app.js` — zwei neue, private, modulweite Helfer (Muster `gateStamm`/`gateGeschwister`, vor
+`var controller = {`):**
+
+- **`rendereDiagrammBilder(gelesen, variante, kursSkript, bilderZiel)`** ist wortgleich aus
+  `weiterMitSkriptBau` herausgezogen (Konvention 9) — derselbe Render-Mechanismus (`mitTitel:
+  false`, Massquelle die `width=`/`height=`-Attribute im SVG-String selbst), den P2 für den
+  Claude-Neubau braucht, statt ihn zu kopieren. `weiterMitSkriptBau` ruft ihn seither selbst auf
+  (`var bauKette = rendereDiagrammBilder(gelesen, variante, kursSkript, bilder);`) — reines
+  Refactoring, kein Verhaltensunterschied (die komplette Bestandssuite bleibt unverändert grün,
+  das ist der Beleg).
+- **`versucheClaudeUebernahme(kursId, ab, inh, gptGelesen, bilderGpt, dateienNachAblage)`** ist die
+  eigentliche P2-Logik, als eigenständige, geschwisterartige Funktion (Muster
+  `weiterMitValidierungPruefe`/`weiterMitSkriptBau` — kein verschachtelter Aufruf, jede
+  gebrauchte Grösse kommt explizit herein statt per Closure): (1) `lieferobjektVon(inh,'3',
+  'claude')` — fehlt es, `null` (nichts zu tun, kein Netzzugriff); (2) `geltendeDatei(
+  dateienNachAblage, kursId, liefClaude)` — `dateienNachAblage` ist der **frisch gelesene**
+  `03_content`-Ordnerinhalt NACH der GPT-Ablage, den der Aufrufer ohnehin schon fürs
+  Cache-Auffrischen braucht (kein zweiter, unnötiger GET, Task-Brief); fehlt eine geltende
+  Claude-Fassung, ebenfalls `null`. (3) Die Claude-`.blocks`-Schwester lesen (Endungstausch,
+  B5-Invariante) und parsen — ein `null`/ein Parse-Fehler wirft eine eigene, klare Meldung
+  (Nebenprodukt, s. u.). (4) `graph.ordnerInhalt(kursId, ab.ordner + '/abbildungen')` +
+  `inhalt.illustrationenFehlend(claudeGelesen, abbildungenNamen)` — leer heisst „voll bebildert",
+  `null` (nichts zu tun), kein Bau. (5) **EK-Matching**: eine Map `ek -> GPT-Dateiname` aus
+  `gptGelesen.kapitel` (`illustrationDateiVon`), dann je Claude-Kapitel mit fehlender Illustration
+  ein Blick in dieselbe EK — ein Treffer (`bilderGpt[gptDatei]`, die BEREITS im Speicher liegenden
+  Bytes des GPT-Uploads, kein zweiter Netzzugriff) füllt `bilderNeu[claudeDatei] = {bytes:
+  treffer.bytes}` (ohne logische Masse — derselbe IHDR-Rückfall wie bei jeder hochgeladenen
+  Illustration, `docx-bauen.js`), sonst zählt er als „ohne Match". (6) `rendereDiagrammBilder`
+  füllt `bilderNeu` zusätzlich mit den neu gerenderten Diagrammen der Claude-Fassung — „Neu bauen
+  wie ein normaler Bau" (Task-Brief). (7) `graph.vorlageLaden()` + `docxBauen.baue(vorlage,
+  claudeGelesen, bilderNeu)`. (8) `hochladeZiel(inh,'3',kursId,dateienNachAblage,'claude')` für die
+  NÄCHSTE Claude-Version (`dateienNachAblage` ein zweites Mal wiederverwendet, dieselbe
+  Freshness-Begründung), dann docx → **die Claude-blocks UNVERÄNDERT (derselbe roh gelesene
+  Text, nicht neu serialisiert)** → jedes in `bilderNeu` gelandete Bild (Diagramme UND
+  übernommene Illustrationen) nach `{ordner}/abbildungen` — Muster `weiterMitSkriptBau`
+  eins zu eins, nur als eigener, kleinerer Ablauf (kein `geschafft[]`/Teilfehler-Protokoll wie
+  dort — P2 ist ein reines Nebenprodukt, ein Teilfehler mitten in der Claude-Ablage fällt unter
+  dieselbe generische `.catch`-Behandlung des Aufrufers wie jeder andere P2-Fehler).
+
+**Trigger — ausschliesslich der Erfolgspfad von `weiterMitSkriptBau` für Schritt 3 (NICHT der
+Validierungs-Zweig), wenn `gelesen.skript.variante === 'chatgpt'`.** Sitzt im finalen
+`.then(function (ergebnis) { return graph.ordnerInhalt(...).then(function (dateienNachAblage)
+{...}) })` — genau die Stelle, die ohnehin schon den Ordner frisch liest, um den `dateien`-Cache
+vorm Rendern aufzufrischen; der zurückgelieferte `dateienNachAblage` wird jetzt zusätzlich
+gebraucht (vorher wurde das Ergebnis verworfen). Läuft NACH `standNachAblage`/`standSetzenRoh`,
+VOR dem Setzen der Erfolgsmeldung, damit die Meldung den Nachbau nennen kann (Task-Brief).
+
+**Nebenprodukt-Regel (V7-Muster): ein Fehlschlag von `versucheClaudeUebernahme` bricht den
+GPT-Erfolg NIE ab.** `.catch(function () { state.fehlerHinweis = 'Claude-Fassung nicht neu gesetzt
+— erneuter ChatGPT-Upload holt es nach.'; return null; })` — die GPT-Erfolgsmeldung
+(`state.hinweis`/`state.data.uploadMeldung`) bleibt unverändert stehen, nur der zusätzliche
+Fehlerhinweis erscheint daneben (Muster `state.hinweis` + `state.fehlerHinweis` in EINEM Block,
+Etappe 1e Task 4). Ein Erfolg hängt die Zahlen an die bestehende Erfolgsmeldung an: „ · Claude-
+Fassung {docxName} neu gesetzt mit {n} ChatGPT-Bild(ern)" plus, wenn `m > 0`, „, {m} ohne Match als
+Platzhalter" — Einzahl/Mehrzahl sauber (`n === 1 ? 'Bild' : 'Bilder'`), nur angehängt, wenn
+überhaupt ein Nachbau stattgefunden hat.
+
+**Cache-Invalidierung braucht keinen eigenen Mechanismus.** `graph.hochladen` löscht bei jedem
+Aufruf `state.data.dateien[kursId + '/' + ordner]` selbst (unverändert, `app.js` Zeile ~623) — die
+P2-Uploads (docx/blocks nach `03_content`, Bilder nach `03_content/abbildungen`) invalidieren die
+Caches damit automatisch, ohne dass `versucheClaudeUebernahme` das selbst tun müsste. Der
+Review-Cache (`state.data.review[k.kursId]`) wird bereits VOR dem P2-Aufruf gelöscht (bestehende
+V5-Zeile, unverändert) — deckt auch den P2-Fall mit ab, weil sie unbedingt läuft, unabhängig vom
+Ausgang der Übernahme.
+
+**Tests (`test/hochladen.test.js`, fünf neue Fälle „P2 (a)"–„(e)", plus der neue Helfer
+`blockTextMehrereKapitel(opts)`):** die bestehende `blockText()`-Fixture baut nur EIN Kapitel —
+das EK-Matching braucht mindestens zwei EKs, um einen Treffer von einem Nicht-Treffer zu
+unterscheiden. `blockTextMehrereKapitel` baut `opts.kapitel.length` vollständige Kapitel (alle
+zwölf Pflichtbausteine inklusive der Pflicht-`###ABBILDUNG`) aus derselben Vorlage wie
+`blockText()`, mit optionalem `###ILLUSTRATION`/`datei:` je Kapitel. `pngDateiMitBytes(name,
+werte)` (neu, neben `pngDatei`) liefert eigene, unterscheidbare Bytes je Datei — nötig, um zu
+beweisen, dass die Übernahme die Bytes des per EK GEMATCHTEN GPT-Bilds trägt, nicht irgendeines:
+- **(a)** zwei EKs, beide mit Claude-Platzhaltern und je einem GPT-Treffer (unterschiedliche
+  Dateinamen UND unterschiedliche Bytes je Seite) — die neue Claude-Version (`_v2`, da `_v1`
+  bereits vorlag) wird mit docx+blocks+beiden Illustrationen abgelegt; die hochgeladenen Bytes
+  jeder Claude-Illustration werden EINZELN gegen die erwarteten GPT-Bytes geprüft
+  (`claude-illu-1.png` ← `gpt-bild-1.png`s Bytes, NICHT die von `gpt-bild-2.png`) — der eigentliche
+  Beweis des EK-Matchings; die Claude-blocks werden zusätzlich als textgleich zum Original
+  geprüft (unverändert, nicht neu serialisiert). (b) keine Claude-Fassung im Ordner → `null`
+  sofort, kein `graph.dateiLesen`-Aufruf, keine Meldungs-Erweiterung. (c) Claude-Fassung bereits
+  voll bebildert (die referenzierte Datei liegt schon in `abbildungen/`) → gelesen, aber keine
+  weitere Aktion — kein zweiter `graph.vorlageLaden()`-Aufruf, keine neue Version. (d) die
+  Claude-`.blocks` ist nicht lesbar (kein Eintrag in `opts.blocksTexte`) → GPT-Erfolg bleibt
+  UNVERÄNDERT (keine „Claude-Fassung"-Erweiterung), `state.fehlerHinweis` trägt den
+  Nachzugs-Hinweis wörtlich, kein einziger Claude-Netzaufruf. (e) eine EK ohne GPT-Gegenstück
+  (Claude-Platzhalter bleibt bestehen, kein Upload dafür) — die Meldung nennt „1 ChatGPT-Bild,
+  1 ohne Match als Platzhalter" (Einzahl korrekt). **942 Tests grün** (Baseline 937 + 5 neue).
+
+**Mutationsprobe (tatsächlich ausgeführt, wie im Auftrag verlangt):** das EK-Matching in
+`versucheClaudeUebernahme` auf Dateinamen-Gleichheit zurückgedreht (`var gptDatei = /* MUTATIONSPROBE
+*/ claudeDatei;` statt `gptEkDatei[kap.ek]`), `node --test test/hochladen.test.js`:
+```
+ℹ tests 105
+ℹ pass 103
+ℹ fail 2
+
+✖ P2 (a): GPT-Upload mit Bildern fuellt eine unbebilderte Claude-Fassung neu, EK-gematcht (nie ueber Dateinamen)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Claude-Fassung
+  AFL-001_skript-claude_v2\.docx neu gesetzt mit 2 ChatGPT-Bildern/. Input: '… · Claude-Fassung
+  AFL-001_skript-claude_v2.docx neu gesetzt mit 0 ChatGPT-Bildern, 2 ohne Match als Platzhalter'
+✖ P2 (e): ein EK ohne GPT-Match — die Meldung nennt "ohne Match als Platzhalter"
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Claude-Fassung
+  AFL-001_skript-claude_v2\.docx neu gesetzt mit 1 ChatGPT-Bild,/. Input: '… mit 0 ChatGPT-Bildern,
+  2 ohne Match als Platzhalter'
+```
+Genau die zwei Tests fielen rot, die auf tatsächliche EK-Treffer angewiesen sind — da
+`claude-illu-*.png` nie mit `gpt-bild-*.png` (Dateinamen-Vergleich) übereinstimmt, fand die
+mutierte Fassung KEINEN einzigen Treffer mehr (0 statt 2 bzw. 1); alle anderen 103 Tests (inkl.
+der drei übrigen P2-Fälle, die keinen erfolgreichen Treffer voraussetzen) blieben grün. Danach die
+Zeile wiederhergestellt, komplette Suite erneut geprüft: `node --test` → **942/942 grün**.
+
+**Offen / bewusst nicht Teil von P2:** keine Live-Probe im Browser (ein echter, per Graph
+hochgeladener Nachbau, der tatsächlich in Word öffnet) — dieselbe dokumentierte Grenze wie bei
+jedem vorangegangenen docx-Bau-Task. Kein Weg, EINEN einzelnen Platzhalter gezielt nachzuliefern,
+ohne die ganze Claude-Fassung neu zu bauen — P2 baut bei jedem Treffer immer die GESAMTE Claude-
+Fassung neu (alle Diagramme neu gerendert, alle Illustrationen — auch bereits erfüllte, die gar
+nicht mehr in `fehlend` stehen, werden NICHT erneut anfasst, aber jedes Diagramm schon), analog zu
+jedem anderen „normalen Bau" in diesem Projekt; ein inkrementeller Patch-Mechanismus ist nicht Teil
+dieser Task. Der Fall „mehrere GPT-Uploads hintereinander, jeder mit neuen Bildern" wurde nicht
+geprüft — jeder GPT-Upload löst unabhängig einen eigenen Übernahme-Versuch aus, der jeweils gegen
+die zu diesem Zeitpunkt GELTENDE Claude-Fassung prüft (kein kumulativer Zustand über mehrere
+Läufe hinweg nötig, weil `geltendeDatei`/`illustrationenFehlend` immer den aktuellen Stand lesen).
+Das reale `ablage-kontrakt.json`/`schritte.json` in SharePoint sind von dieser Task nicht
+betroffen — P2 ändert reines App-Verhalten, kein Kontraktfeld.

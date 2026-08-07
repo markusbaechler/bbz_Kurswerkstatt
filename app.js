@@ -934,6 +934,142 @@
     return ergebnis;
   }
 
+  /* ---------- P2 (Bilderpaket, Etappe 6, Entscheid Markus 2026-08-07) ----------
+     Beim ChatGPT-Upload in Schritt 3 prueft die Werkstatt automatisch, ob eine
+     Claude-Fassung existiert und ob sie noch Illustrations-Platzhalter (P1)
+     traegt — wenn ja, setzt sie automatisch eine NEUE Claude-Version und
+     fuellt die Platzhalter mit den soeben hochgeladenen ChatGPT-Bildern,
+     gematcht ueber die Eingangskompetenz (NIE ueber Dateinamen: zwei
+     Varianten benennen ihre Bilder unabhaengig voneinander). Ein Fehlschlag
+     bricht den GPT-Erfolg NIE ab (V7-Nebenprodukt-Muster: nur eine Meldung,
+     kein Wurf, der die GPT-Ablage nachtraeglich entwertet). */
+
+  /* Diagramme einer geparsten .blocks in einen bilder-Kontrakt rendern —
+     wortgleich aus weiterMitSkriptBau (Etappe 3b) herausgezogen (Konvention
+     9), damit die P2-Uebernahme denselben Render-Mechanismus benutzt
+     (mitTitel:false, Massquelle SVG-width/height) statt ihn zu kopieren.
+     bilderZiel wird MUTIERT (dieselbe Semantik wie die urspruengliche
+     Closure-Variable bilder in weiterMitSkriptBau). */
+  function rendereDiagrammBilder(gelesen, variante, kursSkript, bilderZiel) {
+    var renderJobs = [];
+    var bildNr = 0;
+    (gelesen.kapitel || []).forEach(function (kap) {
+      (kap.abbildungen || []).forEach(function (a) {
+        var typInfo = root.skriptSchema.diagrammTyp(a.typ);
+        if (typInfo && typInfo.alsTabelle) return; /* Word-Tabelle, kein Bild */
+        bildNr += 1;
+        renderJobs.push({ a: a, dateiname: root.docxBauen.bildDateiname(kursSkript, variante, bildNr) });
+      });
+    });
+    return renderJobs.reduce(function (kette, job) {
+      return kette.then(function () {
+        var svgText = root.diagrammZeichnen.svg(job.a, { mitTitel: false });
+        var w = /width="([\d.]+)"/.exec(svgText);
+        var h = /height="([\d.]+)"/.exec(svgText);
+        var breite = w ? parseFloat(w[1]) : 900;
+        var hoehe = h ? parseFloat(h[1]) : 300;
+        return root.diagrammZeichnen.png(svgText, breite, hoehe).then(function (bytes) {
+          bilderZiel[job.dateiname] = { bytes: bytes, breite: breite, hoehe: hoehe };
+        });
+      });
+    }, Promise.resolve());
+  }
+
+  /* kursId, ab (Ablage-Info Schritt 3, aus root.inhalt.ablageVon), inh,
+     gptGelesen (die soeben geparste GPT-Blockdatei), bilderGpt (der bereits
+     gebaute bilder-Kontrakt des GPT-Uploads — traegt die hochgeladenen
+     Illustrations-PNGs unter IHREM eigenen Dateinamen), dateienNachAblage
+     (frisch gelesener Ordnerinhalt NACH der GPT-Ablage — kein zweiter GET,
+     Muster "bereits im Scope liegend wiederverwenden"). Liefert entweder
+     null (nichts zu tun: keine Claude-Fassung, oder voll bebildert) oder
+     {n, m, docxName} fuer die Erfolgsmeldung. Wirft NIE ueber die
+     Node-Fehlerkette hinaus, WOHL ABER innerhalb der Promise — der Aufrufer
+     faengt jeden Fehler mit .catch ab (Nebenprodukt-Muster). */
+  function versucheClaudeUebernahme(kursId, ab, inh, gptGelesen, bilderGpt, dateienNachAblage) {
+    var liefClaude = root.inhalt.lieferobjektVon(inh, '3', 'claude');
+    if (!liefClaude) return Promise.resolve(null);
+    var claudeName = root.inhalt.geltendeDatei(dateienNachAblage, kursId, liefClaude);
+    if (!claudeName) return Promise.resolve(null);
+    var claudeBlocksName = claudeName.replace(/\.[a-z0-9]+$/i, '.blocks');
+
+    return graph.dateiLesen(kursId, ab.ordner, claudeBlocksName).then(function (text) {
+      if (text == null) {
+        throw new Error('Claude-Blockdatei "' + claudeBlocksName + '" nicht lesbar.');
+      }
+      var claudeGelesen;
+      try {
+        claudeGelesen = root.skriptLesen.lies(text);
+      } catch (e) {
+        throw new Error('Claude-Blockdatei "' + claudeBlocksName + '" nicht lesbar — ' + (e.message || e));
+      }
+
+      return graph.ordnerInhalt(kursId, ab.ordner + '/abbildungen').then(function (abbildungen) {
+        var abbildungenNamen = (abbildungen || []).map(function (d) { return d.name; });
+        var fehlend = root.inhalt.illustrationenFehlend(claudeGelesen, abbildungenNamen);
+        if (!fehlend.length) return null; /* voll bebildert — nichts zu tun */
+
+        /* EK -> GPT-Dateiname, aus der soeben verarbeiteten GPT-Fassung. NIE
+           ueber Dateinamen matchen — Claude und GPT benennen ihre Bilder
+           unabhaengig voneinander. */
+        var gptEkDatei = {};
+        (gptGelesen.kapitel || []).forEach(function (kap) {
+          var d = root.inhalt.illustrationDateiVon(kap);
+          if (d) gptEkDatei[kap.ek] = d;
+        });
+
+        var bilderNeu = {};
+        var n = 0, m = 0;
+        (claudeGelesen.kapitel || []).forEach(function (kap) {
+          var claudeDatei = root.inhalt.illustrationDateiVon(kap);
+          if (!claudeDatei || fehlend.indexOf(claudeDatei) < 0) return;
+          var gptDatei = gptEkDatei[kap.ek];
+          var treffer = gptDatei && bilderGpt[gptDatei];
+          if (treffer) {
+            bilderNeu[claudeDatei] = { bytes: treffer.bytes };
+            n += 1;
+          } else {
+            m += 1;
+          }
+        });
+
+        var variante = (claudeGelesen.skript && claudeGelesen.skript.variante) || 'claude';
+        var kursSkript = (claudeGelesen.skript && claudeGelesen.skript.kurs) || kursId;
+
+        return rendereDiagrammBilder(claudeGelesen, variante, kursSkript, bilderNeu)
+          .then(function () { return graph.vorlageLaden(); })
+          .then(function (vorlage) {
+            if (!vorlage) throw new Error('Vorlage konnte nicht geladen werden — erneut versuchen.');
+            return root.docxBauen.baue(vorlage, claudeGelesen, bilderNeu);
+          })
+          .then(function (docxBytes) {
+            var ziel = root.inhalt.hochladeZiel(inh, '3', kursId, dateienNachAblage, 'claude');
+            if (!ziel) throw new Error('Kein Ziel für die neue Claude-Version berechenbar.');
+            var blocksNameNeu = ziel.datei.replace(/\.[a-z0-9]+$/i, '.blocks');
+            var vorher = ziel.zurueckstufen
+              ? graph.umbenennen(kursId, ziel.ordner, ziel.zurueckstufen.von, ziel.zurueckstufen.nach)
+              : Promise.resolve(null);
+            return vorher
+              .then(function () {
+                return graph.hochladen(kursId, ziel.ordner, ziel.datei, new Blob([docxBytes]));
+              })
+              .then(function () {
+                return graph.hochladen(kursId, ziel.ordner, blocksNameNeu,
+                  new Blob([text], { type: 'text/plain;charset=utf-8' }));
+              })
+              .then(function () {
+                return Object.keys(bilderNeu).reduce(function (kette, name) {
+                  return kette.then(function () {
+                    return graph.hochladen(kursId, ab.ordner + '/abbildungen', name,
+                      new Blob([bilderNeu[name].bytes]));
+                  });
+                }, Promise.resolve());
+              })
+              .then(function () { return { n: n, m: m, docxName: ziel.datei }; });
+          });
+      });
+    });
+  }
+
   /* ---------- controller ---------- */
   var controller = {
     setz: function (html) {
@@ -3114,45 +3250,10 @@
         var platzhalterZahl = 0;
 
         /* Diagramme rendern (B3), je ABBILDUNG ausser vergleichstabelle —
-           dieselbe Reihenfolge (Kapitel, dann Abbildung je Kapitel), in der
-           docxBauen.baue() die Bild-Dateinamen selbst vergibt (kapitelAbsaetze
-           in docx-bauen.js), sonst passt kein Name zusammen. Die logischen
-           Masse kommen aus dem SVG-String selbst (width=/height= am
-           <svg>-Wurzelelement) — dieselbe Massquelle wie skript-bauen.cjs,
-           s. Task-Brief. */
-        var renderJobs = [];
-        var bildNr = 0;
-        (gelesen.kapitel || []).forEach(function (kap) {
-          (kap.abbildungen || []).forEach(function (a) {
-            var typInfo = root.skriptSchema.diagrammTyp(a.typ);
-            if (typInfo && typInfo.alsTabelle) return; /* Word-Tabelle, kein Bild */
-            bildNr += 1;
-            renderJobs.push({ a: a, dateiname: root.docxBauen.bildDateiname(kursSkript, variante, bildNr) });
-          });
-        });
-
-        var bauKette = renderJobs.reduce(function (kette, job) {
-          return kette.then(function () {
-            /* mitTitel:false (Review-Finding 1): docxBauen.abbildungAbsatz()
-               setzt den Abbildungstitel bereits als Bildunterschrift
-               (pStyle="Quelle") — ohne diese Option truege das Diagramm
-               selbst den Titel zusaetzlich ein zweites Mal (Referenz
-               skript-bauen.cjs Zeile ~164 unterdrueckt ihn im Bild aus
-               demselben Grund). rahmen() (diagramm-zeichnen.js) schneidet
-               dabei den oberen Streifen weg und schrumpft height im
-               SVG-String selbst um KOPF (55px) — die Massextraktion unten
-               liest genau diesen String, bleibt also automatisch
-               konsistent, ohne KOPF hier kennen zu muessen. */
-            var svgText = root.diagrammZeichnen.svg(job.a, { mitTitel: false });
-            var w = /width="([\d.]+)"/.exec(svgText);
-            var h = /height="([\d.]+)"/.exec(svgText);
-            var breite = w ? parseFloat(w[1]) : 900;
-            var hoehe = h ? parseFloat(h[1]) : 300;
-            return root.diagrammZeichnen.png(svgText, breite, hoehe).then(function (bytes) {
-              bilder[job.dateiname] = { bytes: bytes, breite: breite, hoehe: hoehe };
-            });
-          });
-        }, Promise.resolve());
+           ueber den geteilten Helfer rendereDiagrammBilder (P2, Etappe 6:
+           herausgezogen, damit die Claude-Uebernahme denselben Mechanismus
+           nutzt, Konvention 9 — s. Kommentar dort fuer Details). */
+        var bauKette = rendereDiagrammBilder(gelesen, variante, kursSkript, bilder);
 
         bauKette
           .then(function () {
@@ -3279,7 +3380,7 @@
             });
           })
           .then(function (ergebnis) {
-            return graph.ordnerInhalt(k.kursId, ab.ordner).then(function () {
+            return graph.ordnerInhalt(k.kursId, ab.ordner).then(function (dateienNachAblage) {
               var bz = ergebnis.bildzahl;
               /* B9-F1: dieselbe Leerung wie im xlsx-/mbz-Pfad oben. */
               state.data.dateiAuswahl = null;
@@ -3297,15 +3398,40 @@
                 (platzhalterZahl ? ' — ' + platzhalterZahl + ' Illustration' +
                   (platzhalterZahl === 1 ? '' : 'en') + ' als Platzhalter (Bildidee im Dokument)' : '') +
                 (hinweise && hinweise.length ? ' — Hinweis: ' + hinweise.join(' · ') : '');
-              /* B9-F3: dieselbe persistente Meldung wie im xlsx-/mbz-Pfad oben.
-                 K3: url zeigt auf das docx (ergebnis.ziel), nicht auf blocks
-                 oder ein Bild — nur gesetzt, wenn Graph tatsaechlich eine
-                 webUrl fuer das docx geliefert hat. */
-              var meldungOk = { typ: 'ok', text: erfolgstext };
-              if (ergebnis.ziel.webUrl) meldungOk.url = ergebnis.ziel.webUrl;
-              state.data.uploadMeldung = meldungOk;
-              state.hinweis = erfolgstext;
-              controller.render();
+
+              /* P2 (Bilderpaket, Etappe 6): NUR nach einem GPT-Upload in
+                 Schritt 3 (nicht Schritt 4/Validierung) — versucht, eine
+                 unbebilderte Claude-Fassung automatisch neu zu setzen. Ein
+                 Fehlschlag bricht den GPT-Erfolg NICHT ab (Nebenprodukt-
+                 Muster, V7) — nur state.fehlerHinweis traegt den Nachzugs-
+                 Hinweis, die GPT-Erfolgsmeldung bleibt unveraendert. */
+              var istGptUpload = !istValidierungBau && gelesen.skript &&
+                gelesen.skript.variante === 'chatgpt';
+              var uebernahme = istGptUpload
+                ? versucheClaudeUebernahme(k.kursId, ab, inh, gelesen, bilder, dateienNachAblage)
+                  .catch(function () {
+                    state.fehlerHinweis = 'Claude-Fassung nicht neu gesetzt — erneuter ChatGPT-Upload ' +
+                      'holt es nach.';
+                    return null;
+                  })
+                : Promise.resolve(null);
+
+              return uebernahme.then(function (result) {
+                if (result) {
+                  erfolgstext += ' · Claude-Fassung ' + result.docxName + ' neu gesetzt mit ' + result.n +
+                    ' ChatGPT-Bild' + (result.n === 1 ? '' : 'ern') +
+                    (result.m ? ', ' + result.m + ' ohne Match als Platzhalter' : '');
+                }
+                /* B9-F3: dieselbe persistente Meldung wie im xlsx-/mbz-Pfad oben.
+                   K3: url zeigt auf das docx (ergebnis.ziel), nicht auf blocks
+                   oder ein Bild — nur gesetzt, wenn Graph tatsaechlich eine
+                   webUrl fuer das docx geliefert hat. */
+                var meldungOk = { typ: 'ok', text: erfolgstext };
+                if (ergebnis.ziel.webUrl) meldungOk.url = ergebnis.ziel.webUrl;
+                state.data.uploadMeldung = meldungOk;
+                state.hinweis = erfolgstext;
+                controller.render();
+              });
             });
           })
           .catch(function (e) {
