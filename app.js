@@ -1574,8 +1574,12 @@
        keine Varianten wie Schritt 3). Ordner/Lieferobjekt kommen
        ausschliesslich aus dem Ablage-Kontrakt (inhalt.ablageVon) — nichts
        hartkodiert. geltendeDatei() ist endung-blind, die Kontrakt-Endung
-       ist bereits 'blocks' — anders als bei Schritt 4 (docx -> blocks,
-       B5-Invariante) gibt es hier KEINEN Endungstausch. Cache
+       ist bereits 'blocks' — seit F3 liegt neben der .blocks aber zusaetzlich
+       das gebaute Interaktions-Drehbuch (.docx, gleicher Versionsstamm), und
+       geltendeDatei() kann je nach Ordner-Reihenfolge auch den docx-Namen
+       liefern: derselbe Endungstausch wie bei Schritt 4 (docx -> blocks,
+       B5-Invariante, Muster reviewNachladen) ist deshalb noetig und steht
+       direkt vor dem graph.dateiLesen()-Aufruf unten. Cache
        state.data.didaktik[kursId] = geparstes gelesen-Objekt ODER null
        (kein Lieferobjekt im Kontrakt, keine geltende Datei, kein Text oder
        ein Parse-Fehler); undefined = nie geladen, null = laedt gerade
@@ -3344,11 +3348,14 @@
          'blocks'. Steht VOR dem Skript-/Validierungs-Gate weiter unten, weil
          die pruefung-Werte sich ausschliessen (kein Schritt fuehrt zwei).
 
-         Anders als Schritt 3/4 baut Schritt 5 KEIN Word (docxBauen) — die
-         Blockdatei mit den Interaktions-Contracts wird selbst abgelegt, kein
-         Diagramm gerendert, keine Vorlage geladen. Deshalb ein eigener,
-         schlankerer Zweig statt Wiederverwendung von
-         pruefeUndBaueBlock/weiterMitSkriptBau. */
+         Anders als Schritt 3/4 baut Schritt 5 KEIN docxBauen-Word und kein
+         Diagramm — die Blockdatei mit den Interaktions-Contracts wird selbst
+         abgelegt. Seit F3 baut die Werkstatt zusaetzlich das
+         Interaktions-Drehbuch (docx, ueber didaktikDrehbuch.baue) als
+         Ansicht fuer Fachverantwortliche — die Vorlage dafuer kommt wie bei
+         Schritt 3/4 ueber graph.vorlageLaden() (s. weiterMitDidaktikAblage
+         unten). Deshalb ein eigener, schlankerer Zweig statt
+         Wiederverwendung von pruefeUndBaueBlock/weiterMitSkriptBau. */
       var geprueftPflichtDidaktik = !!(ab && ab.pruefung === 'interaktion') &&
         root.inhalt.erwarteteEndung(inh, n) === 'blocks';
 
